@@ -22,7 +22,7 @@ Once deployment is complete, you will need to authorize each connection.
 You can now edit the playbook in Logic apps.
 
 ## Instructions for templatizing a playbook  
-## Option 2: Manual  
+## Manual  
 
 Once you have created a playbook that you want to export to share, go to the Logic App resource in Azure.
 > Note: this is the generic instructions there may be other steps depending how complex or what connectors are used for the playbook.
