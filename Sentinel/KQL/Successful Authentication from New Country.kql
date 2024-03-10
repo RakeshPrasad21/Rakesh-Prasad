@@ -1,0 +1,38 @@
+let AllSignLogs = union isfuzzy=true  SigninLogs, AADNonInteractiveUserSignInLogs;
+let KnownUserCountry = (
+    AllSignLogs
+    | where TimeGenerated between (ago(14d) .. ago(1d)) 
+    //| where Location <> "QA" and Location <> ""
+    | where ResultType == 0
+    | summarize
+        KnownCountries = make_set(Location, 1048576),
+        KnownIPs = make_set(IPAddress, 1048576)
+        by UserPrincipalName
+    );
+AllSignLogs
+| where TimeGenerated >= ago(1d)
+//| where Location <> "QA" and Location <> ""
+| where ResultType == 0
+| summarize
+    NewCountries = make_set(Location, 1048576),
+    IPs=make_set(IPAddress, 1048576),
+    LastObservedTime = max(TimeGenerated),
+    AppName = make_set(AppDisplayName, 1048576)
+    by UserPrincipalName
+| join kind=inner KnownUserCountry on UserPrincipalName
+| extend UnseenCountries = set_difference(NewCountries, KnownCountries)
+| extend UnseenIPs = set_difference(IPs, KnownIPs)
+| extend UnseenCountryCount = array_length(UnseenCountries)
+| extend UnseenIPCount = array_length(UnseenIPs)
+| where UnseenCountryCount != 0
+| project
+    UserPrincipalName,
+    AppName,
+    KnownCountries,
+    NewCountries,
+    UnseenCountries,
+    UnseenCountryCount,
+    KnownIPs,
+    IPs,
+    UnseenIPs,
+    UnseenIPCount
