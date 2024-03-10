@@ -1,3 +1,4 @@
+//Need to  Exclude MFA Passed Logins to remove False positive.
 let AllSignLogs = union isfuzzy=true  SigninLogs, AADNonInteractiveUserSignInLogs;
 let KnownUserCountry = (
     AllSignLogs
