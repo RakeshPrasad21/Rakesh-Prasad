@@ -1,0 +1,148 @@
+let SQlData = Event
+    | where Source contains "MSSQL"
+;
+let Sqlactivity = SQlData
+    | where RenderedDescription !has "LGIS"
+        and RenderedDescription !has "LGIF"
+        and RenderedDescription !has "Login succeeded"
+        and RenderedDescription !has "Login failed" 
+    | parse RenderedDescription with * "action_id:" Action: string 
+        " " * 
+    | parse RenderedDescription with * "client_ip:" ClientIP: string
+        " permission" * 
+    | parse RenderedDescription with * "session_server_principal_name:" CurrentUser: string
+        " " * 
+    | parse RenderedDescription with * "database_name:" DatabaseName: string
+        "schema_name:" Temp: string
+        "object_name:" ObjectName: string
+        "statement:" Statement: string
+        "additional_information:" AdditionalInfo: string
+        "." *
+;
+let FailedLogon = SQlData
+    | where EventLevelName has "error"
+    | where RenderedDescription startswith "Login"
+    | parse kind=regex RenderedDescription with "Login" LogonResult: string
+        "for user '" CurrentUser: string
+        "'. Reason:" Reason: string " \\[" *
+    | parse kind=regex RenderedDescription with * "CLIENT" * ":" ClientIP: string
+        "]" *
+;
+let FailedLogon1 = SQlData
+    | where EventLevelName !has "error"
+    | where RenderedDescription startswith "Login" and RenderedDescription has "failed"
+    | parse kind=regex RenderedDescription with "Login " LogonResult: string" " *
+        "for user '" CurrentUser: string 
+        "'. Reason:" Reason: string                                             
+        "." *
+    | parse kind=regex RenderedDescription with * "CLIENT" * ":" ClientIP: string
+        "]" *
+;
+let FailedLogon2 = SQlData
+    | where RenderedDescription has "LGIF"
+    | parse RenderedDescription with * "action_id:" Action: string 
+        " " * 
+    | parse RenderedDescription with * "client_ip:" ClientIP: string
+        " permission" * 
+    | parse RenderedDescription with * " server_principal_name:" CurrentUser: string
+        " " * 
+    | parse RenderedDescription with * "database_name:" DatabaseName: string
+        "schema_name:" Temp: string
+        "object_name:" ObjectName: string
+        "statement:" Statement: string
+        "Reason:" Reason: string
+        "." *
+;
+let dbfailedLogon = SQlData
+    | where RenderedDescription has " Failed to open the explicitly specified database" 
+    | parse kind=regex RenderedDescription with "Login" LogonResult: string
+        "for user '" CurrentUser: string 
+        "'. Reason:" Reason: string 
+        " '" DatabaseName: string
+        "'" *
+    | parse kind=regex RenderedDescription with * "CLIENT" * ":" ClientIP: string 
+        "]" *
+;
+let successLogon = SQlData
+    | where RenderedDescription has "LGIS"
+    | parse RenderedDescription with * "action_id:" Action: string 
+        " " LogonResult: string 
+        ":" Temp2: string
+        "session_server_principal_name:" CurrentUser: string
+        " " *
+    | parse RenderedDescription with * "client_ip:" ClientIP: string 
+        " " *
+;
+let successLogon1 = SQlData
+| where RenderedDescription startswith "Login succeeded"
+| parse kind=regex RenderedDescription with "Login" LogonResult:string
+                                            "for user '" CurrentUser:string 
+                                            "'. " Reason:string 
+                                            ". \\[" *
+| parse kind=regex RenderedDescription with * "CLIENT" * ":" ClientIP:string
+                                            "]" *
+;
+(union isfuzzy=true
+Sqlactivity, FailedLogon,FailedLogon1,FailedLogon2, dbfailedLogon, successLogon,successLogon1 )
+| extend ActionName = case(Action == "AL","ALTER",
+Action == "ADDP","DATABASE_ROLE_MEMBER_CHANGE_GROUP",
+Action == "APRL","ADD MEMBER",
+Action == "AUSC","AUDIT SESSION CHANGED",
+Action == "AUTH","AUTHENTICATE",
+Action == "CR","CREATE",
+Action == "BA","BACKUP",
+Action == "BAL","BACKUP LOG",
+Action == "DAGF","FAILED_DATABASE_AUTHENTICATION_GROUP",
+Action == "DBAF","DATABASE AUTHENTICATION FAILED",
+Action == "DBAS","DATABASE AUTHENTICATION SUCCEEDED",
+Action == "DABO","DATABASE BULK ADMIN",
+Action == "DBL","DATABASE LOGOUT",
+Action == "DAGL","DATABASE_LOGOUT_GROUP",
+Action == "DPRL","DROP MEMBER",
+Action == "DL","DELETE",
+Action == "DR","DROP",
+Action == "EX","EXECUTE",
+Action == "DR","DROP",
+Action == "G","GRANT",
+Action == "GRDO","DATABASE_OBJECT_PERMISSION_CHANGE_GROUP",
+Action == "GRDB","DATABASE_PERMISSION_CHANGE_GROUP",
+Action == "IMP","IMPERSONATE",
+Action == "IMDP","DATABASE_PRINCIPAL_IMPERSONATION_GROUP",
+Action == "IN","INSERT",
+Action == "LGBG","BROKER_LOGIN_GROUP",
+Action == "LGIF","LOGIN FAILED",
+Action == "LGFL","FAILED_LOGIN_GROUP",
+Action == "LGIS","LOGIN SUCCEEDED",
+Action == "LGNM","NAME CHANGE",
+Action == "LO","LOGOUT_GROUP",
+Action == "LGO","LOGOUT",
+Action == "LGSD","SUCCESSFUL_LOGIN_GROUP",
+Action == "MNDP","DATABASE_PRINCIPAL_CHANGE_GROUP",
+Action == "MNDO","DATABASE_OBJECT_CHANGE_GROUP",
+Action == "OPSV","SERVER_OPERATION_GROUP",
+Action == "PWC","CHANGE PASSWORD",
+Action == "PWPL","PASSWORD POLICY",
+Action == "PWCG","LOGIN_CHANGE_PASSWORD_GROUP",
+Action == "PWCS","CHANGE OWN PASSWORD",
+Action == "PWEX","PASSWORD EXPIRATION",
+Action == "PWMC","MUST CHANGE PASSWORD",
+Action == "PWPL","PASSWORD POLICY",
+Action == "PWR","RESET PASSWORD",
+Action == "PWRS","RESET OWN PASSWORD",
+Action == "PWU","UNLOCK ACCOUNT",
+Action == "RF","REFERENCES",
+Action == "RC","RECEIVE",
+Action == "SL","SELECT",
+Action == "SVSR","SERVER STARTED",
+Action == "TO","TAKE OWNERSHIP",
+Action == "TODO","DATABASE_OBJECT_OWNERSHIP_CHANGE_GROUP",
+Action == "UCGP","USER_CHANGE_PASSWORD_GROUP",
+Action == "UP","UPDATE",
+Action == "USAF","CHANGE USERS LOGIN AUTO",
+Action == "USAF","CHANGE USERS LOGIN AUTO",
+Action == "USLG","CHANGE USERS LOGIN",
+Action == "VW","VIEW",
+Action == "VWCT","VIEW CHANGETRACKING",
+Action == "VSST","VIEW SERVER STATE",
+"")
+| project  TimeGenerated,Computer,RenderedDescription, EventID, Action,ActionName, ClientIP, LogonResult, CurrentUser, Reason, DatabaseName, ObjectName, Statement
