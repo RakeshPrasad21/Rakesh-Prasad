@@ -1,0 +1,31 @@
+union isfuzzy=true
+(Heartbeat
+| summarize TotalDevices=dcount(ResourceId) by Computer
+| project Computer,TotalDevices=1,Source="Heartbeat"),
+(AzureDiagnostics
+| where ResourceType != "WORKFLOWS/RUNS/ACTIONS"
+| where ResourceType != "WORKFLOWS/RUNS"
+| where ResourceType != "WORKFLOWS"
+| where ResourceType != "WORKFLOWS/RUNS/TRIGGERS"
+| where ResourceType != "AUTOMATIONACCOUNTS"
+| summarize TotalDevices=dcount(ResourceId) by Resource
+| project Computer=Resource,TotalDevices=1,Source="AzureDiagnostics"),
+(CommonSecurityLog
+| summarize TotalDevices=dcount(DeviceName) by Computer
+| project Computer,TotalDevices,Source="CommonSecurityLog"),
+(SecurityEvent
+| summarize TotalDevices=dcount(SourceComputerId) by Computer
+| project Computer,TotalDevices=1,Source="SecurityEvent"),
+(Syslog
+| summarize TotalDevices=dcount(HostName) by Computer
+| project Computer,TotalDevices,Source="Syslog"),
+(DeviceInfo
+| where DeviceName != ""
+| summarize TotalDevices=dcount(DeviceId) by DeviceName
+| project Computer=DeviceName,TotalDevices,Source="DeviceInfo"),
+(DeviceInfo
+| where DeviceName == ""
+| summarize TotalDevices=dcount(DeviceId) by Vendor
+| project Computer=Vendor,TotalDevices,Source="DeviceInfo")
+//| where TotalDevices > 1
+| order by TotalDevices desc
