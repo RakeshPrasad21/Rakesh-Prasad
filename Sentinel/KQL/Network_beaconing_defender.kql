@@ -1,0 +1,36 @@
+//Defender for Endpoint (MDE) query
+//KQL queries (one for Sysmon events, the other for MDE DeviceNetworkEvents) have been very helpful to identifying beaconing patterns in network connections.
+//In the environments I'm hunting in, it catches a few websites that use Javascript to refresh every 60 seconds or fetch more data, but if you have many of those you can tune out web browsers from the results.
+//What's more important is that these were highly effective at identifying Cobalt Strike beacons (even with jitter settings), IcedID, and a VBA RAT that communicated with Google Scripts to relay its C2 beacons.
+
+
+//Defender for Endpoint (MDE) query
+
+let starttime = 2d;
+let endtime = 1m;
+let TimeDeltaThreshold = 2;
+let TotalEventsThreshold = 15;
+let DurationThreshold = 1200;
+let StandardDeviationThreshold = 100;
+DeviceNetworkEvents
+| where RemoteIPType !in ("Reserved", "Private", "LinkLocal", "Loopback")
+| where isnotempty(RemoteIP) and RemoteIP !in ("0.0.0.0") and RemoteIP !startswith_cs "10."
+| where ActionType in ("ConnectionSuccess", "ConnectionRequest", "ConnectionFailed")
+| project TimeGenerated, DeviceId, DeviceName, InitiatingProcessFileName, LocalIP, LocalPort, RemoteIP, RemotePort
+| sort by LocalIP asc, RemoteIP asc, TimeGenerated asc
+| serialize
+| extend nextTimeGenerated = next(TimeGenerated, 1), nextDeviceId = next(DeviceId, 1), nextRemoteIP = next(RemoteIP, 1)
+| extend TimeDeltaInSeconds = datetime_diff("second", nextTimeGenerated, TimeGenerated)
+| where DeviceId == nextDeviceId and RemoteIP == nextRemoteIP
+| where TimeDeltaInSeconds > TimeDeltaThreshold
+| project TimeGenerated, TimeDeltaInSeconds, DeviceName, InitiatingProcessFileName, LocalIP, LocalPort, RemoteIP, RemotePort
+| summarize avg(TimeDeltaInSeconds), count(), min(TimeGenerated), max(TimeGenerated), Duration=datetime_diff("second", max(TimeGenerated), min(TimeGenerated)), StandardDeviation=stdev(TimeDeltaInSeconds), TimeDeltaList=make_list(TimeDeltaInSeconds) by DeviceName, LocalIP, RemoteIP, InitiatingProcessFileName
+| where count_ > TotalEventsThreshold 
+// comment out the next line if you don't want to filter out short-term beacons that aren't still active
+//| where count_ > datetime_diff("second", ago(endtime), min_TimeGenerated) / (avg_TimeDeltaInSeconds*2)
+| where StandardDeviation < StandardDeviationThreshold
+| where Duration >= DurationThreshold
+| order by StandardDeviation asc
+| extend HostCustomEntity = DeviceName
+| extend IPCustomEntity = RemoteIP
+| extend TimestampCustomEntity = max_TimeGenerated
