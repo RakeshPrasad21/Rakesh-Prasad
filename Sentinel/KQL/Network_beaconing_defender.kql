@@ -3,7 +3,7 @@
 //In the environments I'm hunting in, it catches a few websites that use Javascript to refresh every 60 seconds or fetch more data, but if you have many of those you can tune out web browsers from the results.
 //What's more important is that these were highly effective at identifying Cobalt Strike beacons (even with jitter settings), IcedID, and a VBA RAT that communicated with Google Scripts to relay its C2 beacons.
 
-
+//Hunting network beaconing using standard deviation from Defender for Endpoint events
 //Defender for Endpoint (MDE) query
 
 let starttime = 2d;
