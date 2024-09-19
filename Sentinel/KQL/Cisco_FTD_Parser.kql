@@ -1,0 +1,148 @@
+//Error Message %FTD-6-725016: Device selects trust-point trustpoint for peer-type interface :src-ip /src-port to dst-ip /dst-port
+//Explanation: With server-name indication (SNI), the certificate used for a given connection may not be the certificate configured on the interface. There is also no indication of which certificate trustpoint has been selected. This syslog gives an indication of the trustpoint used by the connection (given by interface :src-ip /src-port ).
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage contains "FTD-6-725016"
+| project TimeGenerated, SyslogMessage, Computer
+| extend Description = "Trustpoint used by the connection"
+| extend Event = "FTD-6-725016"
+| extend Action = Description
+| parse SyslogMessage with * 'FTD-6-725016: Device selects trust-point' DeviceTrustPoint 'for ' PeerType ':' x ' to ' y 
+| project TimeGenerated, Computer, Event, Action,DeviceTrustPoint,PeerType,x,y
+
+
+//Error Message: %FTD-6-722055: Group group-policy User username IP public-ip Client Type: user-agent
+//Explanation: The indicated user is attempting to connect with the given user-agent.
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage contains "FTD-6-722055"
+| project TimeGenerated, SyslogMessage, Computer
+| extend Description = "User is attempting to connect with the user-agent"
+| extend Event = "FTD-6-722055"
+| extend Action = Description
+| parse SyslogMessage with * 'FTD-6-722055: Group ' GroupPolicy ' User ' User ' IP ' x ' Client Type: ' UserAgent 
+| project TimeGenerated, Computer, Event, Action,GroupPolicy,User,x,UserAgent
+
+
+
+//Error Message %FTD-6-716058: Group group User user IP ip AnyConnect session lost connection. Waiting to resume.
+//Explanation: The SSL tunnel was dropped and the AnyConnect session enters the inactive state, which can be caused by a hibernating host, a standby host, or a loss of network connectivity.
+
+//Error Message %FTD-6-716002: Group GroupPolicy User username IP ip WebVPN session terminated: User requested.
+//Explanation: The WebVPN session has been terminated by a user request. Possible reasons include:
+
+//Error Message %FTD-6-716059: Group group User user IP ip AnyConnect session resumed. Connection from ip2 .
+//Explanation An AnyConnect session resumed from the inactive state.
+
+//%FTD-6-113039: Group <SAML_PROFILE> User <ammar.murtaza@marafeq.com.qa> IP <37.211.10.17> AnyConnect parent session started.
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-6-716058","FTD-6-716002","FTD-6-716059","FTD-6-113039")
+| project TimeGenerated, SyslogMessage, Computer
+| parse SyslogMessage with * '%' Event ': Group <' Group '> User <' User '> IP <' x '>' Action 
+| project TimeGenerated, Computer, Event, Action,GroupPolicy,User,x
+
+
+//%FTD-6-746013: user-identity: Delete IP-User mapping 192.168.191.11 - LOCAL\mohamed.rashed@marafeq.com.qa Succeeded - VPN user logout
+//%FTD-6-746012: user-identity: Add IP-User mapping 192.168.191.20 - LOCAL\yahya.abujalala@marafeq.com.qa Succeeded - VPN user
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-6-746013","FTD-6-746012")
+| project TimeGenerated, SyslogMessage, Computer
+| parse SyslogMessage with * '%' Event ': user-identity: ' Action1 ' IP-User mapping ' IP ' - ' User ' ' Action 
+| project TimeGenerated, Computer, Event,Action1, Action,IP,User
+
+
+
+//Error Message %FTD-6-716038: Group group User user IP ip Authentication: successful, Session Type: WebVPN.
+//Explanation: Before a WebVPN session can start, the user must be authenticated successfully by a local or remote server (for example, RADIUS or TACACS+).
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-6-716038")
+| project TimeGenerated, SyslogMessage, Computer
+| parse SyslogMessage with * '%' Event ': Group <' GroupPolicy '> User <' User '> IP <' x '>' Action ', Session Type:' SessionType
+| project TimeGenerated, Computer, Event, Action,GroupPolicy,User,x, SessionType
+
+
+//Error Message %FTD-4-113019: Group = group , Username = username , IP = peer_address , Session disconnected. Session Type: type , Duration: duration , Bytes xmt: count , Bytes rcv: count , Reason: reason
+//Explanation: An indication of when and why the longest idle user is disconnected.
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-6-113019")
+| project TimeGenerated, SyslogMessage, Computer
+| parse SyslogMessage with * '%' Event ': Group = ' Group ', Username = ' User ', IP = ' x ', ' Action '. Session Type:' SessionType ', Duration:' Duration ', Bytes xmt: ' BytesSent ', Bytes rcv: ' BytesRec ', Reason: ' Reason
+| project TimeGenerated, Computer, Event, Action,Group,User,x, SessionType,Duration,BytesSent,BytesRec,Reason
+
+
+
+//Error Message %FTD-6-721016: (device ) WebVPN session for client user user_name , IP ip_address has been created.
+//Explanation: A remote WebVPN user has logged in successfully and the login information has been installed on the standby unit.
+
+//Error Message %FTD-6-721018: (device ) WebVPN session for client user user_name , IP ip_address has been deleted.
+//Explanation When a WebVPN user logs out on the active unit, a logout message is sent to the standby unit to remove the user session from the standby unit. A WebVPN user record was removed from the standby unit successfully.
+
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-6-721016","FTD-6-721018")
+| project TimeGenerated, SyslogMessage, Computer
+| extend Description = strcat("A remote WebVPN user has loged ",iff(SyslogMessage contains "deleted"," out"," in")," successfully")
+| parse SyslogMessage with * '%' Event ': (' Device ') WebVPN session for client user ' User ', IPv4 ' x ' ' Action
+| project TimeGenerated, Computer, Event,Action,Description, Device,User,x
+
+
+//Error Message %FTD-5-737003: IPAA: Session= session, DHCP configured, no viable servers found for tunnel-group tunnel-group
+//Explanation The DHCP server configuration for the given tunnel group is not valid.
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-5-737003","FTD-5-737004","FTD-5-737005")
+| project TimeGenerated, SyslogMessage, Computer
+| extend Description = ""
+| parse SyslogMessage with * '%' Event ': IPAA: Session=' Session ', DHCP configured, ' Action 'tunnel-group ' tunnelGroup
+| project TimeGenerated, Computer, Event,Description, strcat(Action, " tunnel-group"),Session,tunnelGroup
+
+
+
+//%FTD-6-734001: DAP: User username, Addr ip, Connection AnyConnect: The following DAP records were selected for this connection: DfltAccessPolicy
+//Error Message %FTD-6-734001: DAP: User user, Addr ipaddr , Connection connection : The following DAP records were selected for this connection: DAP record names
+
+let ComputerName = dynamic([
+""
+]);
+Syslog
+//| where Computer has_any(ComputerName)
+| where SyslogMessage has_any ("FTD-6-734001")
+| project TimeGenerated, SyslogMessage, Computer
+| parse SyslogMessage with * '%' Event ': DAP: User ' User ', Addr ' IP ', Connection' ClientConnection ': The following DAP records were selected for this connection: ' DapRecordList
+| project TimeGenerated, Computer,Event,Action ="The DAP records that were selected for the connection",User,IP, ClientConnection,DapRecordList
