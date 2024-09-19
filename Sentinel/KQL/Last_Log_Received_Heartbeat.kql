@@ -1,0 +1,19 @@
+//---Heartbeat Last log received 
+
+let Threshold= 5m;  //minute
+Heartbeat
+| summarize LastHeartbeat=arg_max(TimeGenerated, *) by Computer
+//Set offline criteria
+| extend Alive = case (LastHeartbeat >= now(-Threshold), 'Yes', 'No')
+//Calculate minutes since last heartbeat 
+| extend MinutesSilent = datetime_diff('minute', now(), LastHeartbeat)
+| where Alive == 'No'
+| project
+    Computer,
+    ComputerIP,
+    OSType,
+    Alive,
+    LastHeartbeat,
+    MinutesSilent,
+    ComputerEnvironment 
+| order by LastHeartbeat  desc
