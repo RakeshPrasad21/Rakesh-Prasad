@@ -1,0 +1,36 @@
+//Want to view table size last week vs this week
+let lastweek=
+union withsource=_TableName *
+| where TimeGenerated > ago(14d) and TimeGenerated < ago(7d)
+| summarize
+    Entries = count(), Size = sum(_BilledSize) by Type
+| project ['Table Name'] = Type, ['Last Week Table Size'] = Size, ['Last Week Table Entries'] = Entries, ['Last Week Size per Entry'] = 1.0 * Size / Entries
+| order by ['Table Name']  desc;
+let thisweek=
+union withsource=_TableName *
+| where TimeGenerated > ago(7d)
+| summarize
+    Entries = count(), Size = sum(_BilledSize) by Type
+| project ['Table Name'] = Type, ['This Week Table Size'] = Size, ['This Week Table Entries'] = Entries, ['This Week Size per Entry'] = 1.0 * Size / Entries
+| order by ['Table Name']  desc;
+lastweek
+| join kind=inner thisweek on ['Table Name']
+| extend PercentageChange=todouble(['This Week Table Size']) * 100 / todouble(['Last Week Table Size'])
+| project ['Table Name'], ['Last Week Table Size'], ['This Week Table Size'], PercentageChange
+| sort by PercentageChange desc
+
+
+//summary of your top 15 log sources with.
+union withsource=_TableName *
+| where TimeGenerated > ago(30d)
+| summarize LogCount=count()by Type
+| sort by LogCount desc
+| take 15
+| render piechart with (title="Top 15 Log Sources")
+
+
+//This example looks at the prior 30 days, in 12 hour blocks. It then forecasts the next 7 days for you.
+union withsource=_TableName *
+| make-series ["Total Logs Received"]=count() on TimeGenerated from ago(30d) to now() + 7d step 12h
+| extend ["Total Logs Forecast"] = series_decompose_forecast(['Total Logs Received'], toint(7d / 12h))
+| render timechart 
