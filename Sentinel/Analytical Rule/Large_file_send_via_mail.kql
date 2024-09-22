@@ -1,0 +1,11 @@
+//Large files send via mail
+
+//Need to add thershold for file size
+
+EmailEvents
+| where EmailDirection == "Inbound"
+| summarize Recipients = tostring(make_set(RecipientEmailAddress)),TimeGenerated= min(TimeGenerated) by NetworkMessageId, SenderFromAddress,AttachmentCount
+| join kind = leftouter (EmailAttachmentInfo
+| distinct NetworkMessageId,FileName,FileSize)on NetworkMessageId
+| summarize TotalBytes= sum(FileSize) by TimeGenerated,SenderFromAddress,Recipients ,NetworkMessageId, AttachmentCount
+| project TimeGenerated,SenderFromAddress,Recipients, AttachmentCount,TotalBytes, NetworkMessageId
