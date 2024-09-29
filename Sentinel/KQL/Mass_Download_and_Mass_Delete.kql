@@ -1,0 +1,26 @@
+//Mass Download and Mass Delete Playbooks 
+//Identifies Office365 Sharepoint File Download and deleted above certain threshold in a 15min time period
+
+let AzureRanges = externaldata(changeNumber: string, cloud: string, values: dynamic)
+["https://raw.githubusercontent.com/microsoft/mstic/master/PublicFeeds/MSFTIPRanges/ServiceTags_Public.json"] with(format='multijson')
+| mv-expand values
+| extend Name = values.name, AddressPrefixes = values.properties.addressPrefixes
+| mv-expand AddressPrefixes
+| summarize by tostring(AddressPrefixes);
+let MatchedIPs = OfficeActivity
+| where EventSource == "SharePoint" and OfficeWorkload has_any("SharePoint", "OneDrive") and Operation has_any ("FileDownloaded", "FileSyncDownloadedFull", "FileSyncUploadedFull", "FileUploaded")
+| evaluate ipv4_lookup(AzureRanges, ClientIP, AddressPrefixes)
+| project ClientIP;
+let userWhiteList =dynamic([
+"app@sharepoint"
+]);
+let threshold = 50;
+OfficeActivity
+| where UserId !in (userWhiteList)
+//FileRecycled,FileDeleted,FileSyncDownloadedFull,FileSyncUploadedFull
+| where EventSource == "SharePoint" and OfficeWorkload has_any("SharePoint", "OneDrive") and Operation has_any ("FileDownloaded", "FileSyncDownloadedFull", "FileSyncUploadedFull", "FileUploaded")
+| summarize count_distinct_OfficeObjectId=dcount(OfficeObjectId), fileslist=make_set(OfficeObjectId, 10000),workload=make_set(OfficeWorkload) by UserId,ClientIP,bin(TimeGenerated, 15m)
+| where ClientIP !in (MatchedIPs)
+| where count_distinct_OfficeObjectId >= threshold
+| extend FileSample = iff(array_length(fileslist) == 1, tostring(fileslist[0]), strcat("SeeFilesListField","_", tostring(hash(tostring(fileslist)))))
+| extend AccountName = tostring(split(UserId, "@")[0]), AccountUPNSuffix = tostring(split(UserId, "@")[1])
