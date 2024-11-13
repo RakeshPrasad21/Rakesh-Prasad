@@ -1,0 +1,36 @@
+//New Resource Added in sentinel
+
+let excludeTable = dynamic([
+"AzureActivity",
+"AzureMetrics",
+"Perf",
+"LAQueryLogs",
+"ASRJobs",
+"ASRReplicatedItems",
+"FunctionAppLogs",
+"AddonAzureBackupAlerts",
+"AddonAzureBackupJobs",
+"AddonAzureBackupPolicy",
+"AppMetrics",
+"ASimDnsActivityLogs",
+"CoreAzureBackup"
+]);
+union *
+| where TimeGenerated between (ago(14d) .. ago(1d))
+| where Type !in (excludeTable)
+| summarize arg_min(TimeGenerated,Type) by _ResourceId, Type
+| where isnotempty(_ResourceId)
+| extend ResourceType = extract(@"\/providers\/[^\/]+\/([^\/]+)\/", 1, _ResourceId)
+| where ResourceType != "workflows"
+| summarize by _ResourceId, Type
+| join kind=rightanti 
+(union * | where TimeGenerated > ago(1d)
+| where Type !in (excludeTable)
+| summarize arg_min(TimeGenerated,Type) by _ResourceId, Type
+| where isnotempty(_ResourceId)
+| extend ResourceProviderNamespace = extract(@"\/providers\/([^\/]+)\/", 1, _ResourceId)
+| extend ResourceType = extract(@"\/providers\/[^\/]+\/([^\/]+)\/", 1, _ResourceId)
+| extend ResourceName = tostring(split(_ResourceId, "/")[8])
+| extend TimeGenerated = datetime_utc_to_local(TimeGenerated,"Asia/Qatar")
+| where ResourceType != "workflows" ) on _ResourceId, Type
+| summarize  ["First seen"] =min(TimeGenerated) by ResourceType,  ResourceProviderNamespace,["Table Name"]= Type, _ResourceId
