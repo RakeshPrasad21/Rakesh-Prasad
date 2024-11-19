@@ -31,17 +31,17 @@
 1. Add "Select" action form data operation. 
 
 ```
-  "Filter_array_Max_DB_Event_Time": {
-                "inputs": {
-                    "from": "@outputs('Compose_-_Raw_data')",
-                    "where": "@equals(ticks(item().Event_Time), max(body('Select_Event_Time')))"
-                },
+  "Select": {
                 "runAfter": {
-                    "Select_Event_Time": [
+                    "Compose_-_Raw_data": [
                         "Succeeded"
                     ]
                 },
-                "type": "Query"
+                "type": "Select",
+                "inputs": {
+                    "from": "@array(outputs('Compose_-_Raw_data'))",
+                    "select": "@ticks(item().log_time)"
+                }
             }
 ```
 2. Add "Filter array" action from data operation.
