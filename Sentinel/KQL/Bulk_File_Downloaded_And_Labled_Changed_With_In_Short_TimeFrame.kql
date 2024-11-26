@@ -1,0 +1,35 @@
+//Use Case : "Bulk file Downloaded and labled changed with in 10min of interval"
+
+let userWhiteList = dynamic(["app@sharepoint", "Purview Data Lifecycle Management service - PHL clean-up"]);
+let downloadThreshold = 25; // Minimum files downloaded to trigger bulk download alert
+let TimeFrame = 7d; // Time frame for label change detection after download
+let LabelChange = MicrosoftPurviewInformationProtection
+| where TimeGenerated >= ago(TimeFrame)
+| where Operation == "SensitivityLabelUpdated"
+| where ContentType == "File"
+| where CurrentProtectionType.protectionType != ""
+| extend CurrprotectionType = toint(CurrentProtectionType.protectionType)
+| extend PreProtectionType = toint(PreviousProtectionType.protectionType)
+| extend FilePath = url_decode(ObjectId)
+| extend FileName = tostring(split(FilePath, "/")[-1])
+| extend DistinctFileName = tostring(strcat(FilePath,"*",UserId))
+| where (PreProtectionType == 1 and CurrprotectionType == 0) or (PreProtectionType == 2 and CurrprotectionType == 0)
+| project DistinctFileName;
+OfficeActivity
+| where TimeGenerated >= ago(TimeFrame)
+//| where UserId !in (userWhiteList)
+| extend personalGroups = extract("(\\/+personal+\\/)", 1, Site_Url)
+| where personalGroups == ""
+| where EventSource == "SharePoint"
+    and OfficeWorkload has_any("SharePoint", "OneDrive")
+    and Operation has_any ('FileDownloaded', 'FileSyncDownloadedFull')
+| extend DistinctFile = tostring(strcat(OfficeObjectId,"*",UserId))
+| summarize 
+    count_distinct_OfficeObjectId = dcount(OfficeObjectId),
+    filesList = make_set(DistinctFile, 10000),
+    workload = make_set(OfficeWorkload),
+    siteUrl = make_set(Site_Url),
+    downloadTime = min(TimeGenerated)
+    by UserId, ClientIP
+| where count_distinct_OfficeObjectId >= downloadThreshold
+| where filesList has_any (LabelChange) 
