@@ -1,0 +1,22 @@
+id: 
+name: Change Conditional Access Policy
+description: |
+  'The modification of authentication processes can be used to create persistence on an cloud account. Adversaries can update CA policies to get persistence by removing the necessary strong authentication mechanisms for a account.
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - AuditLogs
+tactics: 
+  - Persistence
+relevantTechniques:
+  - T1556
+query: |
+    AuditLogs
+    | where OperationName == "Update conditional access policy"
+    | extend DeletedPolicy = TargetResources.[0].displayName, Actor = InitiatedBy.user.userPrincipalName
+    | project TimeGenerated, Actor, DeletedPolicy, TargetResources
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: Actor     

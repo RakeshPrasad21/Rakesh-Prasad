@@ -1,0 +1,26 @@
+
+//Lateral Movement Users on Windows security Event
+
+Description: Use your Windows security log to find the users most at risk for lateral movement by finding those that have connected remotely to the most devices.
+
+let DistinctDeviceLogonCount = 5;
+SecurityEvent
+| where TimeGenerated > ago (15d)
+| where EventID in (4624, 4625, 4648, 4672, 4688) 
+| where LogonType == 10
+| where SubjectDomainName == TargetDomainName
+//Summarize total logins, distinct devices and then list all the devices each account has logged onto
+//Account is dropped to lower case to make sure each account is only listed once, i.e Reprise99 and reprise99 are combined
+| summarize
+    ['Total logon count']=count(),
+    ['Distinct device logon count']=dcount(Computer),
+    ['List of devices']=make_set(Computer),
+    ['List IP Address']=make_set(IpAddress)
+    by UserId =  tolower(Account)
+| where ['Distinct device logon count'] > DistinctDeviceLogonCount
+| sort by ['Distinct device logon count'] desc
+| extend Account_0_Name = UserId
+| extend Account_0_Name = UserId
+
+
+Tactics : Lateral Movement

@@ -1,0 +1,28 @@
+id: 
+name: Multiple Accounts Locked
+description: |
+  'Detect when multiple accounts are locked in your Azure tenant in a short timeframe, this can indicate brute force or password spray attacks.
+requiredDataConnectors:
+  - connectorId: 
+    dataTypes:
+      - SigninLogs
+tactics:
+  - Credential Access
+  - Brute Force
+relevantTechniques:
+  - T1110
+query: |
+  let Threshold = 3;
+  let TimeFrame = 15m;
+  SigninLogs
+  | where ResultType == 50053
+  | summarize TotalAccounts = dcount(UserPrincipalName), Accounts = make_set(UserPrincipalName), UserAgentDetails = make_set(UserAgent) by bin(TimeGenerated, TimeFrame), IPAddress
+  | where TotalAccounts >= Threshold
+  | extend GeoIPInfo = geo_info_from_ip_address(IPAddress)
+  | extend country = tostring(parse_json(GeoIPInfo).country), state = tostring(parse_json(GeoIPInfo).state), city = tostring(parse_json(GeoIPInfo).city)
+entityMappings:
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: IPAddress
+        columnName: IPAddress

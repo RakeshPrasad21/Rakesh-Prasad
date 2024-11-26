@@ -1,0 +1,31 @@
+id: 9c2fc25b-d82b-4d0f-9409-c20c5345f2b4
+name: New Azure AD users added to Azure AD roles [DCSecurityOperations]
+description: |
+  'Hunt for newly added users (past 30 days) that were added to an Azure AD role soon after its creation.'
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - AuditLogs
+tactics:
+  - Persistence
+  - LateralMovement
+relevantTechniques:
+  - T1136
+  - T1098.003
+query: |
+
+  // New Azure AD users added to Azure AD roles [DCSecurityOperations].
+  let NewUsers = AuditLogs
+      | where ActivityDisplayName == "Add user"
+      | extend UserID = tostring(TargetResources[0].id);
+  let NewAdmins = AuditLogs
+      | where ActivityDisplayName == "Add member to role"
+      | extend UserID = tostring(TargetResources[0].id);
+  NewUsers
+      | join (NewAdmins) on UserID
+      | project UserCreatedTimestamp=TimeGenerated, UserPrincipalName=tostring(TargetResources[0].userPrincipalName), UserID, AdminRoleAddedTimestamp=TimeGenerated1, AdminRole=tostring(TargetResources1[0].modifiedProperties[1].newValue), InitiatedBy=tostring(InitiatedBy1.user.userPrincipalName)
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: AadUserId
+        columnName: UserID

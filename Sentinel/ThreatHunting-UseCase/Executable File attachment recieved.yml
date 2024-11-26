@@ -1,0 +1,35 @@
+id: 
+name: Executable File attachment recieved
+description: |
+  'An actor gains initial access via a attachment that is send to a mailbox, which someone has opened.'
+requiredDataConnectors:
+  - connectorId: 
+    dataTypes:
+      - EmailEvents
+tactics:
+  - Initial Access
+relevantTechniques:
+  - T1566
+query: |
+    // Legacy authentication in Azure AD [DCSecurityOperations].
+    let ExecutableFileExtentions = dynamic(['bat', 'cmd', 'com', 'cpl', 'dll', 'ex', 'exe', 'jse', 'lnk','msc', 'ps1', 'reg', 'vb', 'vbe', 'ws', 'wsf']);
+    EmailEvents
+    // Only display inbound emails
+    | where EmailDirection == 'Inbound'
+    // Join the email events with the attachment information, that the email must have an attachment.
+    | join kind=inner EmailAttachmentInfo on NetworkMessageId
+    // extract the file extension from the filename
+    | extend FileExtension = tostring(extract(@'.*\.(.*)', 1, FileName))
+    | where isnotempty(FileExtension)
+    // Filter on executable file extensions
+    | where FileExtension in~ (ExecutableFileExtentions)
+    | summarize ['Target Mailboxes'] = make_set(RecipientEmailAddress), ['Sender Addresses'] = make_set(SenderFromAddress), ['Email Subject'] = make_set(Subject) by SHA256, FileName
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: FileName
+  - entityType: FileHash
+    fieldMappings:
+      - identifier: Value
+        columnName: SHA256

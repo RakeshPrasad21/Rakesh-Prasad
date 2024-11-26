@@ -1,0 +1,35 @@
+id: 
+name: Cloud Discovery Performed by User At Risk
+description: |
+  'The discovery events are related to downloading group members and getting tenant information, which would be a logical step for an attacker if he gained access to your Azure tenant.
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - AADRiskyUsers
+      - AuditLogs
+tactics:
+  - Discovery
+  - Permission Groups Discovery: Cloud Groups
+relevantTechniques:
+  - T1069.003
+query: |
+    // Define DiscoveryEvents, list can be appended with other events or your choosing
+    let DiscoveryEvents = dynamic(["Export", "Download group members", "Get tenant details", "Download Users", "Download Devices"]);
+    let RiskyUsers = AADRiskyUsers
+         | where TimeGenerated > ago(90d)
+         | summarize arg_max(TimeGenerated, *) by Id
+         // Only user active risky users. If you want to look for all users that have been risky, remove the line below.
+         | where RiskState in~ ('atRisk', 'confirmedCompromised')
+         | distinct UserDisplayName;
+    AuditLogs
+    // Filter only on the RiskyUsers defined
+    | where Identity in~ (RiskyUsers)
+    // Filter on DiscoveryEvents
+    | where OperationName has_any (DiscoveryEvents)
+    | project TimeGenerated, Identity, OperationName, Category, 
+    ResultDescription, Result
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: Identity     

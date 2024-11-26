@@ -1,0 +1,53 @@
+id: 
+name: Browsing activity from server systems
+description: |
+  'Unusual browsing activities originating from server systems, accessing external URLs via web browsers. Server systems are typically not expected to engage in regular internet browsing, raising concerns about potential security risks or misconfigurations
+requiredDataConnectors:
+  - connectorId: 
+    dataTypes:
+      - DeviceNetworkEvents
+tactics:
+  - Discovery  
+relevantTechniques:
+  - T1614
+query: |
+   // Define browsers
+    let browsers = dynamic(['iexplore.exe','chrome.exe','firefox.exe','msedge.exe', 'opera.exe', 'brave.exe']);
+    //
+    // Exclude 'safe' sites called automatically by browsers on launch (ocsp etc)
+    let excludedsites = dynamic(['apis.google.com',
+                                 'ocsp.rootg2.amazontrust.com',
+                                 'crl.identrust.com',
+                                 'ocsp.msocsp.com',
+                                 'ocsp.pki.goog',
+                                 'ocsp.godaddy.com',
+                                 'ocsp.usertrust.com',
+                                 'unitedkingdom.smartscreen-prod.microsoft.com',
+                                 'ocsp.digicert.com','clientservices.googleapis.com',
+                                 'safebrowsing.googleapis.com',
+                                 'iecvlist.microsoft.com',
+                                 'update.googleapis.com']);
+    // Get list of servers (modify to include MSDE device groups)
+    let servers = 
+        DeviceInfo
+        | where MachineGroup == "Domain Controllers"
+             or MachineGroup == "Servers"
+        | distinct DeviceName;
+    DeviceNetworkEvents
+    | where DeviceName in~ (servers)     
+    | where InitiatingProcessFileName in~ (browsers)
+    | where ActionType == "ConnectionSuccess"
+    | where RemoteIPType =~ "public"
+    | where RemoteUrl !in~ (excludedsites)
+    | project TimeGenerated, DeviceName, RemoteIP, RemotePort, RemoteUrl, InitiatingProcessFileName, InitiatingProcessAccountName
+    | sort by TimeGenerated desc
+    
+entityMappings:
+  - entityType: URL
+    fieldMappings:
+      - identifier: Url
+        columnName: RemoteUrl     
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: RemoteIP
