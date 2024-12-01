@@ -1,0 +1,154 @@
+//1. Failed Login Attempts
+//          •           Rule Name: Multiple Failed Database Login Attempts
+//          •           Description: Detect multiple failed login attempts within a defined time frame.
+ 
+let TimeFrame = 10m;
+let failedThreshold = 3;
+MSSQLEvents
+| where TimeGenerated > ago(TimeFrame) 
+| where LogonResult has "failed"
+| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), TotalFailedLogons = count() by CurrentUser
+| where TotalFailedLogons >= failedThreshold
+| project CurrentUser, TotalFailedLogons
+ 
+let TimeFrame = 10m;
+let failedThreshold = 3;
+OracleEvents
+| where TimeGenerated > ago(TimeFrame) 
+| where ActionName == "LOGON"
+| where RenderedDescription contains "logon denied"
+| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), TotalFailedLogons = count() by ClientUser
+| where TotalFailedLogons >= failedThreshold
+| project ClientUser, TotalFailedLogons
+//2. Privileged Account Access/Login
+//          •           Rule Name: Privileged SQL User Access Activity
+//          •           Description: Monitor activity of privileged accounts (sa, sys, etc).
+ 
+let PrivilegedAccounts = dynamic(["sa", "sys", "system", "dbo"]);
+MSSQLEvents
+| where LogonResult has "succeeded"
+| where CurrentUser in (PrivilegedAccounts)
+ 
+let PrivilegedAccounts = dynamic(["sa", "sys", "system", "dbo"]);
+OracleEvents
+| where ActionName == "LOGON"
+| where RenderedDescription !contains "logon denied"
+| where ClientUser has_any (PrivilegedAccounts)
+//3. Schema Changes
+//          •           Rule Name: Unauthorized Database Schema Changes
+//          •           Description: Identify unauthorized schema modifications (ALTER, DROP, CREATE).
+ 
+let AllowedAccounts = dynamic([]);
+MSSQLEvents
+| where Action == "AL" or Action == "CR" or Action == "DR"
+| where CurrentUser !in (AllowedAccounts)
+ 
+let AllowedAccounts = dynamic([]);
+OracleEvents
+| where ActionName == "ALTER TABLE" or ActionName == "CREATE TABLE" or ActionName == "DROP TABLE"
+| where not(ClientUser has_any (AllowedAccounts))
+//4. Data Exfiltration Detection
+//         •           Rule Name: Large Data Queries over a short period of time
+//          •           Description: Detect abnormal data queries or exports.
+ 
+let Threshold = 100000;
+let NonServiceAccounts = dynamic ([]);
+MSSQLEvents
+| where Action == "SL" or Action == "EX"
+| where CurrentUser !in (NonServiceAccounts) 
+| summarize QueryCount = count() by CurrentUser, DatabaseName
+| where QueryCount > Threshold
+ 
+let Threshold = 100000;
+let NonServiceAccounts = dynamic ([]);
+OracleEvents
+| where ActionName == "SELECT"
+| where not(ClientUser has_any (NonServiceAccounts))
+| summarize QueryCount = count() by ClientUser
+| where QueryCount > Threshold
+//5. New User Account Created
+//          •           Rule Name: New user account created on SQL Server
+//          •           Description: Detect new user account creation associated with the database.
+ 
+MSSQLEvents
+| where Statement has "Create Login"
+| parse Statement with "CREATE LOGIN [" TargetUser:string
+                       "]" *
+| project TimeGenerated, Computer, Action, ClientIP, CurrentUser, DatabaseName, TargetUser, ObjectName, Statement
+ 
+OracleEvents
+| where ActionName == "CREATE USER"
+| parse Action with * "CREATE USER " TargetUser:string
+                       "IDENTIFIED" *
+| project TimeGenerated, Computer, ActionName,ClientUser,ClientTerminal,TargetUser,Action,RenderedDescription
+//6. Privilege Escalation
+//          •           Rule Name: SQL user Privileged role assigned
+//          •           Description: Detect Privileged roles such as securityadmin assigned to a user.
+ 
+let PrivilegedRoles = dynamic (["securityadmin"]);
+MSSQLEvents
+| where Statement has "Alter Server role" and Statement has "add member"
+| parse Statement with * "ADD MEMBER [" TargetUser:string
+                       "]" *
+| where ObjectName has_any (PrivilegedRoles)
+| project TimeGenerated, Computer, Action, ClientIP, CurrentUser, DatabaseName, TargetUser, ObjectName, Statement
+ 
+OracleEvents
+| where ActionName == "GRANT ROLE" ***No Event Found*** Ask to generate event
+ 
+
+//7. Potential Brute Force attempt
+//          •           Rule Name: Multiple Failed Logons by multiple accounts from same IP
+//          •           Description: Detect malicious login activity which can be a potential brute force attack.
+
+ 
+let TimeFrame = 10m;
+let failedThreshold = 3;
+MSSQLEvents
+| where TimeGenerated > ago(TimeFrame) 
+| where LogonResult has "failed"
+| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), TotalFailedLogons = count() by ClientIP, CurrentUser
+| where TotalFailedLogons >= failedThreshold
+| project ClientIP, TotalFailedLogons, CurrentUser
+ 
+let TimeFrame = 10m;
+let failedThreshold = 3;
+OracleEvents
+| where TimeGenerated > ago(TimeFrame) 
+| where ActionName == "LOGON"
+| where RenderedDescription contains "logon denied"
+| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), TotalFailedLogons = count() by ClientAddress, ClientUser
+| where TotalFailedLogons >= failedThreshold
+| project ClientAddress, TotalFailedLogons, ClientUser
+ 
+
+//8. Access to Sensitive Tables
+//          •           Rule Name: Query to Sensitive Tables
+//          •           Description: Flag access to sensitive database tables (e.g., “ers”, “Payments”).
+ 
+let SensitiveTables = dynamic(["ers", "Payments", "PII", "CreditCard"]);
+MSSQLEvents
+| where Action == "SL"
+| where ObjectName has_any (SensitiveTables)
+ 
+let SensitiveTables = dynamic(["ers", "Payments", "PII", "CreditCard"]);
+OracleEvents
+| where ActionName == "SELECT"
+| where Action has_any (SensitiveTables)
+//9. Orphaned or Shared Accounts
+//          •           Rule Name: Activity from Shared or Orphaned Accounts
+//          •           Description: Detect activity from accounts that are shared or no longer assigned to active users.
+ 
+let Threshold = 10;
+let NonActiveAccounts = dynamic ([]);
+MSSQLEvents
+| where CurrentUser !in (NonActiveAccounts) 
+| summarize QueryCount = count() by CurrentUser, DatabaseName
+| where QueryCount > Threshold
+ 
+let Threshold = 10;
+let NonActiveAccounts = dynamic ([]);
+OracleEvents
+| where not(ClientUser has_any (NonActiveAccounts))
+| summarize QueryCount = count() by ClientUser, ClientTerminal
+| where QueryCount > Threshold
