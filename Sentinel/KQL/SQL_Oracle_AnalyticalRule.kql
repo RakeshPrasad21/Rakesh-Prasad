@@ -152,3 +152,32 @@ OracleEvents
 | where not(ClientUser has_any (NonActiveAccounts))
 | summarize QueryCount = count() by ClientUser, ClientTerminal
 | where QueryCount > Threshold
+
+
+ 
+//10. User Activity Anomaly Detection
+// Description: Identifies unusual or potentially suspicious actions performed by users, such as drop, alter, or create operations.
+
+let UpperThreshold = 3.0; // Upper Anomaly threshold score
+let LowerThreshold = -3.0; // Lower anomaly threshold score
+MSSQLEvents
+| where ActionName != ""
+| make-series count() on TimeGenerated from ago(1d) to now() step 1h by Source, ActionName, CurrentUser
+| extend (anomalies, score, baseline) = series_decompose_anomalies(count_, 1.5, -1, 'linefit', 1, 'ctukey', 0.6)
+//series_decompose_anomalies (Series[Threshold,Seasonality,Trend,Test_points,AD_method,Seasonality_threshold])
+| where anomalies[-1] == 1 or anomalies[-1] == -1
+| extend Score = score[-1]
+| where Score >= UpperThreshold or Score <= LowerThreshold
+| project Source, ActionName, CurrentUser, ExpectedCount=round(todouble(baseline[-1]),1), ActualCount=round(todouble(count_[-1]),1), AnomalyScore = round(todouble(score[-1]),1)
+
+
+let UpperThreshold = 3.0; // Upper Anomaly threshold score
+let LowerThreshold = -3.0; // Lower anomaly threshold score
+OracleEvents
+| where ActionName != ""
+| make-series count() on TimeGenerated from ago(14d) to now() step 1d by Computer, ActionName, ClientUser
+| extend (anomalies, score, baseline) = series_decompose_anomalies(count_, 1.5, -1, 'linefit', 1, 'ctukey', 0.6)
+| where anomalies[-1] == 1 or anomalies[-1] == -1
+| extend Score = score[-1]
+| where Score >= UpperThreshold or Score <= LowerThreshold
+| project Computer, ActionName, ClientUser, ExpectedCount=round(todouble(baseline[-1]),1), ActualCount=round(todouble(count_[-1]),1), AnomalyScore = round(todouble(score[-1]),1)
