@@ -43,3 +43,14 @@ processAnomalies
 | project TimeGenerated, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, RemoteIP, RemotePort, LocalIP, LocalPort,  Protocol, count_
 | order by TimeGenerated desc
 ```
+
+
+<img width="380" height="403" alt="image" src="https://github.com/user-attachments/assets/9d30ba93-41b3-47d7-924d-2d57218021a2" />
+
+<img width="373" height="395" alt="image" src="https://github.com/user-attachments/assets/43980825-8ccd-4588-952b-19bcd277b24b" />
+
+<img width="378" height="394" alt="image" src="https://github.com/user-attachments/assets/494f6461-26c5-4c16-bda2-6f7f5f47d149" />
+
+
+
+
