@@ -1,0 +1,6 @@
+TimeGenerated,NetworkMessageId,SenderFromAddress,SenderDisplayName,RecipientEmailAddress,Subject,DeliveryAction,ClientIP,MessageId,TenantId,Direction
+2025-10-15T09:00:00Z,<msg-0001@example.com>,alice.external@example.com,Alice External,bob@contoso.com,Q3 Financials - Please review (URGENT),Delivered,203.0.113.45,<msg-0001@example.com>,contoso.onmicrosoft.com,Inbound
+2025-10-15T09:10:00Z,<msg-0002@example.com>,unknown@phishingsite.info,Unknown Sender,hr@contoso.com,Employee Benefits Update - see attached,Quarantined,45.33.32.101,<msg-0003@example.com>,contoso.onmicrosoft.com,Inbound
+2025-10-15T09:15:00Z,<msg-0003@example.com>,ceo-compromised@trustedpartner.com,Trusted Partner,it-admin@contoso.com,FW: Urgent - Server reboot instructions,Delivered,198.51.100.22,<msg-0002@example.com>,contoso.onmicrosoft.com,Inbound
+2025-10-15T10:30:00Z,<msg-0004@example.com>,newsletter@news.example.com,News Letter,team.marketing@contoso.com,Weekly newsletter - October,Delivered,198.51.100.100,<msg-0004@example.com>,contoso.onmicrosoft.com,Inbound
+2025-10-15T11:20:00Z,<msg-0005@example.com>,phish@malicious.example,Phishing,security@contoso.com,Invoice Attached,Delivered,203.0.113.88,<msg-0005@example.com>,contoso.onmicrosoft.com,Inbound

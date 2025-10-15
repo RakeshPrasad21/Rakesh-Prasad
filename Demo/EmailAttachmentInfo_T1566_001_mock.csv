@@ -1,0 +1,6 @@
+TimeGenerated,NetworkMessageId,AttachmentName,AttachmentType,AttachmentHash,AttachmentSize,IsMalicious,ScanVerdict
+2025-10-15T09:00:00Z,<msg-0001@example.com>,Q3-Financials.docx,docx,FAKEHASH000000000000000000000001,256000,False,NoThreatFound
+2025-10-15T09:10:00Z,<msg-0003@example.com>,RebootSteps.pdf,pdf,FAKEHASH000000000000000000000002,120000,False,NoThreatFound
+2025-10-15T09:10:00Z,<msg-0002@example.com>,Benefits.xlsm,xlsm,FAKEHASH000000000000000000000003,512000,True,MacroBehaviorDetected
+2025-10-15T10:30:00Z,<msg-0004@example.com>,newsletter-oct.pdf,pdf,FAKEHASH000000000000000000000004,90000,False,NoThreatFound
+2025-10-15T11:20:00Z,<msg-0005@example.com>,Invoice-123.docm,docm,FAKEHASH000000000000000000000005,102400,True,MacroAndUrlEmbedded
