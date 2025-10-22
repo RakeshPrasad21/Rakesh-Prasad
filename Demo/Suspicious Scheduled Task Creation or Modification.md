@@ -53,8 +53,8 @@ To simulate this behavior safely:
 schtasks /create /tn "AtomicTest_T1053" /tr "notepad.exe" /sc once /st 00:10
 ```
 ## Mock Log
-[DeviceProcessEvent](https://github.com/RakeshPrasad21/Rakesh-Prasad/blob/main/Demo/DeviceProcessEvents_T1053_005_mock.csv)
-[SecurityEvent](https://github.com/RakeshPrasad21/Rakesh-Prasad/blob/main/Demo/ScheduledTaskEvents_T1053_005_mock.csv)
+* [DeviceProcessEvent](https://github.com/RakeshPrasad21/Rakesh-Prasad/blob/main/Demo/DeviceProcessEvents_T1053_005_mock.csv)
+* [SecurityEvent](https://github.com/RakeshPrasad21/Rakesh-Prasad/blob/main/Demo/ScheduledTaskEvents_T1053_005_mock.csv)
 
 ## References
 
