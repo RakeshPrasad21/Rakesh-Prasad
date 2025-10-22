@@ -30,6 +30,15 @@ DeviceProcessEvents
     | project TimeGenerated, Computer, Account, EventID, CommandLine
 )
 | order by Timestamp desc
+
+
+DeviceProcessEvents
+| where FileName =~ "schtasks.exe" or FileName =~ "powershell.exe" 
+	or ProcessVersionInforOriginalFileName  =~ "schtasks.exe" or ProcessVersionInforOriginalFileName =~ "powershell.exe"
+	or InitiatingProcessFileName =~ "schtasks.exe" or InitiatingProcessFileName =~ "powershell.exe" 
+| where ProcessCommandLine has_any (" /create", " /change", "New-ScheduledTask", "Register-ScheduledTask", "DownloadString", "IEX", "Invoke-Expression")
+	and ProcessCommandLine has "/s"
+	and not(ProcessCommandLine has "/s localhost")
 ```
 
 ## Possible False Positives
