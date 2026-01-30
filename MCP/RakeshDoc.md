@@ -1861,10 +1861,4 @@ SecurityEvent
 | project TimeGenerated, Computer, Account, TargetUserName, IpAddress
 ```
 
----
-
-**Document Status**: Draft  
-**Next Review Date**: February 15, 2026  
-**Approval Required**: CISO, Security Architecture Team  
-**Contact**: security-engineering@contoso.com
 
