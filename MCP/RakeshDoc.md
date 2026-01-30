@@ -54,9 +54,16 @@ This document outlines the implementation of Model Context Protocol (MCP) for SI
 
 1. **MCP Client**: AI assistant (GitHub Copilot, Claude Desktop, ChatGPT)
 2. **MCP Server**: Middleware that exposes security tools as MCP-compatible endpoints
-3. **Resources**: Data sources (logs, alerts, incidents)
-4. **Tools**: Executable functions (query KQL, create incidents, run playbooks)
-5. **Prompts**: Pre-defined templates for common security tasks
+3. **Host**: The environment where MCP server runs (local machine, container, cloud VM)
+4. **Resources**: Data sources (logs, alerts, incidents)
+5. **Tools**: Executable functions (query KQL, create incidents, run playbooks)
+6. **Prompts**: Pre-defined templates for common security tasks
+
+**Host Considerations**:
+- **Local Development**: VS Code with Python/Node.js runtime for testing and development
+- **Production**: Azure Container Instances, Azure Functions, or dedicated VM for enterprise deployment
+- **Security**: Host must have network access to Sentinel APIs and proper authentication credentials
+- **Performance**: Host resources (CPU, memory) impact query response times and concurrent request handling
 
 ### 1.3 Technical Specifications
 
@@ -84,7 +91,17 @@ This document outlines the implementation of Model Context Protocol (MCP) for SI
 ## 2. How to Use MCP
 
 ### 2.1 Basic Workflow
+The MCP workflow enables seamless interaction between users and security systems through natural language. Here's how the process works:
 
+**Step-by-Step Process**:
+
+1. **User Request**: Security analyst asks a question in natural language (e.g., "Show me critical alerts")
+2. **AI Interpretation**: AI assistant (GitHub Copilot) understands the intent and determines which MCP tool to invoke
+3. **MCP Translation**: MCP server translates the request into specific API calls or queries (e.g., KQL for Sentinel)
+4. **Data Retrieval**: MCP server executes the query against Microsoft Sentinel or other security platforms
+5. **Response Formatting**: MCP server formats the raw data into human-readable output
+6. **AI Presentation**: AI assistant presents the results to the user with context and recommendations
+   
 ```mermaid
 sequenceDiagram
     participant User
