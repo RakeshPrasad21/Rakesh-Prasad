@@ -1702,6 +1702,80 @@ graph TB
     style F fill:#FFB900,color:#000
     style G fill:#50E6FF,color:#000
 ```
+#### **Architecture Flow Explanation**
+
+**User Layer (Top)**:
+- **Security Analyst**: The human operator who interacts with the system using natural language
+- **AI Assistant**: GitHub Copilot or Claude Desktop that interprets user intent and orchestrates operations
+
+**Communication Flow**:
+1. Security analyst asks questions in plain English (e.g., "Show me critical alerts")
+2. AI Assistant understands the intent and translates to appropriate MCP operations
+
+**MCP Layer (Middle)**:
+- **MCP Client SDK**: Built into the AI assistant, handles protocol communication
+- **MCP Server**: Azure Function App that hosts the business logic and tool implementations
+- **Authentication Service**: Azure AD validates identity and issues tokens
+
+**Communication Flow**:
+3. MCP Client SDK sends JSON-RPC 2.0 requests to MCP Server
+4. MCP Server authenticates with Azure AD using OAuth 2.0
+5. MCP Server routes requests to appropriate security platforms
+
+**Security Platform Layer**:
+- **Microsoft Sentinel**: SIEM platform for security monitoring and incident management
+- **Azure Logic Apps**: SOAR platform for automated response workflows
+- **Threat Intelligence**: Microsoft Defender TI for IOC enrichment and threat context
+- **Log Analytics**: Kusto-based query engine for log analysis
+
+**Communication Flow**:
+6. MCP Server executes KQL queries against Log Analytics
+7. Retrieves and creates incidents in Sentinel
+8. Triggers automated playbooks via Logic Apps
+9. Enriches indicators with threat intelligence data
+
+**Data Layer (Bottom)**:
+- **Security Logs**: Raw telemetry from systems (Syslog, CEF, JSON formats)
+- **Alerts & Incidents**: Processed security events and investigation cases
+- **Threat Intel Feeds**: External IOC databases and reputation data
+
+**Data Storage & Retrieval**:
+10. Log Analytics Workspace stores and indexes all security data
+11. Sentinel processes logs into alerts and incidents
+12. Logic Apps can write back to systems (block IPs, disable accounts)
+
+**Color Legend**:
+- 🔵 **Blue (MCP Server)**: Core orchestration layer - central hub for all operations
+- 🟡 **Yellow (Sentinel)**: SIEM platform - primary security monitoring system
+- 🔵 **Cyan (Logic Apps)**: SOAR automation - automated response workflows
+
+#### **Key Architecture Benefits**
+
+1. **Separation of Concerns**: Each layer has distinct responsibilities
+   - User Layer: Natural language interaction
+   - MCP Layer: Protocol translation and authentication
+   - Security Platform: Data processing and action execution
+   - Data Layer: Persistent storage
+
+2. **Scalability**: 
+   - MCP Server (Azure Function) auto-scales based on demand
+   - Log Analytics handles TB/day ingestion
+   - Multiple AI clients can connect simultaneously
+
+3. **Security**:
+   - Authentication enforced at MCP Layer (Azure AD OAuth 2.0)
+   - No direct user access to backend systems
+   - All operations audited and logged
+
+4. **Flexibility**:
+   - Easy to add new AI clients (just implement MCP protocol)
+   - New tools can be added to MCP Server without changing clients
+   - Additional security platforms can be integrated
+
+5. **Resilience**:
+   - MCP Server failure doesn't impact security platforms
+   - Authentication service is separate and highly available
+   - Multiple availability zones for production deployment
 
 ---
 
