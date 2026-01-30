@@ -1325,30 +1325,30 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "User Layer - SOC Analysts"
+    subgraph users["<b>USER LAYER - SOC ANALYSTS</b>"]
         A1[Analyst Laptop<br/>GitHub Copilot<br/>MCP Config]
         A2[VS Code Remote<br/>GitHub Copilot<br/>MCP Extension]
     end
     
-    subgraph "Network Layer"
+    subgraph network["<b>NETWORK LAYER</b>"]
         VPN[Corporate VPN /<br/>ExpressRoute]
     end
     
-    subgraph "Azure POC Environment - Dev/Test Subscription"
-        subgraph "Resource Group: rg-mcp-poc"
+    subgraph azure["<b>AZURE POC ENVIRONMENT</b><br/><i>Dev/Test Subscription</i>"]
+        subgraph rg1["<b>RG: rg-mcp-poc</b>"]
             MCP[MCP Server<br/>Azure Function App<br/>• Python 3.11<br/>• Consumption Plan<br/>• Managed Identity<br/>• VNET Integrated]
             KV[Azure Key Vault<br/>kv-mcp-poc<br/>• Client Secrets<br/>• API Keys<br/>• Webhook URLs]
             AI[Application Insights<br/>ai-mcp-poc<br/>• Performance Monitor<br/>• Error Tracking<br/>• Usage Analytics]
         end
         
-        subgraph "Resource Group: rg-sentinel-poc"
+        subgraph rg2["<b>RG: rg-sentinel-poc</b>"]
             LAW[Log Analytics Workspace<br/>law-sentinel-poc<br/>• 30 days retention<br/>• 1GB daily cap<br/>• 10K sample events]
             SENT[Microsoft Sentinel<br/>• Azure AD Connector<br/>• Office 365 Connector<br/>• 5 Analytics Rules<br/>• 20 Sample Incidents]
             LA[Azure Logic Apps<br/>Playbooks<br/>• isolate-host<br/>• block-ip<br/>• enrich-alert]
         end
     end
     
-    subgraph "Data Sources - Simulated for POC"
+    subgraph data["<b>DATA SOURCES</b><br/><i>Simulated for POC</i>"]
         D1[Sample Alerts<br/>JSON Files<br/>100 alerts]
         D2[Sample Incidents<br/>20 test incidents]
         D3[Test Threat Intel<br/>IOC Feed]
