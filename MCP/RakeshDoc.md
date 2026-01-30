@@ -1801,6 +1801,173 @@ graph TB
 
 ---
 
+#### **Component Description**
+
+**Layer 1: User Interaction**
+- **Purpose**: Entry point for security analysts to interact with SIEM/SOAR systems
+- **Components**:
+  - **GitHub Copilot (VS Code)**: Primary interface for developers and DevSecOps teams
+  - **Claude Desktop**: Native MCP support for direct integration
+  - **Custom AI Applications**: Organization-specific AI tools with MCP integration
+- **Communication**: Natural language queries translated to MCP protocol
+
+**Layer 2: MCP Protocol Layer**
+- **Purpose**: Standardized communication protocol between AI clients and security tools
+- **Key Features**:
+  - **JSON-RPC 2.0**: Industry-standard remote procedure call protocol
+  - **Transport Options**: SSE (Server-Sent Events) for streaming, WebSocket for bidirectional, stdio for local
+  - **Message Types**: 
+    - `Request`: Tool invocation, resource queries
+    - `Response`: Results, errors, status
+    - `Notification`: Asynchronous alerts, progress updates
+  - **Capability Discovery**: Automatic enumeration of available tools, resources, and prompts
+- **Benefits**: Decouples AI clients from backend implementation, enables interoperability
+
+**Layer 3: MCP Server (Azure Function App)**
+- **Purpose**: Core business logic and orchestration layer
+- **Subcomponents**:
+  
+  1. **Request Handler & Router**:
+     - Parses JSON-RPC messages
+     - Routes to specialized handlers (alerts, incidents, KQL, playbooks)
+     - Parameter validation and sanitization
+     - Rate limiting enforcement
+  
+  2. **Authentication & Authorization Module**:
+     - Azure AD OAuth 2.0 token validation
+     - RBAC enforcement based on Sentinel roles:
+       - **Reader**: View alerts, incidents (read-only)
+       - **Responder**: Create/update incidents, run queries
+       - **Contributor**: Execute playbooks, modify analytics rules
+     - Comprehensive audit logging (timestamp, user, action, result)
+     - Secret management via Azure Key Vault
+  
+  3. **Business Logic Layer**:
+     - **Alert Manager**: Query, filter, and retrieve alerts
+     - **Incident Manager**: Create, update, close incidents
+     - **KQL Query Executor**: Execute validated KQL queries with timeout protection
+     - **Playbook Executor**: Trigger Logic App workflows
+     - **Threat Intel**: Enrich IOCs with reputation data
+     - **Response Formatter**: Convert raw data to human-readable format
+
+**Layer 4: Azure Security Services**
+- **Purpose**: Backend security platforms providing data and automation
+- **Services**:
+  
+  1. **Microsoft Sentinel API**:
+     - REST API for incident management (`/incidents`, `/entities`, `/relations`)
+     - Alert retrieval and entity mapping
+     - Analytics rule management
+     - Threat intelligence indicator ingestion
+  
+  2. **Log Analytics API**:
+     - KQL query execution endpoint (`/query`)
+     - Supports complex queries with joins, aggregations, time-based analysis
+     - Query optimization and caching
+     - Returns structured JSON results
+  
+  3. **Azure Logic Apps (SOAR)**:
+     - Playbook orchestration via HTTP webhooks
+     - 200+ connectors (email, Teams, ServiceNow, Jira)
+     - Automated response workflows (block IP, disable account, isolate host)
+     - Stateful execution with retry logic
+  
+  4. **Microsoft Defender Threat Intelligence**:
+     - IOC reputation scoring (0-100)
+     - OSINT data aggregation
+     - Contextual threat information
+     - Real-time threat feed updates
+
+**Layer 5: Data Storage**
+- **Purpose**: Persistent storage for security telemetry and investigation data
+- **Log Analytics Workspace (Azure Data Explorer/Kusto)**:
+  - **Data Retention**: 30-730 days configurable
+  - **Key Tables**:
+    - `SecurityAlert`: Alerts from all connected sources
+    - `SecurityIncident`: Sentinel-created incidents
+    - `SigninLogs`: Azure AD authentication events (including Copilot access)
+    - `AuditLogs`: Azure AD administrative actions
+    - `OfficeActivity`: Microsoft 365 activity (Copilot usage)
+    - `Syslog`: Linux/Unix system logs
+    - `CommonSecurityLog`: Firewall, IDS/IPS logs (CEF format)
+    - `ThreatIntelligenceIndicator`: IOC feed data
+  - **Performance**: Columnar storage, automatic indexing, sub-second query response
+  - **Scale**: Supports TB/day ingestion, PB total storage
+
+#### **Data Flow Example: Alert Query**
+
+```
+Step 1: User Request
+  User: "Show me critical alerts from the last hour"
+  → Copilot Chat parses natural language
+
+Step 2: MCP Client Translation
+  Copilot → MCP Client SDK
+  {
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "query_sentinel_alerts",
+      "arguments": {
+        "severity": "Critical",
+        "time_range": "1h",
+        "limit": 100
+      }
+    },
+    "id": 1
+  }
+
+Step 3: MCP Server Processing
+  a) Authenticate: Validate Azure AD token
+  b) Authorize: Check user has "Sentinel Reader" role
+  c) Build KQL Query:
+     SecurityAlert
+     | where Severity == "Critical"
+     | where TimeGenerated > ago(1h)
+     | project TimeGenerated, AlertName, Description, CompromisedEntity
+     | order by TimeGenerated desc
+     | take 100
+  d) Execute via Log Analytics API
+
+Step 4: Azure Sentinel Response
+  Sentinel returns:
+  - 12 critical alerts
+  - Raw JSON with columns: TimeGenerated, AlertName, Description, CompromisedEntity
+  - Query execution time: 0.87 seconds
+
+Step 5: MCP Server Formatting
+  Convert to human-readable:
+  "Found 12 critical alerts in the last hour:
+   1. Ransomware Execution Detected (SRV-FILE-01)
+   2. Lateral Movement via PsExec (DC-PROD-01)
+   ..."
+
+Step 6: Response to User
+  Copilot displays formatted results in chat
+  Total latency: ~1.2 seconds
+```
+
+#### **Scalability & Performance**
+
+**Concurrent Request Handling**:
+- MCP Server (Azure Function): Scales to 200+ instances automatically
+- Rate Limiting: 100 requests/minute per user (configurable)
+- Query Timeout: 60 seconds maximum (prevents expensive queries)
+- Connection Pooling: Reuse Azure SDK clients across requests
+
+**Caching Strategy**:
+- **Threat Intelligence**: 1-hour cache for IOC reputation lookups
+- **User Permissions**: 15-minute cache for RBAC checks
+- **Frequently Used Queries**: Optional result caching (5-minute TTL)
+
+**High Availability**:
+- Azure Function deployed across 2+ availability zones
+- Log Analytics Workspace: 99.9% SLA
+- Automatic failover for regional outages
+- Health monitoring via Azure Application Insights
+
+---
+
 ### 5.3 Security Considerations
 
 **Authentication Flow**:
