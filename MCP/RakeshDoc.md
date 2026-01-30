@@ -1323,92 +1323,131 @@ graph TB
 
 ### 6.3 POC Architecture Diagram
 
+```mermaid
+graph TB
+    subgraph "User Layer - SOC Analysts"
+        A1[Analyst Laptop<br/>GitHub Copilot<br/>MCP Config]
+        A2[VS Code Remote<br/>GitHub Copilot<br/>MCP Extension]
+    end
+    
+    subgraph "Network Layer"
+        VPN[Corporate VPN /<br/>ExpressRoute]
+    end
+    
+    subgraph "Azure POC Environment - Dev/Test Subscription"
+        subgraph "Resource Group: rg-mcp-poc"
+            MCP[MCP Server<br/>Azure Function App<br/>• Python 3.11<br/>• Consumption Plan<br/>• Managed Identity<br/>• VNET Integrated]
+            KV[Azure Key Vault<br/>kv-mcp-poc<br/>• Client Secrets<br/>• API Keys<br/>• Webhook URLs]
+            AI[Application Insights<br/>ai-mcp-poc<br/>• Performance Monitor<br/>• Error Tracking<br/>• Usage Analytics]
+        end
+        
+        subgraph "Resource Group: rg-sentinel-poc"
+            LAW[Log Analytics Workspace<br/>law-sentinel-poc<br/>• 30 days retention<br/>• 1GB daily cap<br/>• 10K sample events]
+            SENT[Microsoft Sentinel<br/>• Azure AD Connector<br/>• Office 365 Connector<br/>• 5 Analytics Rules<br/>• 20 Sample Incidents]
+            LA[Azure Logic Apps<br/>Playbooks<br/>• isolate-host<br/>• block-ip<br/>• enrich-alert]
+        end
+    end
+    
+    subgraph "Data Sources - Simulated for POC"
+        D1[Sample Alerts<br/>JSON Files<br/>100 alerts]
+        D2[Sample Incidents<br/>20 test incidents]
+        D3[Test Threat Intel<br/>IOC Feed]
+    end
+    
+    A1 -->|HTTPS| VPN
+    A2 -->|HTTPS| VPN
+    VPN -->|Secure Connection| MCP
+    MCP -->|Get Secrets| KV
+    MCP -->|Telemetry| AI
+    MCP -->|KQL Queries| LAW
+    MCP -->|Manage Incidents| SENT
+    MCP -->|Trigger Playbooks| LA
+    LAW --> SENT
+    D1 --> LAW
+    D2 --> SENT
+    D3 --> SENT
+    
+    style MCP fill:#0078D4,color:#fff
+    style SENT fill:#FFB900,color:#000
+    style LA fill:#50E6FF,color:#000
+    style KV fill:#00BCF2,color:#000
+    style LAW fill:#7FBA00,color:#000
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    POC ARCHITECTURE - MCP FOR SIEM/SOAR                     │
-└─────────────────────────────────────────────────────────────────────────────┘
 
-┌────────────────────────────────────────────────────────────────────────────┐
-│  USER LAYER (SOC Analysts)                                                 │
-│                                                                            │
-│  ┌──────────────────┐                      ┌──────────────────┐            │
-│  │  Analyst Laptop  │                      │  VS Code (Remote)│            │
-│  │  • GitHub Copilot│                      │  • GitHub Copilot│            │
-│  │  • MCP Config    │                      │  • MCP Extension │            │
-│  └────────┬─────────┘                      └────────┬─────────┘            │
-│           │                                          │                     │
-└───────────┼──────────────────────────────────────────┼─────────────────────┘
-            │                                          │
-            │          ┌───────────────────────────┐  │
-            └──────────┤  Corporate VPN / ExpressRoute├─┘
-                       └───────────┬───────────────┘
-                                   │
-┌──────────────────────────────────▼──────────────────────────────────────────┐
-│  AZURE POC ENVIRONMENT (Dev/Test Subscription)                              │
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  RESOURCE GROUP: rg-mcp-poc                                            │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
-│  │  │  MCP Server (Azure Function App)                             │      │ │
-│  │  │  • Runtime: Python 3.11                                      │      │ │
-│  │  │  • Plan: Consumption (pay-per-execution)                     │      │ │
-│  │  │  • Authentication: Managed Identity                          │      │ │
-│  │  │  • Network: Integrated with VNET                             │      │ │
-│  │  └────────────────────┬─────────────────────────────────────────┘      │ │
-│  │                       │                                                │ │
-│  │  ┌────────────────────▼─────────────────────────────────────────┐      │ │
-│  │  │  Azure Key Vault (kv-mcp-poc)                                │      │ │
-│  │  │  • Client secrets                                            │      │ │
-│  │  │  • API keys                                                  │      │ │
-│  │  │  • Playbook webhook URLs                                     │      │ │
-│  │  └──────────────────────────────────────────────────────────────┘      │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │ │
-│  │  │  Application Insights (ai-mcp-poc)                           │      │ │
-│  │  │  • Performance monitoring                                    │      │ │
-│  │  │  • Error tracking                                            │      │ │
-│  │  │  • Usage analytics                                           │      │ │
-│  │  └──────────────────────────────────────────────────────────────┘      │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                       │                                     │
-│                                       │                                     │
-│  ┌────────────────────────────────────▼──────────────────────────────────┐  │
-│  │  RESOURCE GROUP: rg-sentinel-poc                                      │  │
-│  │                                                                       │  │
-│  │  ┌──────────────────────────────────────────────────────────────┐     │  │
-│  │  │  Log Analytics Workspace (law-sentinel-poc)                  │      │ │
-│  │  │  • Retention: 30 days                                        │      │  │
-│  │  │  • Daily Cap: 1 GB (cost control)                            │      │  │
-│  │  │  • Sample Data: 10,000 security events                       │      │  │
-│  │  └──────────────────────────────────────────────────────────────┘      │  │
-│  │                                                                        │  │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │  │
-│  │  │  Microsoft Sentinel (enabled on workspace)                   │      │  │
-│  │  │  • Data Connectors: Azure AD, Office 365, Syslog            │       │  │
-│  │  │  • Analytics Rules: 5 sample detections                      │      │  │
-│  │  │  • Sample Incidents: 20 test incidents                       │      │  │
-│  │  └──────────────────────────────────────────────────────────────┘      │  │
-│  │                                                                        │  │
-│  │  ┌──────────────────────────────────────────────────────────────┐      │  │
-│  │  │  Azure Logic Apps (Playbooks)                                │      │  │
-│  │  │  • isolate-host-playbook                                     │      │  │
-│  │  │  • block-ip-playbook                                         │      │  │
-│  │  │  • enrich-alert-playbook                                     │      │  │
-│  │  └──────────────────────────────────────────────────────────────┘      │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────┘
+#### **Architecture Components Explanation**
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES (Simulated for POC)                                            │
-│                                                                              │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                  │
-│  │ Sample Alerts  │  │ Sample         │  │ Test Threat    │                  │
-│  │ (JSON files)   │  │ Incidents      │  │ Intel Feed     │                  │
-│  │ • 100 alerts   │  │ • 20 incidents │  │ • IOCs         │                  │
-│  └────────────────┘  └────────────────┘  └────────────────┘                  │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+**User Layer**:
+- **Analyst Laptop**: Primary workstation with GitHub Copilot and MCP configuration
+- **VS Code Remote**: Cloud-based development environment with MCP extension
+
+**Network Layer**:
+- **Corporate VPN / ExpressRoute**: Secure connectivity to Azure environment
+- **Encryption**: All traffic encrypted with TLS 1.2+
+
+**Azure POC Environment**:
+
+**Resource Group: rg-mcp-poc** (MCP Infrastructure)
+- **MCP Server (Azure Function App)**:
+  - Runtime: Python 3.11
+  - Plan: Consumption (pay-per-execution, cost-effective for POC)
+  - Authentication: Managed Identity (no credential management)
+  - Network: VNET integrated for secure communication
+  
+- **Azure Key Vault (kv-mcp-poc)**:
+  - Stores: Client secrets, API keys, playbook webhook URLs
+  - Access: Restricted to MCP Function App via Managed Identity
+  
+- **Application Insights (ai-mcp-poc)**:
+  - Performance monitoring and query latency tracking
+  - Error tracking and debugging
+  - Usage analytics for POC metrics
+
+**Resource Group: rg-sentinel-poc** (Security Platform)
+- **Log Analytics Workspace (law-sentinel-poc)**:
+  - Retention: 30 days (sufficient for POC)
+  - Daily Cap: 1 GB (cost control mechanism)
+  - Sample Data: 10,000 simulated security events
+  
+- **Microsoft Sentinel**:
+  - Data Connectors: Azure AD, Office 365, Syslog (for testing)
+  - Analytics Rules: 5 pre-configured detections
+  - Sample Incidents: 20 test incidents for validation
+  
+- **Azure Logic Apps (Playbooks)**:
+  - **isolate-host-playbook**: Quarantine compromised host
+  - **block-ip-playbook**: Block malicious IP at firewall
+  - **enrich-alert-playbook**: Add threat intelligence context
+
+**Data Sources** (Simulated):
+- **Sample Alerts**: 100 pre-created JSON alert files for testing
+- **Sample Incidents**: 20 realistic incident scenarios
+- **Test Threat Intel**: IOC feed with known malicious indicators
+
+#### **Data Flow**
+
+1. **User Request**: Analyst types query in Copilot Chat
+2. **MCP Translation**: Copilot translates to MCP protocol
+3. **Authentication**: MCP Server retrieves credentials from Key Vault
+4. **Query Execution**: KQL executed against Log Analytics Workspace
+5. **Data Retrieval**: Sentinel returns alerts/incidents
+6. **Playbook Trigger** (optional): Logic App initiated for automated response
+7. **Response Formatting**: MCP Server formats data for human readability
+8. **Telemetry**: Application Insights logs performance metrics
+9. **Display**: Results shown in Copilot Chat
+
+#### **POC Cost Estimate**
+
+| Component | SKU | Monthly Cost (USD) |
+|-----------|-----|-------------------|
+| Log Analytics Workspace | 1 GB/day | $2.30 |
+| Microsoft Sentinel | 1 GB/day | $3.28 |
+| Azure Function App | Consumption | $0.20 |
+| Azure Key Vault | Standard | $0.03 |
+| Application Insights | 1 GB/month | $2.30 |
+| Azure Logic Apps | 100 runs | $0.50 |
+| **Total** | | **~$8.61/month** |
+
+*Note: Actual costs may vary. Consumption plan charges only for execution time.*
 
 ---
 
