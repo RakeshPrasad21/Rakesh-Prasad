@@ -957,9 +957,6 @@ Recommendation: Investigate for data exfiltration or account compromise
 - Exclude service accounts: `| where UserPrincipalName !contains "svc-"`
 - Exclude power users: `| where UserId !in (PowerUsersList)`
 - Adjust threshold based on baseline
-```
-
----
 
 #### **Additional Custom Agent Examples**
 
@@ -1008,653 +1005,117 @@ Recommendation: Investigate for data exfiltration or account compromise
 
 ### 5.1 VS Code Implementation for Azure Sentinel
 
-#### **Step 1: Install Prerequisites**
+This section provides a simplified overview of how to implement MCP for Azure Sentinel in VS Code.
 
-**Required Extensions**:
-1. **GitHub Copilot** (ms-vscode.copilot)
-2. **Azure Account** (ms-vscode.azure-account)
-3. **Azure Resources** (ms-azuretools.vscode-azureresourcegroups)
+#### **Quick Setup Steps**
 
-**Installation Commands**:
+**1. Install Prerequisites**:
 ```bash
 # Install VS Code extensions
 code --install-extension ms-vscode.copilot
 code --install-extension ms-vscode.azure-account
-code --install-extension ms-azuretools.vscode-azureresourcegroups
 ```
 
-#### **Step 2: Create MCP Server Project**
+**2. Create Simple MCP Server**:
 
-**Project Structure**:
-```
-mcp-sentinel-server/
-├── .vscode/
-│   ├── settings.json
-│   └── launch.json
-├── src/
-│   ├── server.py
-│   ├── tools/
-│   │   ├── alerts.py
-│   │   ├── incidents.py
-│   │   └── queries.py
-│   └── config/
-│       └── azure_config.py
-├── requirements.txt
-├── .env.example
-└── README.md
-```
+**File: `server.py`**:
+```python
+from fastmcp import FastMCP
+from azure.identity import DefaultAzureCredential
+from azure.monitor.query import LogsQueryClient
+import os
 
-**Create Project**:
-```bash
-# Create project directory
-mkdir mcp-sentinel-server
-cd mcp-sentinel-server
+# Initialize
+mcp = FastMCP("Sentinel MCP")
+credential = DefaultAzureCredential()
+logs_client = LogsQueryClient(credential)
+WORKSPACE_ID = os.getenv("WORKSPACE_ID")
 
-# Create virtual environment
-python -m venv venv
-venv\Scripts\activate  # Windows
+# Define tool to query alerts
+@mcp.tool()
+async def query_alerts(severity: str = "High") -> dict:
+    """Query Sentinel alerts by severity"""
+    query = f"""
+    SecurityAlert
+    | where Severity == "{severity}"
+    | where TimeGenerated > ago(24h)
+    | take 100
+    """
+    
+    response = logs_client.query_workspace(WORKSPACE_ID, query, timespan=None)
+    alerts = [{"name": row[1], "entity": row[4]} for row in response.tables[0].rows]
+    
+    return {"count": len(alerts), "alerts": alerts}
 
-# Create requirements.txt
-cat > requirements.txt << EOF
-fastmcp==0.2.0
-azure-identity==1.15.0
-azure-monitor-query==1.3.0
-azure-mgmt-securityinsight==1.0.0
-python-dotenv==1.0.0
-EOF
-
-# Install dependencies
-pip install -r requirements.txt
+# Run server
+if __name__ == "__main__":
+    mcp.run()
 ```
 
-#### **Step 3: Configure VS Code Settings**
+**3. Configure VS Code Settings**:
 
 **File: `.vscode/settings.json`**:
 ```json
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe",
-  "python.terminal.activateEnvironment": true,
-  "python.linting.enabled": true,
-  "python.linting.pylintEnabled": true,
-  "python.formatting.provider": "black",
   "mcp.servers": {
     "sentinel": {
-      "command": "${workspaceFolder}/venv/Scripts/python.exe",
-      "args": ["-m", "src.server"],
+      "command": "python",
+      "args": ["server.py"],
       "env": {
-        "WORKSPACE_ID": "${env:WORKSPACE_ID}",
-        "TENANT_ID": "${env:TENANT_ID}",
-        "AZURE_CLIENT_ID": "${env:AZURE_CLIENT_ID}",
-        "AZURE_CLIENT_SECRET": "${env:AZURE_CLIENT_SECRET}",
-        "LOG_LEVEL": "INFO"
-      },
-      "disabled": false
-    }
-  },
-  "github.copilot.enable": {
-    "*": true,
-    "yaml": true,
-    "plaintext": true,
-    "markdown": true,
-    "python": true
-  }
-}
-```
-
-**File: `.vscode/launch.json`**:
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Run MCP Server",
-      "type": "python",
-      "request": "launch",
-      "module": "src.server",
-      "console": "integratedTerminal",
-      "envFile": "${workspaceFolder}/.env",
-      "justMyCode": false
-    },
-    {
-      "name": "Debug MCP Server",
-      "type": "python",
-      "request": "launch",
-      "module": "src.server",
-      "console": "integratedTerminal",
-      "envFile": "${workspaceFolder}/.env",
-      "justMyCode": true,
-      "logToFile": true
-    }
-  ]
-}
-```
-
-#### **Step 4: Create Environment Configuration**
-
-**File: `.env.example`**:
-```env
-# Azure Configuration
-WORKSPACE_ID=12345678-1234-1234-1234-123456789012
-TENANT_ID=87654321-4321-4321-4321-210987654321
-SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555
-RESOURCE_GROUP=rg-sentinel-prod
-
-# Authentication (use one method)
-# Method 1: Service Principal
-AZURE_CLIENT_ID=your-app-client-id
-AZURE_CLIENT_SECRET=your-app-client-secret
-
-# Method 2: Azure CLI (automatically uses cached credentials)
-# No additional config needed
-
-# Logging
-LOG_LEVEL=INFO
-```
-
-**Copy to `.env`**:
-```bash
-cp .env.example .env
-# Edit .env with your actual values
-```
-
-#### **Step 5: Implement MCP Server**
-
-**File: `src/server.py`**:
-```python
-"""
-Microsoft Sentinel MCP Server for VS Code
-Enables AI-assisted security operations via GitHub Copilot
-"""
-
-import os
-from fastmcp import FastMCP
-from azure.identity import DefaultAzureCredential, ClientSecretCredential
-from azure.monitor.query import LogsQueryClient
-from datetime import datetime
-import logging
-
-# Configure logging
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logger = logging.getLogger(__name__)
-
-# Initialize MCP server
-mcp = FastMCP("Microsoft Sentinel MCP Server", version="1.0.0")
-
-# Azure configuration
-WORKSPACE_ID = os.getenv("WORKSPACE_ID")
-TENANT_ID = os.getenv("TENANT_ID")
-CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
-CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
-
-# Initialize Azure credential
-if CLIENT_ID and CLIENT_SECRET:
-    credential = ClientSecretCredential(
-        tenant_id=TENANT_ID,
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET
-    )
-    logger.info("Using Service Principal authentication")
-else:
-    credential = DefaultAzureCredential()
-    logger.info("Using Azure CLI/Managed Identity authentication")
-
-# Initialize Azure clients
-logs_client = LogsQueryClient(credential)
-
-@mcp.tool()
-async def query_sentinel_alerts(
-    severity: str = "High",
-    time_range: str = "24h",
-    limit: int = 100
-) -> dict:
-    """
-    Query Microsoft Sentinel for security alerts.
-    
-    Args:
-        severity: Alert severity (Critical, High, Medium, Low)
-        time_range: Time range (1h, 24h, 7d, 30d)
-        limit: Maximum number of alerts to return (default: 100)
-    
-    Returns:
-        Dictionary containing alert data
-    """
-    logger.info(f"Querying alerts: severity={severity}, time_range={time_range}")
-    
-    query = f"""
-    SecurityAlert
-    | where Severity == "{severity}"
-    | where TimeGenerated > ago({time_range})
-    | project 
-        TimeGenerated,
-        AlertName,
-        AlertSeverity,
-        Description,
-        CompromisedEntity,
-        Tactics,
-        Status
-    | order by TimeGenerated desc
-    | take {limit}
-    """
-    
-    try:
-        response = logs_client.query_workspace(
-            workspace_id=WORKSPACE_ID,
-            query=query,
-            timespan=None
-        )
-        
-        alerts = []
-        for table in response.tables:
-            for row in table.rows:
-                alerts.append({
-                    "time": str(row[0]),
-                    "name": row[1],
-                    "severity": row[2],
-                    "description": row[3],
-                    "entity": row[4],
-                    "tactics": row[5],
-                    "status": row[6]
-                })
-        
-        return {
-            "success": True,
-            "count": len(alerts),
-            "alerts": alerts,
-            "summary": f"Found {len(alerts)} {severity} severity alerts"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error querying alerts: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "count": 0,
-            "alerts": []
-        }
-
-@mcp.tool()
-async def execute_kql_query(query: str, time_range: str = "24h") -> dict:
-    """
-    Execute a custom KQL query against Log Analytics workspace.
-    
-    Args:
-        query: KQL query string
-        time_range: Time context for the query
-    
-    Returns:
-        Query results as structured data
-    """
-    logger.info(f"Executing KQL query: {query[:100]}...")
-    
-    # Security validation
-    blocked_keywords = ["delete", "drop", "purge", ".create", ".alter"]
-    query_lower = query.lower()
-    
-    for keyword in blocked_keywords:
-        if keyword in query_lower:
-            return {
-                "success": False,
-                "error": f"Query contains blocked keyword: {keyword}",
-                "data": []
-            }
-    
-    try:
-        response = logs_client.query_workspace(
-            workspace_id=WORKSPACE_ID,
-            query=query,
-            timespan=None
-        )
-        
-        results = []
-        for table in response.tables:
-            columns = [col.name for col in table.columns]
-            for row in table.rows:
-                results.append(dict(zip(columns, row)))
-        
-        return {
-            "success": True,
-            "row_count": len(results),
-            "columns": columns if results else [],
-            "data": results[:1000]  # Limit to 1000 rows
-        }
-    
-    except Exception as e:
-        logger.error(f"Error executing query: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "data": []
-        }
-
-@mcp.tool()
-async def get_security_metrics() -> dict:
-    """
-    Get current security metrics and dashboard data.
-    
-    Returns:
-        Dictionary with key security metrics
-    """
-    logger.info("Retrieving security metrics")
-    
-    queries = {
-        "critical_alerts": """
-            SecurityAlert
-            | where Severity == "Critical"
-            | where TimeGenerated > ago(24h)
-            | count
-        """,
-        "high_alerts": """
-            SecurityAlert
-            | where Severity == "High"
-            | where TimeGenerated > ago(24h)
-            | count
-        """,
-        "open_incidents": """
-            SecurityIncident
-            | where Status == "New"
-            | count
-        """,
-        "failed_logins": """
-            SigninLogs
-            | where TimeGenerated > ago(24h)
-            | where ResultType != "0"
-            | count
-        """
-    }
-    
-    metrics = {}
-    
-    for metric_name, query in queries.items():
-        try:
-            response = logs_client.query_workspace(
-                workspace_id=WORKSPACE_ID,
-                query=query,
-                timespan=None
-            )
-            
-            count = response.tables[0].rows[0][0] if response.tables[0].rows else 0
-            metrics[metric_name] = count
-        
-        except Exception as e:
-            logger.error(f"Error getting {metric_name}: {str(e)}")
-            metrics[metric_name] = -1
-    
-    return {
-        "success": True,
-        "timestamp": datetime.utcnow().isoformat(),
-        "metrics": metrics
-    }
-
-@mcp.resource("sentinel://alerts/recent")
-async def get_recent_alerts() -> str:
-    """
-    Resource providing feed of recent critical and high severity alerts.
-    """
-    result = await query_sentinel_alerts(severity="High", time_range="1h", limit=10)
-    
-    if result["success"]:
-        return f"""Recent High Severity Alerts (Last Hour):
-        
-Total: {result['count']} alerts
-
-{chr(10).join([f"- {alert['name']} ({alert['entity']})" for alert in result['alerts'][:10]])}
-"""
-    else:
-        return f"Error retrieving alerts: {result.get('error', 'Unknown error')}"
-
-# Run the server
-if __name__ == "__main__":
-    logger.info("Starting Microsoft Sentinel MCP Server...")
-    logger.info(f"Workspace ID: {WORKSPACE_ID}")
-    mcp.run()
-```
-
-**File: `src/tools/alerts.py`** (Extended functionality):
-```python
-"""Alert management tools"""
-
-from azure.mgmt.securityinsight import SecurityInsights
-from azure.identity import DefaultAzureCredential
-import os
-
-credential = DefaultAzureCredential()
-subscription_id = os.getenv("SUBSCRIPTION_ID")
-resource_group = os.getenv("RESOURCE_GROUP")
-
-sentinel_client = SecurityInsights(credential, subscription_id)
-
-def create_incident(title: str, severity: str, description: str) -> dict:
-    """
-    Create a new incident in Microsoft Sentinel.
-    """
-    workspace_name = "sentinel-workspace"
-    incident_id = f"incident-{int(time.time())}"
-    
-    incident = sentinel_client.incidents.create_or_update(
-        resource_group_name=resource_group,
-        workspace_name=workspace_name,
-        incident_id=incident_id,
-        incident={
-            "properties": {
-                "title": title,
-                "severity": severity,
-                "status": "New",
-                "description": description
-            }
-        }
-    )
-    
-    return {
-        "incident_id": incident.name,
-        "title": incident.properties.title,
-        "status": incident.properties.status
-    }
-```
-
-#### **Step 6: Test in VS Code**
-
-**Using GitHub Copilot Chat**:
-
-1. Open VS Code Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
-2. Type: `GitHub Copilot: Open Chat`
-3. Enable MCP server in Copilot settings
-
-**Test Queries**:
-
-```
-# In Copilot Chat window, type:
-
-@sentinel Show me all critical alerts from the last hour
-
-@sentinel Execute KQL query: SecurityAlert | where Severity == "High" | take 10
-
-@sentinel Get current security metrics
-
-@sentinel Find failed login attempts from external IPs in the last 24 hours
-```
-
-#### **Step 7: Debug and Monitor**
-
-**View Logs in VS Code Terminal**:
-```bash
-# Run server with verbose logging
-$env:LOG_LEVEL="DEBUG"
-python -m src.server
-```
-
-**Debug Breakpoints**:
-1. Set breakpoints in `server.py`
-2. Press `F5` to start debugging
-3. Trigger queries from Copilot Chat
-4. Step through code execution
-
-**Monitor Performance**:
-```python
-# Add to server.py
-import time
-
-@mcp.tool()
-async def query_sentinel_alerts(severity: str = "High", ...):
-    start_time = time.time()
-    # ... existing code ...
-    elapsed = time.time() - start_time
-    logger.info(f"Query completed in {elapsed:.2f}s")
-```
-
-#### **Step 8: VS Code Tasks for Automation**
-
-**File: `.vscode/tasks.json`**:
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Start MCP Server",
-      "type": "shell",
-      "command": "${workspaceFolder}/venv/Scripts/python.exe",
-      "args": ["-m", "src.server"],
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      }
-    },
-    {
-      "label": "Run Tests",
-      "type": "shell",
-      "command": "${workspaceFolder}/venv/Scripts/python.exe",
-      "args": ["-m", "pytest", "tests/"],
-      "problemMatcher": [],
-      "group": "test"
-    },
-    {
-      "label": "Install Dependencies",
-      "type": "shell",
-      "command": "${workspaceFolder}/venv/Scripts/pip.exe",
-      "args": ["install", "-r", "requirements.txt"],
-      "problemMatcher": []
-    }
-  ]
-}
-```
-
-**Usage**:
-- Press `Ctrl+Shift+B` to start MCP server
-- Or: `Terminal > Run Task > Start MCP Server`
-
-#### **Step 9: GitHub Copilot Integration**
-
-**Enable MCP in Copilot Settings**:
-
-**File: `settings.json` (User or Workspace)**:
-```json
-{
-  "github.copilot.advanced": {
-    "mcp.enabled": true,
-    "mcp.servers": {
-      "sentinel": {
-        "enabled": true,
-        "autoStart": false
+        "WORKSPACE_ID": "your-workspace-id"
       }
     }
   }
 }
 ```
 
-**Keyboard Shortcuts** (`.vscode/keybindings.json`):
+**4. Use in Copilot Chat**:
+```
+@sentinel Show me critical alerts from the last 24 hours
+```
+
+#### **Example Interaction**
+
+**User Query**:
+```
+@sentinel Find failed login attempts in the last hour
+```
+
+**MCP Server Response**:
 ```json
-[
-  {
-    "key": "ctrl+shift+s",
-    "command": "github.copilot.chat.open",
-    "args": "@sentinel "
-  }
-]
+{
+  "count": 47,
+  "alerts": [
+    {"user": "admin@contoso.com", "attempts": 23},
+    {"user": "john.doe@contoso.com", "attempts": 15}
+  ]
+}
 ```
 
-#### **Step 10: Example Interactions in VS Code**
-
-**Scenario 1: Alert Investigation**
-
-**User in Copilot Chat**:
+**Copilot Display**:
 ```
-@sentinel Show me all critical alerts from the last 2 hours
-```
+Found 47 failed login attempts:
+- admin@contoso.com: 23 attempts ⚠️
+- john.doe@contoso.com: 15 attempts
 
-**Copilot Response**:
-```
-Querying Microsoft Sentinel...
-
-Found 5 critical alerts in the last 2 hours:
-
-1. Ransomware Execution Detected
-   - Entity: SRV-FILE-01.contoso.com
-   - Time: 2026-01-29 14:23:11 UTC
-   - Tactics: Execution, Impact
-
-2. Suspicious PowerShell Encoded Command
-   - Entity: DESKTOP-ABC123
-   - Time: 2026-01-29 14:45:33 UTC
-   - Tactics: Execution, Defense Evasion
-
-[... 3 more alerts ...]
-
-Would you like me to create incidents for these alerts?
+Recommendation: Investigate admin account for potential brute force attack
 ```
 
-**Scenario 2: Custom KQL Query**
+#### **Key Components**
 
-**User**:
-```
-@sentinel Find all users with more than 10 failed login attempts in the last hour
-```
+1. **MCP Server** (`server.py`): Python script with FastMCP that defines tools
+2. **Azure Authentication**: Uses `DefaultAzureCredential()` for automatic auth
+3. **KQL Queries**: Executes queries against Log Analytics Workspace
+4. **VS Code Integration**: Configured via `settings.json` to connect with Copilot
+5. **Natural Language**: Users interact via Copilot Chat using plain English
 
-**Copilot** (translates to KQL):
-```
-Executing query:
+#### **Benefits**
 
-SigninLogs
-| where TimeGenerated > ago(1h)
-| where ResultType != "0"
-| summarize FailedAttempts = count() by UserPrincipalName
-| where FailedAttempts > 10
-| order by FailedAttempts desc
-
-Results:
-╔═══════════════════════════════╦═════════════════╗
-║ UserPrincipalName             ║ Failed Attempts ║
-╠═══════════════════════════════╬═════════════════╣
-║ admin@contoso.com             ║ 47              ║
-║ john.doe@contoso.com          ║ 23              ║
-║ service@contoso.com           ║ 15              ║
-╚═══════════════════════════════╩═════════════════╝
-
-⚠️ High number of failed attempts detected for admin@contoso.com
-Recommendation: Investigate for potential brute force attack
-```
-
-**Scenario 3: Security Metrics Dashboard**
-
-**User**:
-```
-@sentinel Get current security metrics
-```
-
-**Copilot**:
-```
-Security Metrics (Last 24 Hours):
-
-🔴 Critical Alerts: 12
-🟠 High Alerts: 47
-📋 Open Incidents: 23
-🔐 Failed Logins: 1,834
-
-Last Updated: 2026-01-29 15:30:00 UTC
-```
+✅ **Simple Setup**: Minimal configuration required  
+✅ **Natural Language**: Query Sentinel using conversational requests  
+✅ **Fast Responses**: KQL queries execute in 1-2 seconds  
+✅ **Extensible**: Easy to add new tools for incidents, playbooks, etc.  
+✅ **Secure**: Uses Azure AD authentication automatically
 
 ### 5.2 Detailed Component Architecture
 
