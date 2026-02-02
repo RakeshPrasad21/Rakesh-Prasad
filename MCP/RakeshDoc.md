@@ -1457,6 +1457,30 @@ graph TB
 
 ### 6.4 POC Implementation Plan
 
+#### **Summary Table**
+
+| **Phase** | **Timeline** | **Key Tasks** | **Deliverables** | **Effort (Hours)** | **Dependencies** |
+|-----------|--------------|---------------|------------------|-------------------|------------------|
+| **Phase 1: Infrastructure Setup** | Week 1 (Day 1-5) | • Provision Azure resources (RGs, LAW, Sentinel, Function App, Key Vault)<br/>• Configure authentication (App Registration, Managed Identity)<br/>• Network configuration (VNET, Private Endpoints, NSG) | • IaC templates (Bicep/Terraform)<br/>• Network diagram<br/>• Permission matrix | 16 | Azure subscription with Contributor role |
+| **Phase 2: MCP Server Development** | Week 2-3 (Day 6-15) | • Set up dev environment<br/>• Implement MCP tools (query_alerts, get_incident, create_incident, execute_kql, run_playbook)<br/>• Implement resources<br/>• Error handling & logging<br/>• Unit & integration testing | • Functional MCP server (Python)<br/>• Unit test suite<br/>• API documentation | 40 | Phase 1 complete<br/>Python 3.11+<br/>Azure SDKs |
+| **Phase 3: AI Client Integration** | Week 3 (Day 11-13) | • Configure GitHub Copilot for MCP<br/>• Test basic queries<br/>• Configure Claude Desktop (optional)<br/>• Create sample prompts | • Client configuration files<br/>• User guide for AI assistants<br/>• Sample prompts/queries | 8 | Phase 2 complete<br/>GitHub Copilot extension<br/>VS Code |
+| **Phase 4: Use Case Testing** | Week 4 (Day 16-19) | • Execute 5 test scenarios (Alert Triage, Incident Creation, Threat Hunting, Playbook Execution, Dashboard Data)<br/>• Functional testing<br/>• Performance testing<br/>• Security testing | • Test results report<br/>• Performance metrics<br/>• Issue log | 24 | Phase 3 complete<br/>Test data loaded<br/>SOC team availability |
+| **Phase 5: Documentation & Training** | Week 4 (Day 18-20) | • Create documentation (User guide, Admin guide, Troubleshooting, API reference)<br/>• Conduct 2-hour workshop<br/>• Collect feedback | • Complete documentation set<br/>• Training presentation<br/>• Feedback report | 16 | Phase 4 in progress<br/>SOC team availability<br/>Training room/virtual setup |
+| **Total** | **4 Weeks** | **20+ Major Tasks** | **15+ Deliverables** | **104 Hours** | - |
+
+**Key Milestones**:
+- ✅ **End of Week 1**: Infrastructure provisioned and authenticated
+- ✅ **End of Week 2**: MCP server functional with core tools
+- ✅ **End of Week 3**: AI client integrated and tested
+- ✅ **End of Week 4**: POC validated, documented, and ready for go/no-go decision
+
+**Resource Requirements**:
+- **Team Size**: 2 engineers (1 backend, 1 security automation)
+- **Skills Required**: Python, Azure (Sentinel, Functions, Logic Apps), KQL, MCP protocol
+- **Environment**: Azure subscription (Dev/Test), VS Code with Copilot
+
+---
+
 #### **Phase 1: Infrastructure Setup (Week 1)**
 
 **Tasks**:
