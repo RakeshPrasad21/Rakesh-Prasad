@@ -9,11 +9,80 @@ This document outlines the implementation of Model Context Protocol (MCP) for SI
 ## 📋 Table of Contents
 
 1. [Technical Description of MCP](#1-technical-description-of-mcp)
+   - 1.1 What is Model Context Protocol (MCP)?
+   - 1.2 Core Components
+   - 1.3 Technical Specifications
+   - 1.4 MCP vs Traditional APIs
+
 2. [How to Use MCP](#2-how-to-use-mcp)
-3. [Prerequisites](#3-prerequisites-to-using-mcp)
-4. [Use Cases](#4-example-use-cases)
+   - 2.1 Basic Workflow
+   - 2.2 User Interaction Examples
+   - 2.3 Supported Commands (Natural Language)
+
+3. [Prerequisites to Using MCP](#3-prerequisites-to-using-mcp)
+   - 3.1 Technical Requirements
+   - 3.2 Access & Permissions
+   - 3.3 Network & Security
+   - 3.4 Configuration Files
+
+4. [Example Use Cases](#4-example-use-cases)
+   - 4.1 Security Operations Center (SOC) Use Cases
+   - 4.2 Compliance & Audit Use Cases
+   - 4.3 Proactive Threat Detection Use Cases
+   - 4.4 Custom MCP Integration Use Case
+   - 4.5 Custom Agents Configuration for Azure Sentinel
+
 5. [How It Works (Architecture)](#5-how-it-works-architecture)
-6. [POC](#6-proposal-for-poc)
+   - 5.1 VS Code Implementation for Azure Sentinel
+   - 5.2 Detailed Component Architecture
+   - 5.3 Security Considerations
+
+6. [Proposal for POC](#6-proposal-for-poc)
+   - 6.1 POC Objectives
+   - 6.2 POC Scope
+   - 6.3 POC Architecture Diagram
+   - 6.4 POC Implementation Plan
+   - 6.5 POC Timeline
+   - 6.6 POC Cost Estimate
+   - 6.7 POC Success Metrics
+   - 6.8 POC Risks & Mitigations
+
+7. [ROI Analysis](#7-roi-analysis)
+   - 7.1 Executive Summary
+   - 7.2 Cost Analysis
+   - 7.3 Benefit Analysis
+   - 7.4 ROI Calculation
+   - 7.5 Break-Even Analysis
+   - 7.6 Cost-Benefit Comparison
+   - 7.7 Risk-Adjusted ROI
+   - 7.8 Intangible Benefits
+   - 7.9 ROI by Stakeholder
+   - 7.10 Recommendation
+
+8. [Risk, Gaps and Mitigation](#8-risk-gaps-and-mitigation)
+   - 8.1 Technical Risks
+   - 8.2 Operational Risks
+   - 8.3 Security Risks
+   - 8.4 Compliance & Governance Risks
+   - 8.5 Business Continuity Risks
+   - 8.6 Identified Gaps & Remediation Plan
+   - 8.7 Risk Mitigation Timeline
+   - 8.8 Risk Acceptance Statement
+
+9. [Conclusion & Recommendations](#9-conclusion--recommendations)
+   - 9.1 Executive Summary
+   - 9.2 Recommendation: PROCEED with Phased Implementation
+   - 9.3 Strategic Rationale
+   - 9.4 Critical Success Factors
+   - 9.5 Decision Framework
+   - 9.6 Alternative Approaches Considered
+   - 9.7 Next Steps & Action Items
+   - 9.8 Final Recommendation
+
+10. [References](#-references)
+    - Appendix A: Sample MCP Configuration
+    - Appendix B: Sample Natural Language Queries
+    - Appendix C: KQL Query Examples
 
 ---
 
