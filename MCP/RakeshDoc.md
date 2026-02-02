@@ -1292,21 +1292,36 @@ graph TB
 
 ## 6. Proposal for POC
 
-### 6.1 POC Objectives
+#### **Main Objective**
+
+The primary objective of this Proof of Concept (POC) is to **validate the feasibility and value of enabling Security Operations Center (SOC) analysts to interact with Microsoft Sentinel using natural language through AI assistants powered by Model Context Protocol (MCP)**, instead of traditional manual portal navigation and KQL query writing.
+
+**In Simple Terms**: We want to prove that SOC analysts can ask questions like *"Show me critical alerts from the last hour"* in plain English to GitHub Copilot/Claude, and get accurate results from Sentinel automatically - making their jobs faster, easier, and more efficient.
+
+**What Success Looks Like**: 
+- Analysts spend 50% less time on repetitive security tasks
+- Natural language queries work correctly 90%+ of the time
+- Zero security compromises from the MCP integration
+- SOC team wants to continue using MCP after the POC
+
+---
+
+#### **Detailed Goals & Success Criteria**
 
 **Primary Goals**:
-1. Demonstrate AI-assisted security operations using MCP
-2. Validate technical feasibility and integration complexity
-3. Measure efficiency gains vs. traditional manual processes
-4. Identify limitations and improvement opportunities
+1. **Demonstrate AI-Assisted Security Operations**: Show that SOC analysts can perform their daily tasks (alert triage, incident creation, threat hunting, playbook execution) using natural language commands instead of manual portal clicks and KQL queries
+2. **Validate Technical Feasibility**: Confirm that MCP integration with Azure Sentinel is stable, secure, and performs well under realistic SOC workload conditions
+3. **Measure Efficiency Gains**: Quantify time savings vs. traditional manual processes for common SOC activities (alert review, incident management, threat hunting)
+4. **Identify Limitations**: Document any technical constraints, edge cases, or areas where MCP doesn't work as expected to inform production planning
 
 **Success Criteria**:
-- [ ] Successfully query Sentinel alerts via natural language (90% accuracy)
-- [ ] Create and manage incidents through AI assistant
-- [ ] Execute at least 3 threat hunting scenarios with MCP
-- [ ] Automate 1 SOAR playbook execution via MCP
-- [ ] Achieve 50%+ time reduction in common SOC tasks
-- [ ] Zero security incidents related to MCP implementation
+- [ ] **Accuracy**: Successfully query Sentinel alerts via natural language with 90%+ accuracy
+- [ ] **Incident Management**: Create and manage incidents through AI assistant without errors
+- [ ] **Threat Hunting**: Execute at least 3 complex threat hunting scenarios with correct KQL translation
+- [ ] **Automation**: Automate 1 SOAR playbook execution via MCP (e.g., isolate host, block IP)
+- [ ] **Efficiency**: Achieve 50%+ time reduction in common SOC tasks compared to manual approach
+- [ ] **Security**: Zero security incidents or data breaches related to MCP implementation
+- [ ] **User Adoption**: 80%+ of SOC analysts want to continue using MCP after POC period
 
 ### 6.2 POC Scope
 
