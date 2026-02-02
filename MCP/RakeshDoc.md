@@ -1002,6 +1002,7 @@ Recommendation: Investigate for data exfiltration or account compromise
 ---
 
 ## 5. How It Works (Architecture)
+This section provides a comprehensive view of the MCP architecture for SIEM and SOAR integration. Understanding the architecture is crucial for successful implementation and troubleshooting. We'll explore three key aspects: first, a practical VS Code implementation guide that shows how to quickly set up and use MCP with Azure Sentinel; second, a detailed component architecture that explains how different layers (User, MCP, Security Platform, and Data) interact to enable AI-powered security operations; and third, security considerations that ensure your implementation follows best practices for authentication, authorization, and audit logging. Whether you're a developer building the integration or a security architect evaluating the solution, this section will give you the technical depth needed to understand how natural language queries are translated into secure API calls, how data flows through the system, and how to scale the solution for enterprise use.
 
 ### 5.1 VS Code Implementation for Azure Sentinel
 
@@ -1118,6 +1119,9 @@ Recommendation: Investigate admin account for potential brute force attack
 ✅ **Secure**: Uses Azure AD authentication automatically
 
 ### 5.2 Detailed Component Architecture
+
+#### **High-Level Architecture Diagram**
+The following diagram illustrates the end-to-end architecture of the MCP-based SIEM/SOAR integration, showing how different layers interact to enable AI-powered security operations.
 
 ```mermaid
 graph TB
