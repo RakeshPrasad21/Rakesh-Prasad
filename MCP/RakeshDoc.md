@@ -127,6 +127,184 @@ This document outlines the implementation of Model Context Protocol (MCP) for SI
 4. **Resources**: Data sources (logs, alerts, incidents)
 5. **Tools**: Executable functions (query KQL, create incidents, run playbooks)
 6. **Prompts**: Pre-defined templates for common security tasks
+---
+
+
+#### **🔍 Understanding MCP Servers, Hosts, and Tools (Workflows)**
+
+**IMPORTANT CLARIFICATION**: This section addresses common confusion about how MCP servers expose multiple tools/workflows.
+
+##### **What is a "Host"?**
+- A **host** is the physical or virtual machine where an MCP server process runs
+- Examples: Your laptop, a Docker container, an Azure VM, a cloud function
+- One host can run **multiple MCP server processes** simultaneously
+- Each MCP server is a separate program/process with its own configuration
+
+##### **What is an "MCP Server"?**
+- An **MCP server** is a running program that implements the Model Context Protocol
+- It exposes **multiple capabilities** (tools, resources, prompts) to AI clients
+- Each server specializes in one domain (e.g., "Sentinel Server", "Defender Server", "Threat Intel Server")
+- Multiple servers can coexist on the same host
+
+##### **How Are Tools/Workflows Exposed?**
+
+```mermaid
+graph TB
+    subgraph HOST["🖥️ HOST MACHINE (Your Computer/Server)"]
+        subgraph SERVER1["MCP Server #1: Azure Sentinel"]
+            T1[Tool: list_alerts]
+            T2[Tool: get_incident]
+            T3[Tool: run_kql_query]
+            T4[Tool: create_incident]
+            T5[Tool: close_incident]
+            P1[Prompt: threat_hunting_template]
+            P2[Prompt: incident_summary_template]
+        end
+        
+        subgraph SERVER2["MCP Server #2: Microsoft Defender"]
+            T6[Tool: list_threats]
+            T7[Tool: isolate_device]
+            T8[Tool: scan_device]
+            T9[Tool: quarantine_file]
+        end
+        
+        subgraph SERVER3["MCP Server #3: Threat Intelligence"]
+            T10[Tool: lookup_ip]
+            T11[Tool: lookup_domain]
+            T12[Tool: get_threat_report]
+        end
+    end
+    
+    CLIENT[👤 AI Client<br/>GitHub Copilot]
+    
+    CLIENT -.->|Connects to| SERVER1
+    CLIENT -.->|Connects to| SERVER2
+    CLIENT -.->|Connects to| SERVER3
+    
+    style HOST fill:#E8F4F8,stroke:#0078D4,color:#000
+    style SERVER1 fill:#25D366,stroke:#128C7E,color:#fff
+    style SERVER2 fill:#FFA500,stroke:#CC8400,color:#fff
+    style SERVER3 fill:#8B5CF6,stroke:#6D28D9,color:#fff
+    style CLIENT fill:#0084FF,stroke:#0066CC,color:#fff
+```
+
+##### **How Does the User Choose Which Tool/Workflow to Execute?**
+
+**Answer**: The user doesn't explicitly choose - the **AI decides automatically** based on context!
+
+**The Selection Process**:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AI as AI Assistant
+    participant Discovery as MCP Discovery
+    participant Server1 as Sentinel Server
+    participant Server2 as Defender Server
+    
+    Note over AI,Discovery: STARTUP: AI discovers all available tools
+    AI->>Server1: What tools do you provide?
+    Server1-->>AI: I provide: list_alerts, get_incident, run_kql_query, etc.
+    AI->>Server2: What tools do you provide?
+    Server2-->>AI: I provide: isolate_device, scan_device, etc.
+    
+    Note over User,Server2: USER INTERACTION
+    User->>AI: "Show me critical alerts from Sentinel"
+    
+    AI->>AI: Analyze intent:<br/>- Keywords: "critical alerts", "Sentinel"<br/>- Best match: Sentinel Server → list_alerts tool
+    
+    AI->>Server1: Call list_alerts(severity="Critical")
+    Server1-->>AI: [Alert data]
+    AI-->>User: "Here are 15 critical alerts..."
+    
+    User->>AI: "Isolate the infected device"
+    
+    AI->>AI: Analyze intent:<br/>- Keywords: "isolate", "device"<br/>- Best match: Defender Server → isolate_device tool
+    
+    AI->>Server2: Call isolate_device(hostname="SRV-001")
+    Server2-->>AI: Success: Device isolated
+    AI-->>User: "Device SRV-001 has been isolated"
+```
+
+##### **Example Configuration: Multiple Servers on One Host**
+
+**VS Code Settings (settings.json)**:
+```json
+{
+  "mcp.servers": {
+    "azure-sentinel": {
+      "command": "python",
+      "args": ["-m", "mcp_sentinel_server"],
+      "env": {
+        "AZURE_TENANT_ID": "xxx",
+        "WORKSPACE_ID": "yyy"
+      }
+    },
+    "microsoft-defender": {
+      "command": "python",
+      "args": ["-m", "mcp_defender_server"],
+      "env": {
+        "DEFENDER_API_KEY": "zzz"
+      }
+    },
+    "threat-intel": {
+      "command": "node",
+      "args": ["./threat-intel-server.js"],
+      "env": {
+        "VIRUSTOTAL_API_KEY": "aaa"
+      }
+    }
+  }
+}
+```
+
+**How It Works**:
+1. **Startup**: When VS Code (or Claude Desktop) starts, it launches all 3 MCP servers
+2. **Discovery**: Each server advertises its available tools/resources/prompts
+3. **AI Registration**: The AI assistant registers all available capabilities
+4. **User Query**: User asks a natural language question
+5. **Intent Matching**: AI analyzes the query and determines which tool(s) to use
+6. **Execution**: AI calls the appropriate tool on the appropriate server
+7. **Response**: Results are returned and formatted for the user
+
+##### **Real-World Example: Multi-Tool Workflow**
+
+**User Request**: *"Check if IP 203.0.113.45 is malicious, and if so, block it in Sentinel"*
+
+**Behind the Scenes**:
+```
+Step 1: AI analyzes intent
+  ├─ Task 1: "Check IP reputation" → Threat Intel Server
+  └─ Task 2: "Block IP in Sentinel" → Sentinel Server
+
+Step 2: AI calls threat-intel server
+  └─ Tool: lookup_ip(ip="203.0.113.45")
+  └─ Result: Malicious (Botnet C2 server)
+
+Step 3: AI calls sentinel server
+  └─ Tool: block_ip_address(ip="203.0.113.45", reason="Botnet C2")
+  └─ Result: IP blocked successfully
+
+Step 4: AI presents unified response to user
+  └─ "The IP 203.0.113.45 is confirmed malicious (Botnet C2 server) 
+      and has been blocked in Azure Sentinel."
+```
+
+##### **Key Takeaways**:
+
+✅ **One Host = Multiple MCP Servers**: Your computer can run many servers simultaneously
+
+✅ **One Server = Multiple Tools**: Each server exposes many tools/workflows (5-50+ typically)
+
+✅ **Automatic Selection**: The AI chooses which tool to use based on your natural language query
+
+✅ **No Manual Selection**: Users don't pick tools - they just describe what they want in natural language
+
+✅ **Contextual Chaining**: AI can chain multiple tools across multiple servers to complete complex tasks
+
+✅ **Discovery Protocol**: Servers advertise their capabilities automatically - no manual registration needed
+
+---
 
 **Host Considerations**:
 - **Local Development**: VS Code with Python/Node.js runtime for testing and development
