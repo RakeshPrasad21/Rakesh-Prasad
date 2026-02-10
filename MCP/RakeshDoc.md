@@ -924,9 +924,416 @@ Risk Assessment for SRV-DB-PROD-01:
 
 ---
 
-### 4.5 Custom Agents Configuration for Azure Sentinel
+### 4.5 Microsoft Security Exposure Management (MSEM) Integration
 
-#### **Use Case 7: Create Custom Agent for Azure Sentinel Operations**
+#### **Use Case 7: Attack Surface Discovery and Exposure Prioritization**
+
+**Scenario**: Security team needs to identify and prioritize critical security exposures across the entire organization's attack surface, including cloud resources, on-premises systems, and external-facing assets.
+
+**Challenge**: Traditional security tools provide fragmented views of security posture. Security teams struggle to:
+- Identify all critical exposures across multi-cloud and hybrid environments
+- Prioritize remediation based on actual risk and business impact
+- Track exposure reduction initiatives and measure progress
+- Connect security findings to attack paths and blast radius
+
+**MCP-Enabled Solution**: Use MCP to query Microsoft Security Exposure Management (MSEM) for unified exposure insights and automated remediation workflows.
+
+---
+
+#### **Implementation: MSEM MCP Server**
+
+**Step 1: Configure MSEM MCP Server**
+
+**File: `msem_mcp_server.py`**:
+```python
+from fastmcp import FastMCP
+from azure.identity import DefaultAzureCredential
+import requests
+import os
+
+mcp = FastMCP("MSEM MCP Server")
+credential = DefaultAzureCredential()
+
+MSEM_API_BASE = "https://api.securitycenter.microsoft.com/api/exposure"
+
+@mcp.tool()
+async def get_critical_exposures(severity: str = "Critical", limit: int = 10) -> dict:
+    """Get critical security exposures from MSEM"""
+    token = credential.get_token("https://api.securitycenter.microsoft.com/.default")
+    
+    headers = {"Authorization": f"Bearer {token.token}"}
+    response = requests.get(
+        f"{MSEM_API_BASE}/exposures",
+        headers=headers,
+        params={"severity": severity, "top": limit}
+    )
+    
+    exposures = response.json()
+    return {
+        "count": len(exposures["value"]),
+        "exposures": exposures["value"],
+        "summary": f"Found {len(exposures['value'])} {severity} exposures"
+    }
+
+@mcp.tool()
+async def get_attack_paths(asset_id: str) -> dict:
+    """Analyze attack paths for a specific asset"""
+    token = credential.get_token("https://api.securitycenter.microsoft.com/.default")
+    
+    headers = {"Authorization": f"Bearer {token.token}"}
+    response = requests.get(
+        f"{MSEM_API_BASE}/attack-paths/{asset_id}",
+        headers=headers
+    )
+    
+    paths = response.json()
+    return {
+        "asset_id": asset_id,
+        "critical_paths": paths["criticalCount"],
+        "high_paths": paths["highCount"],
+        "paths": paths["value"]
+    }
+
+@mcp.tool()
+async def get_exposure_score() -> dict:
+    """Get organization's overall exposure score"""
+    token = credential.get_token("https://api.securitycenter.microsoft.com/.default")
+    
+    headers = {"Authorization": f"Bearer {token.token}"}
+    response = requests.get(
+        f"{MSEM_API_BASE}/score",
+        headers=headers
+    )
+    
+    score_data = response.json()
+    return {
+        "current_score": score_data["currentScore"],
+        "max_score": score_data["maxScore"],
+        "percentage": (score_data["currentScore"] / score_data["maxScore"]) * 100,
+        "trend": score_data["trend"],
+        "critical_exposures": score_data["criticalExposures"]
+    }
+
+@mcp.resource()
+async def exposure_metrics():
+    """Get real-time exposure metrics"""
+    return {
+        "uri": "msem://metrics",
+        "name": "Exposure Metrics Dashboard",
+        "description": "Real-time security exposure KPIs"
+    }
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+**Step 2: Add to VS Code Settings**
+
+```json
+{
+  "mcp.servers": {
+    "msem": {
+      "command": "python",
+      "args": ["-m", "msem_mcp_server"],
+      "env": {
+        "AZURE_TENANT_ID": "${env:AZURE_TENANT_ID}",
+        "AZURE_CLIENT_ID": "${env:AZURE_CLIENT_ID}"
+      }
+    }
+  }
+}
+```
+
+---
+
+#### **Example Interactions**
+
+**Interaction 1: Daily Exposure Assessment**
+
+**Analyst**: *"Show me our current security exposure score and top critical exposures"*
+
+**AI Response via MCP**:
+```
+🔍 MICROSOFT SECURITY EXPOSURE MANAGEMENT - DAILY ASSESSMENT
+
+Overall Exposure Score: 68/100 ⚠️
+Trend: ↓ Improving (-5 points this week)
+
+📊 Score Breakdown:
+- Attack Surface: 72/100 (Fair)
+- Critical Assets: 58/100 (Needs Attention)
+- Vulnerability Exposure: 65/100 (Fair)
+- Configuration Issues: 75/100 (Good)
+
+🚨 TOP 5 CRITICAL EXPOSURES:
+
+1. CRITICAL - Unpatched Domain Controller Exposed to Internet
+   • Asset: DC-PROD-01.contoso.com
+   • Risk Score: 95/100
+   • Attack Paths: 12 critical paths detected
+   • Impact: Entire AD forest compromise
+   • Recommendation: IMMEDIATE - Remove public exposure, apply patches
+
+2. CRITICAL - Azure Storage Account with Public Access
+   • Asset: stproddata001 (contains PII/financial data)
+   • Risk Score: 92/100
+   • Data Classification: Highly Confidential
+   • Attack Paths: Direct data exfiltration
+   • Recommendation: Disable public access, enable Private Endpoints
+
+3. CRITICAL - Unmanaged Shadow IT API Endpoint
+   • Asset: api.legacy-app.contoso.com
+   • Risk Score: 88/100
+   • Issues: No authentication, outdated TLS, vulnerable to injection
+   • Discovery: Found via MSEM attack surface scan
+   • Recommendation: Shut down or onboard to security monitoring
+
+4. HIGH - Over-Privileged Service Principal
+   • Asset: sp-automation-prod
+   • Risk Score: 85/100
+   • Permissions: Contributor on 47 subscriptions
+   • Last Used: 180 days ago (stale)
+   • Recommendation: Revoke unused permissions, apply least privilege
+
+5. HIGH - Internet-Facing RDP on Critical Server
+   • Asset: SRV-DB-PROD-02
+   • Risk Score: 82/100
+   • Attack Attempts: 1,247 failed logins in last 24h
+   • Recommendation: Disable RDP, use Azure Bastion
+
+💡 Quick Actions Available:
+A) Create high-priority remediation incidents for all 5 exposures
+B) Generate executive risk report
+C) Show attack path analysis for DC-PROD-01
+D) Initiate automated remediation for public storage account
+```
+
+---
+
+**Interaction 2: Attack Path Analysis**
+
+**Analyst**: *"Analyze attack paths for DC-PROD-01 and show me the blast radius"*
+
+**AI Response**:
+```
+🎯 ATTACK PATH ANALYSIS - DC-PROD-01.contoso.com
+
+Asset Type: Windows Server 2019 (Domain Controller)
+Exposure Level: CRITICAL
+Business Impact: CATASTROPHIC (Score: 10/10)
+
+📍 DISCOVERED ATTACK PATHS: 12 Critical
+
+Path 1: Internet → Domain Controller Compromise → Full AD Takeover
+├─ Step 1: Attacker discovers public RDP port (3389)
+├─ Step 2: Credential stuffing attack (1,200+ attempts detected)
+├─ Step 3: Successful login via weak service account
+├─ Step 4: Privilege escalation via unpatched CVE-2023-12345
+├─ Step 5: DCSync attack - dump all AD credentials
+└─ Impact: Complete Active Directory compromise
+
+Path 2: Internet → Lateral Movement → Data Exfiltration
+├─ Step 1: Initial access via exposed DC
+├─ Step 2: Lateral movement to file servers (12 servers in scope)
+├─ Step 3: Access to Azure AD Connect sync credentials
+├─ Step 4: Compromise cloud tenant via on-prem pivot
+└─ Impact: Hybrid environment takeover
+
+Path 3: Internet → Ransomware Deployment
+├─ Step 1: Access via RDP
+├─ Step 2: Deploy ransomware across domain (GPO abuse)
+├─ Step 3: Encrypt 450+ domain-joined systems
+└─ Impact: Business shutdown, $2.5M+ estimated loss
+
+🔥 BLAST RADIUS ANALYSIS:
+
+Direct Impact:
+- 1 Domain Controller
+- 450 domain-joined workstations
+- 85 servers
+- 2,300 user accounts
+- Azure AD tenant (via AD Connect)
+
+Data at Risk:
+- 15 TB of file shares
+- SQL databases (12 instances)
+- SharePoint sites (250+ sites)
+- M365 data (email, OneDrive, Teams)
+
+Business Impact:
+- Complete business shutdown
+- Estimated downtime: 2-4 weeks
+- Financial loss: $2.5M - $5M
+- Regulatory fines: Potential GDPR/HIPAA violations
+- Reputational damage: Severe
+
+🛡️ RECOMMENDED REMEDIATION (Priority Order):
+
+IMMEDIATE (Next 2 hours):
+1. ✓ Block public RDP access at firewall (Azure NSG)
+2. ✓ Force password reset for service accounts
+3. ✓ Enable MFA on all admin accounts
+4. ✓ Deploy emergency EDR agents to DC
+
+SHORT-TERM (Next 48 hours):
+5. Apply Windows patches (including CVE-2023-12345)
+6. Implement Azure Bastion for admin access
+7. Enable Azure AD Conditional Access
+8. Deploy Just-in-Time (JIT) VM access
+
+LONG-TERM (Next 30 days):
+9. Redesign DC architecture (remove internet exposure)
+10. Implement Privileged Access Workstations (PAWs)
+11. Enable Azure AD PIM for privileged roles
+12. Regular penetration testing
+
+⚡ AUTOMATED ACTIONS AVAILABLE:
+A) Execute emergency playbook (block RDP + reset passwords)
+B) Create P1 incident and assign to Windows Admin team
+C) Generate executive briefing for CISO
+D) Schedule architecture review meeting
+```
+
+---
+
+**Interaction 3: Exposure Initiative Tracking**
+
+**Analyst**: *"Show me progress on our 'Reduce Internet Exposure' initiative"*
+
+**AI Response**:
+```
+📈 INITIATIVE PROGRESS REPORT: REDUCE INTERNET EXPOSURE
+
+Initiative ID: INIT-2026-Q1-001
+Owner: Cloud Security Team
+Target Date: March 31, 2026
+Status: ON TRACK ✓
+
+🎯 OBJECTIVES & PROGRESS:
+
+1. Remove Public RDP Exposure
+   - Target: 100% of servers
+   - Progress: 67/85 servers completed (79%)
+   - Remaining: 18 servers
+   - Blocker: 3 legacy apps require architecture redesign
+   - ETA: March 15, 2026
+
+2. Eliminate Public Storage Accounts
+   - Target: 25 storage accounts
+   - Progress: 21/25 completed (84%)
+   - Remaining: 4 accounts (contain legacy APIs)
+   - Blocker: App team coordination
+   - ETA: March 20, 2026
+
+3. Implement Private Endpoints
+   - Target: All PaaS services
+   - Progress: 45/60 services (75%)
+   - Remaining: 15 services
+   - Status: ON TRACK
+   - ETA: March 28, 2026
+
+4. Deploy Azure Bastion
+   - Target: All hub VNETs
+   - Progress: 2/3 hubs completed (67%)
+   - Remaining: 1 hub (prod-east-us)
+   - Status: Delayed (budget approval pending)
+   - ETA: April 10, 2026 ⚠️
+
+📊 IMPACT METRICS:
+
+Before Initiative (Jan 1):
+- Public-facing assets: 127
+- Attack surface score: 45/100
+- Critical exposures: 23
+- Failed external attacks: 1,200/day
+
+Current (Feb 10):
+- Public-facing assets: 38 ↓ 70% reduction
+- Attack surface score: 72/100 ↑ 27 point improvement
+- Critical exposures: 8 ↓ 65% reduction
+- Failed external attacks: 320/day ↓ 73% reduction
+
+💰 COST AVOIDANCE:
+- Reduced attack surface = $1.2M annual risk reduction
+- Prevented incidents: 3 (based on threat intel)
+- Compliance improvement: 15% closer to ISO 27001 target
+
+⚠️ RISKS & BLOCKERS:
+
+1. Budget approval for Azure Bastion (prod-east-us)
+   - Impact: HIGH
+   - Mitigation: Escalate to CFO, use emergency budget
+   - Action: @finance-team
+
+2. Legacy app dependencies (3 apps require public RDP)
+   - Impact: MEDIUM
+   - Mitigation: Architecture redesign, use App Gateway
+   - Action: @app-team
+
+3. Resource constraints (only 2 engineers available)
+   - Impact: LOW
+   - Mitigation: Extend timeline or add contractors
+   - Action: @hr-team
+
+🎯 NEXT MILESTONES:
+
+- Feb 15: Complete remaining storage account migrations
+- Feb 28: Finalize RDP elimination (except 3 legacy apps)
+- Mar 15: Deploy prod-east-us Azure Bastion
+- Mar 31: Initiative completion & review
+
+Would you like me to:
+A) Send progress report to leadership
+B) Create follow-up tasks for blockers
+C) Generate detailed timeline for remaining work
+D) Schedule initiative review meeting
+```
+
+---
+
+#### **Benefits of MSEM Integration with MCP**
+
+✅ **Unified Visibility**: Single interface to query entire attack surface across hybrid/multi-cloud  
+✅ **AI-Driven Prioritization**: Natural language queries to find highest-risk exposures  
+✅ **Attack Path Intelligence**: Visualize blast radius and potential compromise scenarios  
+✅ **Automated Remediation**: Chain MSEM insights with SOAR playbooks for rapid response  
+✅ **Initiative Tracking**: Monitor security improvement programs with real-time metrics  
+✅ **Executive Reporting**: Generate business-focused risk reports in seconds  
+✅ **Proactive Security**: Discover shadow IT and unknown exposures before attackers do  
+
+---
+
+#### **Integration with Other Security Tools**
+
+**MSEM + Sentinel**: Correlate exposures with active threats
+```
+User: "Check if any of our critical exposures have active alerts in Sentinel"
+
+AI: Cross-references MSEM critical assets with Sentinel security alerts
+Result: "3 critical exposures have active security incidents - escalating..."
+```
+
+**MSEM + Defender**: Prioritize vulnerability patching based on exposure
+```
+User: "Show me unpatched vulnerabilities on internet-facing assets"
+
+AI: Queries MSEM for public assets, then checks Defender Vulnerability Management
+Result: "12 critical CVEs on 8 public-facing servers - creating remediation tasks..."
+```
+
+**MSEM + Azure Policy**: Enforce exposure reduction policies
+```
+User: "Block deployment of new public-facing resources"
+
+AI: Creates Azure Policy based on MSEM exposure insights
+Result: "Policy deployed - all new storage accounts must use private endpoints"
+```
+
+---
+
+### 4.6 Custom Agents Configuration for Azure Sentinel
+
+#### **Use Case 8: Create Custom Agent for Azure Sentinel Operations**
 
 **Note**: Custom Agents (`.agent.md` files) are a VS Code feature, separate from MCP. They define specialized AI agent behaviors and instructions.
 
