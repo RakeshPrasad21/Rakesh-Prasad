@@ -289,6 +289,38 @@ Step 4: AI presents unified response to user
   └─ "The IP 203.0.113.45 is confirmed malicious (Botnet C2 server) 
       and has been blocked in Azure Sentinel."
 ```
+##### **How Are Tools/Workflows Exposed?**
+
+**Simple Architecture: AI Client → Host → Multiple Servers → Tools**
+
+```mermaid
+graph LR
+    User[👤 Analyst] --> AI[🤖 AI Client<br/>VSCode,MSCopilot,GithubCopilot ]
+    
+    AI -->|Discovery| Host[🖥️ Host Machine]
+    
+    Host --> S1[📦 MCP Server 1<br/>Azure Sentinel]
+    Host --> S2[📦 MCP Server 2<br/>Defender]
+    Host --> S3[📦 MCP Server 3<br/>Threat Intel]
+    
+    S1 --> T1[🔧 Tools:<br/>list_alerts<br/>get_incident]
+    S1 --> R1[📂 Resource:<br/>workspace_config]
+    S1 --> P1[📝 Prompt:<br/>threat_hunt]
+
+    S2 --> T2[🔧 Tools:<br/>isolate_device<br/>scan_device]
+    S2 --> R2[📂 Resource:<br/>device_inventory]
+    
+    S3 --> T3[🔧 Tools:<br/>lookup_ip<br/>check_hash]
+    S3 --> R3[📂 Resource:<br/>ioc_database]
+    
+    style User fill:#FFB900,stroke:#333,stroke-width:2px
+    style AI fill:#0078D4,stroke:#333,stroke-width:2px,color:#fff
+    style Host fill:#FFF4CE,stroke:#333,stroke-width:2px
+    style S1 fill:#D4F4DD,stroke:#333,stroke-width:2px
+    style S2 fill:#FFE5CC,stroke:#333,stroke-width:2px
+    style S3 fill:#E5D5FF,stroke:#333,stroke-width:2px
+```
+
 
 ##### **Key Takeaways**:
 
