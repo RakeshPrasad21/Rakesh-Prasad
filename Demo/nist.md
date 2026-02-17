@@ -42,7 +42,6 @@ NIST SP 800-53 provides a catalog of **security and privacy controls** for feder
 **NIST SP 800-53 sets the foundation for**:
 - Federal Information Security Modernization Act (FISMA)
 - FedRAMP (Federal Risk and Authorization Management Program)
-- NIST Cybersecurity Framework (CSF)
 - Azure Security Benchmark
 - Department of Defense (DoD) security requirements
 
@@ -74,7 +73,7 @@ NIST SP 800-53 provides a catalog of **security and privacy controls** for feder
 | **FedRAMP Authorization** | Cloud service providers must demonstrate NIST SP 800-53 compliance for FedRAMP authorization | Required for selling to federal agencies ($50B+ market) |
 | **DoD Requirements** | Department of Defense requires NIST SP 800-53 alignment (DoD Cloud Computing SRG) | Required for defense contracts |
 | **State & Local Government** | Many state/local governments reference NIST SP 800-53 for cybersecurity requirements | Expanding market compliance requirement |
-| **Cyber Insurance** | Insurance providers increasingly requiring NIST framework alignment | 20-30% premium reduction possible |
+| **Cyber Insurance** | Insurance providers increasingly requiring NIST 800-53 compliance | 20-30% premium reduction possible |
 | **Customer Requirements** | Enterprise customers demanding NIST compliance from cloud/SaaS vendors | Revenue protection ($5M+ at risk) |
 
 ### Security Challenges
@@ -544,7 +543,6 @@ Due Date: 7 days from creation
    → Exports PDF report via Print function
    → Provides to auditors for FISMA, FedRAMP, DoD assessments
 ```
-<img width="606" height="596" alt="_- visual selection" src="https://github.com/user-attachments/assets/6e0d7b23-bbf6-4dc6-a0e1-b852194149fd" />
 
 ---
 
@@ -622,125 +620,38 @@ Due Date: 7 days from creation
 
 ---
 
-## 3.3 NIST CSF Current State Mapping
+## 3.3 NIST SP 800-53 Control Implementation Status
 
-### Govern (GV) - Current State
+### Critical Control Family Assessment
 
-| Category | Subcategory | Current Implementation | Status | Gap |
-|----------|-------------|------------------------|--------|-----|
-| **GV.OC-01** | Organizational mission is understood | Mission statement exists, not tied to cyber risk | 🟡 Partial | No cyber risk context |
-| **GV.RM-01** | Risk management objectives are established | Annual risk assessment performed | 🟡 Partial | Not integrated with SOC |
-| **GV.RR-01** | Roles and responsibilities are established | SOC org chart exists | 🟢 Met | - |
-| **GV.PO-01** | Policy for managing cybersecurity risk is established | Security policies exist (12 documents) | 🟡 Partial | Not aligned with NIST |
-| **GV.OV-01** | Cybersecurity risk management is integrated into enterprise risk | Separate risk registers | 🔴 Not Met | No integration |
+| Control Family | Abbrev | Implemented | Partial | Not Implemented | Overall Status |
+|----------------|--------|-------------|---------|-----------------|----------------|
+| **Access Control** | AC | 12 | 15 | 8 | 🟡 65% |
+| **Audit & Accountability** | AU | 18 | 7 | 3 | 🟢 82% |
+| **Configuration Management** | CM | 8 | 22 | 12 | 🟡 52% |
+| **Identification & Authentication** | IA | 15 | 6 | 3 | 🟢 78% |
+| **Incident Response** | IR | 3 | 5 | 4 | 🔴 42% |
+| **System & Communications Protection** | SC | 10 | 18 | 10 | 🟡 55% |
+| **System & Information Integrity** | SI | 5 | 12 | 8 | 🔴 44% |
 
-**Current Maturity**: 45% (Partial implementation)
+**Overall NIST SP 800-53 Compliance**: 62% (155 of 250 applicable controls)
 
----
+### Key Compliance Gaps
 
-### Identify (ID) - Current State
-
-| Category | Subcategory | Current Implementation | Status | Gap |
-|----------|-------------|------------------------|--------|-----|
-| **ID.AM-01** | Physical devices are inventoried | CMDB exists, 60% accurate | 🟡 Partial | Outdated, incomplete |
-| **ID.AM-02** | Software platforms are inventoried | No centralized inventory | 🔴 Not Met | No software inventory |
-| **ID.AM-03** | Communication & data flows are mapped | Network diagrams exist (outdated) | 🟡 Partial | 2 years old |
-| **ID.AM-08** | Systems/devices are inventoried by vulnerability | Quarterly scans only | 🟡 Partial | Not continuous |
-| **ID.RA-01** | Asset vulnerabilities are identified | Quarterly vulnerability scans | 🟡 Partial | Not continuous |
-| **ID.RA-02** | Cyber threat intelligence is received | Limited TI feeds | 🟡 Partial | No contextualization |
-
-**Current Maturity**: 40% (Partial implementation)
-
----
-
-### Protect (PR) - Current State
-
-| Category | Subcategory | Current Implementation | Status | Gap |
-|----------|-------------|------------------------|--------|-----|
-| **PR.AA-01** | Identities and credentials are issued | Azure AD for cloud, local AD for on-prem | 🟢 Met | - |
-| **PR.AA-03** | Users are authenticated | MFA enabled for 45% of users | 🟡 Partial | Only 45% coverage |
-| **PR.AA-05** | Access permissions are managed | RBAC configured | 🟢 Met | - |
-| **PR.DS-01** | Data at rest is protected | Azure encryption enabled | 🟢 Met | - |
-| **PR.DS-02** | Data in transit is protected | TLS 1.2+ enforced | 🟢 Met | - |
-| **PR.PT-01** | Audit logs are determined | Logs collected in Sentinel | 🟡 Partial | Only 60% of systems |
-| **PR.PS-01** | Secure configuration is established | Some Azure Policy baselines | 🟡 Partial | Incomplete coverage |
-
-**Current Maturity**: 65% (Risk Informed)
-
----
-
-### Detect (DE) - Current State ⚠️ **LOWEST MATURITY**
-
-| Category | Subcategory | Current Implementation | Status | Gap |
-|----------|-------------|------------------------|--------|-----|
-| **DE.AE-02** | Potentially adverse events are analyzed | Manual analysis only | 🔴 Not Met | No automation |
-| **DE.AE-03** | Event data are collected and aggregated | Sentinel workspace active | 🟢 Met | - |
-| **DE.AE-07** | Cyber threat intelligence is received | Limited TI feeds | 🟡 Partial | No contextualization |
-| **DE.AE-08** | Threats are detected and communicated | 23 detection rules only | 🔴 Not Met | Insufficient coverage |
-| **DE.CM-01** | Networks are monitored | NSG logs partial | 🟡 Partial | Only 40% coverage |
-| **DE.CM-02** | Physical environment is monitored | Not integrated | 🔴 Not Met | No physical security logs |
-| **DE.CM-04** | Malicious code is detected | Defender for Endpoint active | 🟢 Met | - |
-| **DE.CM-07** | Monitoring for unauthorized activity | Basic monitoring only | 🟡 Partial | No UEBA |
-| **DE.DP-01** | Detection activities comply with requirements | Ad-hoc processes | 🔴 Not Met | No defined process |
-
-**Current Maturity**: 35% ⚠️ **CRITICAL GAP** (Partial implementation)
-
----
-
-### Respond (RS) - Current State ⚠️ **LOWEST MATURITY**
-
-| Category | Subcategory | Current Implementation | Status | Gap |
-|----------|-------------|------------------------|--------|-----|
-| **RS.MA-01** | Incident lifecycle is managed | Manual tickets in ServiceNow | 🟡 Partial | Not integrated with Sentinel |
-| **RS.AN-03** | Analysis is performed | Manual investigation | 🟡 Partial | No playbooks |
-| **RS.RP-01** | Response plan is executed | Ad-hoc response | 🔴 Not Met | No documented playbooks |
-| **RS.CO-02** | Events are reported | Email notifications only | 🟡 Partial | No automated reporting |
-| **RS.MI-02** | Incidents are mitigated | Manual containment | 🔴 Not Met | No automation |
-
-**Current Maturity**: 30% ⚠️ **CRITICAL GAP** (Ad-hoc)
-
----
-
-### Recover (RC) - Current State
-
-| Category | Subcategory | Current Implementation | Status | Gap |
-|----------|-------------|------------------------|--------|-----|
-| **RC.RP-01** | Recovery plan is executed | DR plan exists | 🟡 Partial | Not tested regularly |
-| **RC.IM-01** | Recovery activities are prioritized | Manual prioritization | 🟡 Partial | No defined criteria |
-| **RC.CO-03** | Recovery activities are communicated | Email updates | 🟡 Partial | No automated comms |
-
-**Current Maturity**: 40% (Partial implementation)
-
----
-
-## 3.4 Overall NIST CSF Compliance Summary
-
-```
-┌────────────────────────────────────────────────────────┐
-│          NIST CSF CURRENT STATE SUMMARY                │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│  Function      Current Maturity    Status    Gap      │
-│  ────────────  ────────────────    ──────    ───      │
-│  GOVERN (GV)   45% ■■■■■□□□□□      Partial   55%      │
-│  IDENTIFY (ID) 40% ■■■■□□□□□□      Partial   60%      │
-│  PROTECT (PR)  65% ■■■■■■■□□□      Fair      35%      │
-│  DETECT (DE)   35% ■■■■□□□□□□      🔴 LOW    65%      │
-│  RESPOND (RS)  30% ■■■□□□□□□□      🔴 LOW    70%      │
-│  RECOVER (RC)  40% ■■■■□□□□□□      Partial   60%      │
-│                                                        │
-│  OVERALL       42% ■■■■□□□□□□      Partial   58%      │
-│                                                        │
-└────────────────────────────────────────────────────────┘
-```
+**Critical Gaps Requiring Immediate Attention**:
+- **IR-4**: Incident Handling - No automated incident response playbooks
+- **IR-5**: Incident Monitoring - Limited correlation and analysis capabilities
+- **SI-4**: System Monitoring - Only 60% of systems sending logs to Sentinel
+- **AU-6**: Audit Review - No automated log analysis or anomaly detection (UEBA not enabled)
+- **CM-3**: Configuration Change Control - No automated drift detection for Azure Policy compliance
 
 **Critical Findings**:
-- ⚠️ **Detect (35%)** and **Respond (30%)** functions are severely underdeveloped
-- ⚠️ **58% compliance gap** = 45 out of 78 applicable subcategories not fully met
-- ⚠️ No automation or orchestration capabilities (SOAR)
-- ⚠️ UEBA not enabled (critical for anomaly detection)
-- ⚠️ Limited threat intelligence integration
-- ⚠️ 85% false positive rate overwhelming SOC analysts
+- ⚠️ **Incident Response (IR)** and **System Integrity (SI)** control families have lowest implementation rates
+- ⚠️ **38% compliance gap** = 95 out of 250 applicable controls not fully implemented
+- ⚠️ No automation or orchestration capabilities (SOAR) for control remediation
+- ⚠️ UEBA not enabled (required for AU-6, AU-12, SI-4 controls)
+- ⚠️ Limited threat intelligence integration (impacts RA-3, SI-5 controls)
+- ⚠️ 85% false positive rate overwhelming SOC analysts (impacts IR-4, IR-5 effectiveness)
 
 ---
 
@@ -945,7 +856,7 @@ graph TB
 
 ## 5.1 Executive Summary of Gaps
 
-Based on the current state assessment, **45 out of 78 NIST CSF subcategories (58%)** are not fully implemented. The gaps are distributed across all six functions with **critical deficiencies in DETECT (65% gap) and RESPOND (70% gap)**.
+Based on the current state assessment, **95 out of 250 applicable NIST SP 800-53 controls (38%)** are not fully implemented. The gaps are concentrated in **Incident Response (IR)**, **System & Information Integrity (SI)**, and **Configuration Management (CM)** control families.
 
 ### Gap Severity Classification
 
@@ -958,77 +869,74 @@ Based on the current state assessment, **45 out of 78 NIST CSF subcategories (58
 
 ---
 
-## 5.2 Detailed Gap Analysis by NIST Function
+## 5.2 Detailed Gap Analysis by NIST SP 800-53 Control Family
 
-### 5.2.1 GOVERN (GV) - 55% Gap (11 subcategories)
+### 5.2.1 Incident Response (IR) - Critical Gaps
 
-#### Critical Gaps (4 subcategories)
+#### Critical Control Gaps
 
-| Gap ID | Subcategory | Current State | Gap Description | Risk Impact |
-|--------|-------------|---------------|-----------------|-------------|
-| **GV-01** | GV.OV-01 | 🔴 Not Met | Cybersecurity risk not integrated with enterprise risk management | No board-level visibility into cyber risks, siloed risk management |
-| **GV-02** | GV.RM-02 | 🔴 Not Met | Risk tolerance levels not defined | Inconsistent risk decisions, no clear thresholds for escalation |
-| **GV-03** | GV.SC-01 | 🔴 Not Met | No cybersecurity supply chain risk management program | Third-party breaches (SolarWinds-style attacks) not mitigated |
-| **GV-04** | GV.PO-02 | 🔴 Not Met | Policies not regularly reviewed/updated with NIST alignment | Outdated policies, compliance gaps |
+| Gap ID | Control | Current State | Gap Description | Risk Impact |
+|--------|---------|---------------|-----------------|-------------|
+| **IR-01** | IR-4 | 🔴 Not Met | No automated incident handling playbooks in Sentinel | Manual incident response delays, inconsistent handling |
+| **IR-02** | IR-5 | 🔴 Not Met | Limited incident monitoring and correlation | Incidents not detected quickly, missing attack patterns |
+| **IR-03** | IR-6 | 🟡 Partial | Incident reporting via email only | No automated notifications to governance teams |
+| **IR-04** | IR-8 | 🔴 Not Met | No documented incident response plan integrated with Sentinel | Ad-hoc responses, regulatory non-compliance risk |
 
-#### High Priority Gaps (3 subcategories)
+#### High Priority Gaps
 
-| Gap ID | Subcategory | Current State | Gap Description | Risk Impact |
-|--------|-------------|---------------|-----------------|-------------|
-| **GV-05** | GV.OC-02 | 🟡 Partial | Legal/regulatory requirements understood but not mapped to controls | Potential compliance violations |
-| **GV-06** | GV.RM-03 | 🟡 Partial | Risk assessment not continuous, only annual | Risks not identified in real-time |
-| **GV-07** | GV.RR-02 | 🟡 Partial | Cybersecurity roles defined but not adequately staffed | 2 SOC analysts for 24x7 coverage (understaffed) |
+| Gap ID | Control | Current State | Gap Description | Risk Impact |
+|--------|---------|---------------|-----------------|-------------|
+| **IR-05** | IR-3 | 🟡 Partial | Incident response testing not performed regularly | Untested procedures, slow response times |
+| **IR-06** | IR-7 | 🔴 Not Met | No incident response assistance capability | SOC overwhelmed, need external support for major incidents |
 
 #### Recommendations
 
 **Immediate Actions (0-3 months)**:
-1. **Integrate Cyber Risk with ERM**: 
-   - Create quarterly cybersecurity risk reports for executive leadership
-   - Use Azure Sentinel metrics (MTTD, MTTR, incident volume) as KRIs
-   - Integrate with existing GRC platform
-   - **Owner**: CISO | **Cost**: $0 (process change)
+1. **Deploy Sentinel NIST SP 800-53 Solution from Content Hub**: 
+   - Install pre-built workbook, analytics rules, and control cards
+   - Configure Azure Policy integration for automated compliance monitoring
+   - Enable automated alerting for IR-4, IR-5 controls
+   - **Owner**: SOC Team | **Cost**: $0 (included in Sentinel)
 
-2. **Define Risk Tolerance Levels**:
-   - Establish risk appetite statement (e.g., "No critical severity vulnerabilities > 14 days")
-   - Document escalation thresholds for security incidents
-   - Create risk acceptance workflow in Azure Policy
-   - **Owner**: Risk Management | **Cost**: $0 (policy definition)
+2. **Implement Automated Incident Response Playbooks**:
+   - Deploy Logic Apps for IR-4 (incident handling automation)
+   - Create automated notification workflows for IR-6 (incident reporting)
+   - Integrate with ServiceNow/Azure DevOps for ticket creation
+   - **Owner**: SOC + Cloud Ops | **Cost**: $5K (Logic Apps runtime)
 
 **Short-Term Actions (3-6 months)**:
-3. **Implement Third-Party Risk Program**:
-   - Deploy Microsoft Defender for Cloud Apps (CASB) to monitor SaaS vendors
-   - Create vendor security questionnaire aligned with NIST CSF
-   - Integrate vendor risk scores into procurement process
-   - **Owner**: Procurement + Security | **Cost**: $15K/year (Defender for Cloud Apps)
+3. **Document Incident Response Procedures**:
+   - Create 20 incident response playbook procedures aligned with IR-8
+   - Map procedures to NIST SP 800-53 control requirements
+   - Integrate procedures into Sentinel workbooks
+   - **Owner**: Incident Response Team | **Cost**: $15K (consultant)
 
-4. **Update Security Policies**:
-   - Rewrite 12 existing security policies with NIST CSF mapping
-   - Implement policy attestation workflow in Azure AD
-   - Quarterly policy review cadence
-   - **Owner**: Compliance | **Cost**: $25K (consultant)
+4. **Implement IR Testing Program**:
+   - Conduct tabletop exercises for IR-3 compliance
+   - Perform quarterly playbook testing
+   - Document lessons learned and update procedures
+   - **Owner**: CISO + SOC Manager | **Cost**: $8K (facilitation)
 
 ---
 
-### 5.2.2 IDENTIFY (ID) - 60% Gap (12 subcategories)
+### 5.2.2 System & Information Integrity (SI) - Critical Gaps
 
-#### Critical Gaps (5 subcategories)
+#### Critical Control Gaps
 
-| Gap ID | Subcategory | Current State | Gap Description | Risk Impact |
-|--------|-------------|---------------|-----------------|-------------|
-| **ID-01** | ID.AM-01 | 🟡 Partial | Asset inventory only 60% accurate, no real-time sync | Unknown attack surface, can't protect what you don't know |
-| **ID-02** | ID.AM-02 | 🔴 Not Met | No software/application inventory | Shadow IT, unlicensed software, vulnerability blind spots |
-| **ID-03** | ID.AM-03 | 🟡 Partial | Network diagrams 2 years outdated | Incorrect network segmentation, lateral movement risk |
-| **ID-04** | ID.AM-05 | 🔴 Not Met | No data classification/sensitivity tagging | Data exfiltration risk, no DLP policies |
-| **ID-05** | ID.RA-03 | 🔴 Not Met | No threat modeling performed | Unknown threats, no proactive defenses |
+| Gap ID | Control | Current State | Gap Description | Risk Impact |
+|--------|---------|---------------|-----------------|-------------|
+| **SI-01** | SI-4 | 🟡 Partial | Only 60% of systems sending logs to Sentinel | Blind spots in security monitoring, undetected attacks |
+| **SI-02** | SI-4(5) | 🔴 Not Met | No automated anomaly detection (UEBA not enabled) | Insider threats and compromised accounts not detected |
+| **SI-03** | SI-5 | 🟡 Partial | Limited threat intelligence integration | Emerging threats not detected quickly |
+| **SI-04** | SI-2 | 🟡 Partial | Flaw remediation not automated | Critical vulnerabilities remain unpatched for 30+ days |
+| **SI-05** | SI-3 | 🔴 Not Met | Malicious code protection not comprehensive | Only Defender for Endpoint, no email/web gateway protection |
 
-#### High Priority Gaps (4 subcategories)
+#### High Priority Gaps
 
-| Gap ID | Subcategory | Current State | Gap Description | Risk Impact |
-|--------|-------------|---------------|-----------------|-------------|
-| **ID-06** | ID.AM-08 | 🟡 Partial | Vulnerability scans only quarterly | Exploitable vulnerabilities remain unpatched for 90+ days |
-| **ID-07** | ID.RA-01 | 🟡 Partial | Risk assessments not continuous | New risks not identified until annual review |
-| **ID-08** | ID.RA-02 | 🟡 Partial | Limited threat intelligence feeds | Emerging threats not detected |
-| **ID-09** | ID.BE-05 | 🔴 Not Met | No resilience requirements defined for critical services | No recovery time objectives (RTO) for security services |
+| Gap ID | Control | Current State | Gap Description | Risk Impact |
+|--------|---------|---------------|-----------------|-------------|
+| **SI-06** | SI-7 | 🔴 Not Met | No software integrity verification | Unauthorized code changes not detected |
+| **SI-07** | SI-12 | 🔴 Not Met | No information output filtering/validation | Data exfiltration risk not mitigated |
 
 #### Recommendations
 
@@ -1259,7 +1167,7 @@ Based on the current state assessment, **45 out of 78 NIST CSF subcategories (58
 **Short-Term Actions (3-6 months)**:
 
 4. **Create Incident Response Runbooks (Documentation)**:
-   - Document 20 incident response procedures aligned with NIST CSF
+   - Document 20 incident response procedures aligned with NIST SP 800-53 IR controls
    - Include decision trees, escalation paths, communication templates
    - Store in SharePoint with version control
    - **Owner**: SOC Manager | **Cost**: $35K (technical writer)
@@ -1391,7 +1299,7 @@ Each recommendation is scored on:
 2. **Risk Reduction** (1-5): Reduction in likelihood/impact of security incidents
 3. **Implementation Effort** (1-5, inverted): Complexity, time, resources required
 4. **Cost** (1-5, inverted): Financial investment required
-5. **Compliance Value** (1-5): Contribution to NIST CSF compliance
+5. **Compliance Value** (1-5): Contribution to NIST SP 800-53 compliance
 
 **Priority Score Formula**:
 ```
