@@ -544,6 +544,7 @@ Due Date: 7 days from creation
    → Exports PDF report via Print function
    → Provides to auditors for FISMA, FedRAMP, DoD assessments
 ```
+<img width="606" height="596" alt="_- visual selection" src="https://github.com/user-attachments/assets/6e0d7b23-bbf6-4dc6-a0e1-b852194149fd" />
 
 ---
 
