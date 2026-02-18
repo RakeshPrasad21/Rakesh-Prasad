@@ -3103,6 +3103,7 @@ The risk-adjusted analysis shows that even in worst-case scenarios (low adoption
    https://learn.microsoft.com/en-us/azure/logic-apps/logic-apps-http-endpoint
 
 7. **Microsoft MCP Server for Enterprise**
+   https://www.youtube.com/watch?v=Ei02Yr1rE18
    https://www.youtube.com/watch?v=tv3DdMzIe-A
 ---
 
