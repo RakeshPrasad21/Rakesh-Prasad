@@ -3102,6 +3102,8 @@ The risk-adjusted analysis shows that even in worst-case scenarios (low adoption
 6. **Azure Logic Apps Webhook Triggers**  
    https://learn.microsoft.com/en-us/azure/logic-apps/logic-apps-http-endpoint
 
+7. **Microsoft MCP Server for Enterprise**
+   https://www.youtube.com/watch?v=tv3DdMzIe-A
 ---
 
 ## 📝 Appendix
