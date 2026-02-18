@@ -557,6 +557,9 @@ App Registration: "MCP-Sentinel-Connector"
 2. **Log Analytics API**: Access via workspace ID + API key or Azure AD
 3. **Azure Logic Apps**: Webhook URLs for playbook execution
 
+<img width="470" height="203" alt="image" src="https://github.com/user-attachments/assets/3301887d-35ab-4d9f-9b40-75b4e64f2755" />
+
+
 ### 3.3 Network & Security
 
 **Firewall Rules**:
