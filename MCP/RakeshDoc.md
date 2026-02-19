@@ -152,6 +152,98 @@ This document outlines the implementation of Model Context Protocol (MCP) for SI
 - Each server specializes in one domain (e.g., "Sentinel Server", "Defender Server", "Threat Intel Server")
 - Multiple servers can coexist on the same host
 
+**Real-World Examples**:
+
+**Example 1: Azure Sentinel MCP Server**
+```
+Program Name: azure-sentinel-mcp-server.py
+Purpose: Connects AI to Microsoft Sentinel
+Capabilities Exposed:
+  ├── Tools (Functions):
+  │   ├── list_incidents() - Get all security incidents
+  │   ├── get_incident_details(id) - Get specific incident info
+  │   ├── create_incident() - Create new incident
+  │   ├── run_kql_query() - Execute KQL queries
+  │   └── get_analytics_rules() - List detection rules
+  ├── Resources (Data):
+  │   ├── workspace://config - Workspace configuration
+  │   ├── workspace://tables - Available log tables
+  │   └── incidents://active - Real-time incident feed
+  └── Prompts (Templates):
+      ├── "Investigate ransomware incident"
+      ├── "Hunt for lateral movement"
+      └── "Generate compliance report"
+```
+
+**Example 2: Microsoft Defender MCP Server**
+```
+Program Name: defender-xdr-mcp-server.py
+Purpose: Connects AI to Microsoft Defender XDR
+Capabilities Exposed:
+  ├── Tools (Functions):
+  │   ├── list_devices() - Get device inventory
+  │   ├── isolate_device(device_id) - Quarantine compromised device
+  │   ├── run_av_scan(device_id) - Start antivirus scan
+  │   ├── advanced_hunting(query) - Run hunting query
+  │   └── get_exposure_score() - Get security exposure metrics
+  ├── Resources (Data):
+  │   ├── devices://inventory - All managed devices
+  │   ├── alerts://active - Active security alerts
+  │   └── vulnerabilities://critical - Critical CVEs
+  └── Prompts (Templates):
+      ├── "Investigate phishing email"
+      ├── "Assess exposure to CVE-2024-1234"
+      └── "Generate device security report"
+```
+
+**Example 3: Threat Intelligence MCP Server**
+```
+Program Name: threat-intel-mcp-server.py
+Purpose: Connects AI to threat intelligence sources
+Capabilities Exposed:
+  ├── Tools (Functions):
+  │   ├── lookup_ip(address) - Check IP reputation
+  │   ├── check_hash(file_hash) - Verify file hash
+  │   ├── get_domain_info(domain) - Domain threat data
+  │   ├── query_mitre_attack() - MITRE ATT&CK framework
+  │   └── get_threat_campaigns() - Active threat campaigns
+  ├── Resources (Data):
+  │   ├── feeds://iocs - Indicators of compromise
+  │   ├── intel://apt-groups - APT group profiles
+  │   └── cve://recent - Recent vulnerability disclosures
+  └── Prompts (Templates):
+      ├── "Analyze suspicious IP behavior"
+      ├── "Map attack to MITRE ATT&CK"
+      └── "Generate threat briefing"
+```
+
+**How AI Uses These Servers**:
+
+When you ask: *"Show me critical Sentinel incidents and check if any devices are compromised"*
+
+```
+1. AI identifies two servers needed:
+   ├── Azure Sentinel MCP Server → list_incidents(severity="Critical")
+   └── Microsoft Defender MCP Server → list_devices(status="Compromised")
+
+2. AI calls both servers in parallel
+
+3. Results combined and presented:
+   "Found 3 critical incidents:
+    - Ransomware on SRV-001 (Incident #1234)
+    - Data exfiltration from DB-PROD-02 (Incident #1235)
+    - Suspicious PowerShell on WKS-045 (Incident #1236)
+    
+    Device Status:
+    - SRV-001: Isolated (compromised)
+    - DB-PROD-02: Active investigation
+    - WKS-045: Scanning in progress"
+```
+
+**Think of MCP Servers Like APIs, But Smarter**:
+- **Traditional API**: You call `GET /api/incidents?severity=critical` (must know exact endpoint)
+- **MCP Server**: You say *"show critical incidents"* → AI figures out which tool to call
+
 ##### **How Are Tools/Workflows Exposed?**
 
 **Simple Architecture: AI Client → Host → Multiple Servers → Tools**
