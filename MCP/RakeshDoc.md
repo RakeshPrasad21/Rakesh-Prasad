@@ -1325,60 +1325,756 @@ Details:
 
 ### 4.4 Custom MCP Integration Use Case
 
-#### **Use Case 6: Using Custom Internal Security MCP**
+#### **Use Case 6: Custom Internal Security MCP Server**
 
-**Scenario**: Security team has developed an internal MCP server that integrates with proprietary threat intelligence feeds and internal CMDB systems. The server provides custom tools for risk scoring and asset contextualization.
+> **📘 NOTE**: This is a **hypothetical example** demonstrating how to build and use a custom MCP server. This scenario is provided as a **template/blueprint** for organizations that want to integrate their own proprietary tools with MCP.
 
-**Objective**: Configure and use the custom internal MCP server in VS Code with GitHub Copilot for daily security operations.
+**Scenario**: 
 
-**Steps to Enable Custom MCP**:
+Your security team wants to build a custom MCP server that integrates with:
+- Internal CMDB (Configuration Management Database) for asset inventory
+- Proprietary threat intelligence feeds from your security vendors
+- Custom risk scoring algorithms specific to your environment
+- Internal vulnerability scanners and security tools
+- Asset criticality databases and business context systems
 
-1. **Add Custom MCP to VS Code Settings** (`.vscode/settings.json`):
+**Challenge**: 
+
+Organizations often have proprietary or specialized security tools that aren't covered by standard MCP servers. Security teams need:
+- Unified access to internal security data sources through natural language
+- Custom risk scoring that considers organization-specific factors
+- Integration of CMDB context into security investigations
+- Ability to query internal threat intelligence feeds alongside public sources
+- Consistent interface across all security tools (internal and external)
+
+**MCP-Enabled Solution**: Build a custom MCP server that exposes internal security tools to AI assistants in VS Code.
+
+---
+
+#### **Implementation: Custom Internal Security MCP Server**
+
+**Step 1: Create the Custom MCP Server**
+
+**File: `internal_security_mcp_server.py`**:
+
+```python
+from fastmcp import FastMCP
+from typing import Optional, Dict, List
+import requests
+import json
+import os
+
+# Initialize FastMCP server
+mcp = FastMCP("Internal Security MCP Server")
+
+# Configuration - Load from environment variables
+CMDB_API_URL = os.getenv("CMDB_API_URL", "https://cmdb.internal.company.com/api")
+THREAT_INTEL_API_URL = os.getenv("THREAT_INTEL_API_URL", "https://threatintel.internal.company.com/api")
+VULN_SCANNER_API_URL = os.getenv("VULN_SCANNER_API_URL", "https://vulnscan.internal.company.com/api")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+
+# Helper function for authenticated requests
+def make_internal_api_request(url: str, params: dict = None) -> dict:
+    """Make authenticated request to internal APIs"""
+    headers = {
+        "Authorization": f"Bearer {INTERNAL_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    response = requests.get(url, headers=headers, params=params, verify=True)
+    response.raise_for_status()
+    return response.json()
+
+@mcp.tool()
+async def get_asset_from_cmdb(hostname: str) -> dict:
+    """
+    Retrieve asset information from internal CMDB
+    
+    Args:
+        hostname: Hostname or FQDN of the asset
+    
+    Returns:
+        Asset details including owner, criticality, location, and dependencies
+    """
+    try:
+        url = f"{CMDB_API_URL}/assets/search"
+        data = make_internal_api_request(url, params={"hostname": hostname})
+        
+        if data.get("assets"):
+            asset = data["assets"][0]
+            return {
+                "hostname": asset.get("hostname"),
+                "ip_address": asset.get("ip_address"),
+                "asset_type": asset.get("asset_type"),
+                "business_owner": asset.get("business_owner"),
+                "technical_owner": asset.get("technical_owner"),
+                "criticality": asset.get("criticality"),  # Critical, High, Medium, Low
+                "location": asset.get("location"),
+                "department": asset.get("department"),
+                "compliance_scope": asset.get("compliance_scope"),  # PCI, SOX, HIPAA, etc.
+                "dependencies": asset.get("dependencies", []),
+                "last_updated": asset.get("last_updated")
+            }
+        else:
+            return {"error": f"Asset {hostname} not found in CMDB"}
+    
+    except Exception as e:
+        return {"error": f"CMDB query failed: {str(e)}"}
+
+@mcp.tool()
+async def calculate_risk_score(hostname: str) -> dict:
+    """
+    Calculate custom risk score for an asset based on multiple factors
+    
+    Args:
+        hostname: Hostname of the asset to assess
+    
+    Returns:
+        Comprehensive risk assessment with score and recommendations
+    """
+    try:
+        # Get asset context from CMDB
+        cmdb_data = await get_asset_from_cmdb(hostname)
+        
+        if "error" in cmdb_data:
+            return cmdb_data
+        
+        # Get vulnerability data
+        vuln_url = f"{VULN_SCANNER_API_URL}/vulnerabilities"
+        vuln_data = make_internal_api_request(vuln_url, params={"hostname": hostname})
+        
+        # Calculate risk score (0-100)
+        risk_score = 0
+        risk_factors = []
+        
+        # Factor 1: Vulnerability severity (0-40 points)
+        critical_vulns = vuln_data.get("critical_count", 0)
+        high_vulns = vuln_data.get("high_count", 0)
+        vuln_score = min(40, (critical_vulns * 10) + (high_vulns * 3))
+        risk_score += vuln_score
+        if vuln_score > 0:
+            risk_factors.append(f"Vulnerabilities: {critical_vulns} critical, {high_vulns} high (+{vuln_score} points)")
+        
+        # Factor 2: Asset criticality (0-25 points)
+        criticality_map = {"Critical": 25, "High": 15, "Medium": 8, "Low": 0}
+        criticality_score = criticality_map.get(cmdb_data.get("criticality", "Low"), 0)
+        risk_score += criticality_score
+        risk_factors.append(f"Business Criticality: {cmdb_data.get('criticality')} (+{criticality_score} points)")
+        
+        # Factor 3: Compliance scope (0-20 points)
+        compliance_scope = cmdb_data.get("compliance_scope", [])
+        compliance_score = len(compliance_scope) * 5 if compliance_scope else 0
+        compliance_score = min(20, compliance_score)
+        risk_score += compliance_score
+        if compliance_scope:
+            risk_factors.append(f"Compliance Scope: {', '.join(compliance_scope)} (+{compliance_score} points)")
+        
+        # Factor 4: Internet exposure (0-15 points)
+        is_internet_facing = vuln_data.get("internet_facing", False)
+        if is_internet_facing:
+            risk_score += 15
+            risk_factors.append("Internet-facing asset (+15 points)")
+        
+        # Determine risk level
+        if risk_score >= 70:
+            risk_level = "CRITICAL"
+        elif risk_score >= 50:
+            risk_level = "HIGH"
+        elif risk_score >= 30:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "LOW"
+        
+        # Generate recommendations
+        recommendations = []
+        if critical_vulns > 0:
+            recommendations.append(f"URGENT: Patch {critical_vulns} critical vulnerabilities within 24 hours")
+        if high_vulns > 5:
+            recommendations.append(f"Patch {high_vulns} high-severity vulnerabilities within 7 days")
+        if is_internet_facing and critical_vulns > 0:
+            recommendations.append("Consider temporary isolation until critical patches applied")
+        if criticality_score >= 15 and vuln_score > 20:
+            recommendations.append("Schedule emergency security review with asset owner")
+        
+        return {
+            "hostname": hostname,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "risk_factors": risk_factors,
+            "vulnerabilities": {
+                "critical": critical_vulns,
+                "high": high_vulns,
+                "medium": vuln_data.get("medium_count", 0),
+                "low": vuln_data.get("low_count", 0)
+            },
+            "asset_details": {
+                "criticality": cmdb_data.get("criticality"),
+                "owner": cmdb_data.get("business_owner"),
+                "compliance": compliance_scope,
+                "internet_facing": is_internet_facing
+            },
+            "recommendations": recommendations
+        }
+    
+    except Exception as e:
+        return {"error": f"Risk calculation failed: {str(e)}"}
+
+@mcp.tool()
+async def check_threat_intel(indicator: str, indicator_type: str = "ip") -> dict:
+    """
+    Query internal threat intelligence feeds
+    
+    Args:
+        indicator: IP address, domain, hash, etc.
+        indicator_type: Type of indicator (ip, domain, hash, email)
+    
+    Returns:
+        Threat intelligence findings from internal sources
+    """
+    try:
+        url = f"{THREAT_INTEL_API_URL}/lookup"
+        data = make_internal_api_request(url, params={
+            "indicator": indicator,
+            "type": indicator_type
+        })
+        
+        return {
+            "indicator": indicator,
+            "indicator_type": indicator_type,
+            "threat_level": data.get("threat_level"),  # Malicious, Suspicious, Unknown, Benign
+            "first_seen": data.get("first_seen"),
+            "last_seen": data.get("last_seen"),
+            "threat_categories": data.get("categories", []),
+            "related_campaigns": data.get("campaigns", []),
+            "internal_incidents": data.get("related_incidents", []),
+            "confidence": data.get("confidence_score"),
+            "source": "Internal Threat Intelligence Platform"
+        }
+    
+    except Exception as e:
+        return {"error": f"Threat intel lookup failed: {str(e)}"}
+
+@mcp.tool()
+async def get_asset_vulnerabilities(hostname: str, severity: Optional[str] = None) -> dict:
+    """
+    Get vulnerability scan results for a specific asset
+    
+    Args:
+        hostname: Hostname to query
+        severity: Filter by severity (Critical, High, Medium, Low)
+    
+    Returns:
+        List of vulnerabilities with details
+    """
+    try:
+        url = f"{VULN_SCANNER_API_URL}/vulnerabilities/detailed"
+        params = {"hostname": hostname}
+        if severity:
+            params["severity"] = severity
+        
+        data = make_internal_api_request(url, params=params)
+        
+        return {
+            "hostname": hostname,
+            "total_vulnerabilities": data.get("total_count"),
+            "scan_date": data.get("last_scan_date"),
+            "vulnerabilities": data.get("vulnerabilities", []),
+            "summary": {
+                "critical": data.get("critical_count", 0),
+                "high": data.get("high_count", 0),
+                "medium": data.get("medium_count", 0),
+                "low": data.get("low_count", 0)
+            }
+        }
+    
+    except Exception as e:
+        return {"error": f"Vulnerability query failed: {str(e)}"}
+
+@mcp.tool()
+async def find_assets_by_owner(owner_email: str) -> dict:
+    """
+    Find all assets owned by a specific person or team
+    
+    Args:
+        owner_email: Email address of business or technical owner
+    
+    Returns:
+        List of assets owned by the specified person/team
+    """
+    try:
+        url = f"{CMDB_API_URL}/assets/by-owner"
+        data = make_internal_api_request(url, params={"owner": owner_email})
+        
+        assets = data.get("assets", [])
+        
+        # Calculate aggregate risk
+        total_risk_score = 0
+        critical_count = 0
+        high_count = 0
+        
+        for asset in assets:
+            if asset.get("criticality") == "Critical":
+                critical_count += 1
+            elif asset.get("criticality") == "High":
+                high_count += 1
+        
+        return {
+            "owner": owner_email,
+            "total_assets": len(assets),
+            "assets": assets,
+            "summary": {
+                "critical_assets": critical_count,
+                "high_criticality_assets": high_count
+            }
+        }
+    
+    except Exception as e:
+        return {"error": f"Owner search failed: {str(e)}"}
+
+@mcp.resource()
+async def security_metrics():
+    """Real-time security metrics from internal systems"""
+    return {
+        "uri": "internal://security-metrics",
+        "name": "Internal Security Metrics",
+        "description": "Real-time KPIs from CMDB, vulnerability scanners, and threat intel"
+    }
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+**Step 2: Install Dependencies**
+
+Create a `requirements.txt` file:
+
+```txt
+fastmcp>=0.1.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+```
+
+Install dependencies in VS Code terminal:
+
+```bash
+pip install -r requirements.txt
+```
+
+**Step 3: Configure Environment Variables**
+
+Create a `.env` file (DO NOT commit to Git):
+
+```bash
+# Internal API Endpoints
+CMDB_API_URL=https://cmdb.internal.company.com/api
+THREAT_INTEL_API_URL=https://threatintel.internal.company.com/api
+VULN_SCANNER_API_URL=https://vulnscan.internal.company.com/api
+
+# Authentication
+INTERNAL_API_KEY=your-internal-api-key-here
+```
+
+**Step 4: Add to VS Code Settings**
+
+File: `.vscode/settings.json`:
+
 ```json
 {
   "mcp.servers": {
     "internal-security": {
       "command": "python",
-      "args": ["C:\\SecurityTools\\mcp-server\\server.py"],
+      "args": ["internal_security_mcp_server.py"],
+      "cwd": "${workspaceFolder}",
       "env": {
-        "API_KEY": "${env:INTERNAL_API_KEY}"
+        "CMDB_API_URL": "${env:CMDB_API_URL}",
+        "THREAT_INTEL_API_URL": "${env:THREAT_INTEL_API_URL}",
+        "VULN_SCANNER_API_URL": "${env:VULN_SCANNER_API_URL}",
+        "INTERNAL_API_KEY": "${env:INTERNAL_API_KEY}"
       }
     }
   }
 }
 ```
 
-2. **Restart VS Code** to load the custom MCP server
+**Step 5: Restart VS Code**
 
-3. **Use with Copilot Chat**:
+After adding the MCP server configuration, restart VS Code to load the server.
+
+---
+
+#### **Example Interactions**
+
+**Interaction 1: Asset Risk Assessment**
+
+**Analyst**: *"Get comprehensive risk assessment for server SRV-DB-PROD-01"*
+
+**AI Response via MCP**:
+
 ```
-@internal-security Calculate risk score for server SRV-WEB-01
-@internal-security Get asset context from CMDB for host 10.0.1.50
-@internal-security Check threat intel for IP 203.0.113.45
+🔍 COMPREHENSIVE RISK ASSESSMENT - SRV-DB-PROD-01
+
+📊 Risk Score: 87/100 (CRITICAL)
+Risk Level: CRITICAL ⚠️
+
+Risk Breakdown:
+├─ Vulnerabilities: 3 critical, 8 high (+39 points)
+├─ Business Criticality: Critical (+25 points)
+├─ Compliance Scope: PCI-DSS, SOX, HIPAA (+15 points)
+└─ Internet-facing asset (+15 points)
+
+🗄️ Asset Details (from CMDB):
+- Hostname: SRV-DB-PROD-01.company.com
+- IP Address: 10.50.10.15
+- Asset Type: SQL Server (Production Database)
+- Business Owner: jane.doe@company.com (Finance Department)
+- Technical Owner: dbadmin-team@company.com
+- Location: Primary Data Center (DC1)
+- Compliance Scope: PCI-DSS, SOX, HIPAA
+- Last Updated: 2026-03-10
+
+🔓 Vulnerabilities Detected:
+Critical:
+  1. CVE-2024-1234 (CVSS 9.8) - SQL Server RCE
+  2. CVE-2024-5678 (CVSS 9.1) - Privilege Escalation
+  3. CVE-2024-9012 (CVSS 8.8) - Authentication Bypass
+
+High:
+  4. CVE-2024-3456 (CVSS 7.5) - Information Disclosure
+  5. CVE-2024-7890 (CVSS 7.2) - Weak Encryption
+  ... (3 more high-severity issues)
+
+⚡ RECOMMENDATIONS (Priority Order):
+
+IMMEDIATE (Next 24 hours):
+  1. Apply SQL Server security patches for CVE-2024-1234, CVE-2024-5678
+  2. Temporarily isolate from internet if possible
+  3. Enable enhanced monitoring and alerting
+  4. Notify Finance team (Business Owner) of critical risk
+
+SHORT-TERM (Next 7 days):
+  5. Patch all remaining high-severity vulnerabilities
+  6. Review and restrict database permissions
+  7. Implement network segmentation (isolate from public network)
+  8. Schedule penetration test after patching
+
+MEDIUM-TERM (Next 30 days):
+  9. Database security hardening review
+  10. Implement database activity monitoring (DAM)
+  11. Review compliance controls (PCI, SOX, HIPAA)
+  12. Update disaster recovery procedures
+
+💰 Business Impact if Compromised:
+- Data breach: Customer financial records, PII
+- Compliance violations: $500K - $2M in fines (PCI-DSS breach)
+- Downtime cost: $50K/hour (critical financial system)
+- Reputational damage: Severe
+
+Would you like me to:
+  A) Create high-priority incident for patching
+  B) Send risk report to business owner (jane.doe@company.com)
+  C) Generate compliance exception request
+  D) Check if other database servers have similar issues
 ```
 
-**Example Interaction**:
-```
-Analyst: @internal-security Get risk assessment for SRV-DB-PROD-01
+---
 
-Copilot Response:
-Risk Assessment for SRV-DB-PROD-01:
-- Overall Risk Score: 87/100 (CRITICAL)
-- Critical Vulnerabilities: 3
-- Internet Facing: Yes
-- Business Criticality: High
-- Recommendations:
-  1. Apply patches for CVE-2024-1234 (CVSS 9.8)
-  2. Review firewall rules
-  3. Schedule penetration test
+**Interaction 2: Threat Intelligence Lookup**
+
+**Analyst**: *"Check internal threat intel for IP address 203.0.113.45"*
+
+**AI Response via MCP**:
+
+```
+🕵️ INTERNAL THREAT INTELLIGENCE LOOKUP
+
+Indicator: 203.0.113.45
+Type: IP Address
+Source: Internal Threat Intelligence Platform
+
+🚨 THREAT LEVEL: MALICIOUS (High Confidence: 95%)
+
+Details:
+├─ First Seen: 2026-02-15 14:23:11 UTC
+├─ Last Seen: 2026-03-13 09:45:33 UTC (Today!)
+├─ Threat Categories:
+│   • Command & Control Server
+│   • Botnet Activity
+│   • Data Exfiltration
+└─ Confidence Score: 95/100
+
+🎯 Related Threat Campaigns:
+1. "Operation SilentSteal" (Active)
+   - Attribution: APT-28 (Fancy Bear)
+   - Targets: Financial sector, Healthcare
+   - Campaign Start: 2026-02-10
+
+2. "BotNet-2026-Alpha" (Active)
+   - Type: Cryptocurrency mining + Data theft
+   - Infrastructure: 47 known C2 servers
+   - Campaign Start: 2026-01-25
+
+🔗 Related Internal Incidents:
+1. INC-2026-0847 (March 5, 2026)
+   - Severity: High
+   - Description: Data exfiltration attempt from SRV-FILE-03
+   - Status: Resolved (host isolated and cleaned)
+
+2. INC-2026-0923 (March 12, 2026)
+   - Severity: Critical
+   - Description: Botnet callback detected from DESKTOP-HR-045
+   - Status: Under Investigation
+
+3. INC-2026-0932 (March 13, 2026 - TODAY)
+   - Severity: Medium
+   - Description: Failed connection attempts from mail server
+   - Status: Active
+
+📍 Geographic Information:
+- Country: Russia
+- ASN: AS12345 (Shady Hosting Provider)
+- Known for: Bulletproof hosting, malware infrastructure
+
+⚡ RECOMMENDED ACTIONS:
+
+IMMEDIATE:
+  ✓ Block IP 203.0.113.45 at perimeter firewall
+  ✓ Check all systems for connections to this IP (last 30 days)
+  ✓ Review incidents INC-2026-0847, INC-2026-0923, INC-2026-0932
+  ✓ Threat hunt for other IPs in same ASN/subnet
+
+FOLLOW-UP:
+  • Share IOC with industry ISAC
+  • Update threat intelligence feeds
+  • Review network logs for lateral movement indicators
+
+🔍 Additional Context Available:
+- 15 other IPs in same subnet flagged
+- 3 related malware hashes identified
+- 23 compromised credentials detected in related campaigns
+
+Would you like me to:
+  A) Block this IP in firewall immediately
+  B) Search logs for all connections to this IP
+  C) Create incident for investigation
+  D) Get details on related malware samples
 ```
 
-**Benefits**:
-- Access internal systems through natural language
-- Combine multiple data sources (CMDB, vulnerability scanners, threat intel)
-- Custom risk scoring algorithms specific to organization
-- Faster investigation and incident response
-- Consistent security assessments across team
+---
+
+**Interaction 3: Find Assets by Owner**
+
+**Analyst**: *"Show me all critical assets owned by john.smith@company.com"*
+
+**AI Response via MCP**:
+
+```
+👤 ASSET INVENTORY - Owner: john.smith@company.com
+
+Total Assets: 23
+Critical Criticality: 5 assets
+High Criticality: 8 assets
+
+🚨 CRITICAL ASSETS (5):
+
+1. SRV-APP-PROD-01
+   • Type: Application Server (Web)
+   • IP: 10.40.5.10
+   • Location: Primary Data Center
+   • Compliance: PCI-DSS, SOX
+   • Status: ⚠️ 2 critical vulnerabilities
+   • Internet-facing: Yes
+
+2. SRV-DB-FINANCE-02
+   • Type: Database Server (Oracle)
+   • IP: 10.40.5.25
+   • Location: Primary Data Center
+   • Compliance: PCI-DSS, SOX, GDPR
+   • Status: ✓ Healthy (patched)
+   • Internet-facing: No
+
+3. SRV-API-GATEWAY-01
+   • Type: API Gateway
+   • IP: 203.0.113.100 (Public)
+   • Location: Azure East US
+   • Compliance: PCI-DSS
+   • Status: ⚠️ 1 high vulnerability
+   • Internet-facing: Yes
+
+4. SRV-ERP-PROD-01
+   • Type: ERP System (SAP)
+   • IP: 10.40.7.50
+   • Location: Primary Data Center
+   • Compliance: SOX, GDPR
+   • Status: ⚠️ Pending patches (3 high)
+   • Internet-facing: No
+
+5. SRV-FILE-EXEC-01
+   • Type: File Server (Executive Documents)
+   • IP: 10.40.9.15
+   • Location: Primary Data Center
+   • Compliance: GDPR, Trade Secrets
+   • Status: ✓ Healthy
+   • Internet-facing: No
+
+📊 AGGREGATE RISK SUMMARY:
+
+Overall Risk Score: 68/100 (HIGH)
+  ├─ Total Vulnerabilities: 47
+  │   • Critical: 2
+  │   • High: 11
+  │   • Medium: 18
+  │   • Low: 16
+  │
+  ├─ Internet-Exposed Assets: 2 (SRV-APP-PROD-01, SRV-API-GATEWAY-01)
+  │
+  └─ Compliance Gaps: 3 assets need attention
+
+⚠️ TOP SECURITY CONCERNS:
+
+1. SRV-APP-PROD-01 has critical vulnerabilities + internet exposure
+   Action: URGENT patching required
+
+2. SRV-API-GATEWAY-01 missing WAF protection
+   Action: Deploy Azure WAF or similar
+
+3. 8 assets pending security patches (overdue >30 days)
+   Action: Schedule emergency maintenance window
+
+📧 OWNER NOTIFICATION:
+
+Email: john.smith@company.com
+Department: Finance IT
+Phone: +1-555-0123
+Manager: sarah.johnson@company.com
+
+Would you like me to:
+  A) Generate detailed risk report for owner
+  B) Create patching plan for all 23 assets
+  C) Check compliance status for PCI/SOX assets
+  D) Schedule security review meeting with owner
+```
+
+---
+
+**Interaction 4: CMDB Asset Context During Incident Investigation**
+
+**Analyst**: *"I'm investigating a security alert on host 10.50.15.30, get me asset context from CMDB"*
+
+**AI Response via MCP**:
+
+```
+🗄️ CMDB ASSET CONTEXT - 10.50.15.30
+
+Hostname: SRV-WEB-PORTAL-05.company.com
+IP Address: 10.50.15.30
+Asset Type: Web Server (IIS)
+
+👥 OWNERSHIP & CONTACTS:
+├─ Business Owner: marketing-team@company.com (Marketing Department)
+├─ Technical Owner: web-admin-team@company.com
+├─ Security Contact: security-ops@company.com
+└─ Change Approver: it-manager@company.com
+
+🎯 BUSINESS CONTEXT:
+├─ Criticality: High
+├─ Business Function: Customer-facing web portal
+├─ Users Impacted: ~5,000 external customers/day
+├─ Revenue Impact: $25K/hour if offline
+└─ SLA: 99.9% uptime (max 8h downtime/year)
+
+🔒 COMPLIANCE & SECURITY:
+├─ Compliance Scope: PCI-DSS (handles payment card data)
+├─ Data Classification: Confidential (customer PII)
+├─ Security Zone: DMZ
+├─ Backup Schedule: Daily (retention: 30 days)
+└─ DR Location: Secondary Data Center (DC2)
+
+🔗 DEPENDENCIES (Critical - Understand Blast Radius):
+
+Upstream Dependencies (What this server depends on):
+  1. SRV-DB-CUSTOMER-01 (Customer database)
+  2. SRV-AUTH-LDAP-02 (Authentication service)
+  3. SRV-API-PAYMENT-01 (Payment gateway)
+  4. Azure Key Vault (Certificate storage)
+
+Downstream Dependencies (What depends on this server):
+  1. Mobile App (iOS/Android) - 12,000 active users
+  2. Partner Integration API - 5 external partners
+  3. Internal Analytics Dashboard
+  4. Reporting System (BI)
+
+📍 INFRASTRUCTURE:
+├─ Location: Primary Data Center - Rack B-15
+├─ Virtual/Physical: VMware Virtual Machine
+├─ vCenter: vcenter01.company.com
+├─ Cluster: Production-Cluster-02
+├─ Datastore: SAN-PROD-05
+└─ VLAN: VLAN-150 (DMZ-Web-Servers)
+
+📅 ASSET LIFECYCLE:
+├─ Deployment Date: 2024-08-15
+├─ Last Updated: 2026-03-10
+├─ Warranty Expiration: 2027-08-15
+├─ Decommission Planned: 2028-12-31
+└─ Recent Changes: SSL certificate renewal (2026-03-01)
+
+⚡ INCIDENT INVESTIGATION CONTEXT:
+
+🚨 CRITICAL CONSIDERATIONS FOR THIS ALERT:
+
+1. PCI-DSS Scope: This server processes payment data
+   → Any compromise requires PCI incident response
+   → Must notify Payment Card Brands within 72 hours
+
+2. Customer Impact: 5,000 users/day depend on this service
+   → Consider business hours before isolation
+   → Have communication plan ready
+
+3. Blast Radius: 4 critical downstream dependencies
+   → Isolating this server affects mobile app + partner APIs
+   → Coordinate with business teams before containment
+
+4. Data Sensitivity: Contains customer PII
+   → Potential data breach notification requirements (GDPR)
+   → Preserve forensic evidence
+
+⚡ RECOMMENDED NEXT STEPS:
+
+IMMEDIATE:
+  ✓ Review authentication logs on SRV-AUTH-LDAP-02
+  ✓ Check database queries on SRV-DB-CUSTOMER-01
+  ✓ Analyze payment gateway logs (SRV-API-PAYMENT-01)
+  ✓ Notify PCI compliance officer (compliance@company.com)
+
+CONTAINMENT OPTIONS:
+  A) Graceful failover to DR site (minimal impact, 5-10 min)
+  B) Network isolation (immediate, breaks mobile app + partners)
+  C) Enhanced monitoring only (if low confidence in threat)
+
+CONTACTS TO NOTIFY:
+  • Business Owner: marketing-team@company.com (customer impact)
+  • Technical Owner: web-admin-team@company.com (remediation)
+  • PCI Officer: compliance@company.com (regulatory)
+  • CISO: ciso@company.com (if breach suspected)
+
+Would you like me to:
+  A) Get current security alerts for this server from Sentinel
+  B) Check vulnerability status for this host
+  C) Review recent change history (last 30 days)
+  D) Create incident ticket with CMDB context attached
+```
+
+---
+
+#### **Benefits of Custom Internal MCP Integration**
+
+✅ **Unified Security Data Access**: Query CMDB, vulnerability scanners, threat intel through one interface  
+✅ **Context-Rich Investigations**: Automatically enrich alerts with asset ownership, criticality, dependencies  
+✅ **Custom Risk Scoring**: Organization-specific risk calculations based on your business context  
+✅ **Faster Incident Response**: Instant access to asset context without switching between tools  
+✅ **Compliance Awareness**: Automatically identify compliance scope (PCI, SOX, HIPAA) during investigations  
+✅ **Blast Radius Analysis**: Understand dependencies and impact before taking containment actions  
+✅ **Natural Language Interface**: No need to learn multiple tool interfaces or query languages  
+✅ **Proprietary Tool Integration**: Connect ANY internal security tool to AI assistants
 
 ---
 
