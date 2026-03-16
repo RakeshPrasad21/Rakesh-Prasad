@@ -9,8 +9,9 @@ Test these queries in **Microsoft 365 Defender Advanced Hunting Portal**:
 1. [Schema Discovery Queries](#schema-discovery-queries)
 2. [Critical Assets Monitoring](#critical-assets-monitoring)
 3. [Attack Paths Detection](#attack-paths-detection)
-4. [Simplified Test Queries](#simplified-test-queries)
-5. [SecurityRecommendation Table Alternatives](#securityrecommendation-table-alternatives)
+4. [New Attack Paths Detection](#new-attack-paths-detection)
+5. [Simplified Test Queries](#simplified-test-queries)
+6. [SecurityRecommendation Table Alternatives](#securityrecommendation-table-alternatives)
 
 ⚠️ **Important**: If `SecurityRecommendation` table is not available, see [SecurityRecommendation-Table-Guide.md](SecurityRecommendation-Table-Guide.md) for alternatives.
 
@@ -79,8 +80,8 @@ let CurrentExposure = ExposureGraphNodes
     | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
 let VulnerabilityCount = SecurityRecommendation
     | where Timestamp > ago(1d)
-    //| where Status == 'Active'
-    | where RecommendationSeverity in ('High', 'Critical')
+    | where Status == 'Active'
+    | where Severity in ('High', 'Critical')
     | where isnotempty(DeviceId)
     | summarize VulnerabilitiesCount = count() by DeviceId;
 CriticalDevices
@@ -208,6 +209,96 @@ ExposureGraphNodes
 | extend NodeId = tostring(NodeId)
 | project NodeId, NodeName, NodeLabel, Categories
 | take 10
+```
+
+---
+
+## New Attack Paths Detection
+
+**Purpose:** Identify newly discovered attack paths (Status = 'New')  
+**Used in:** P1 notifications for new attack path alerts  
+**UI Location:** MSEM → Attack Surface Management → Attack Paths (Status column)
+
+### Full Query (Production)
+```kql
+let CriticalAssets = DeviceInfo
+    | where Timestamp > ago(1d)
+    | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
+    | distinct DeviceId, DeviceName;
+let NewAttackPaths = ExposureGraphEdges
+    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | where Status == 'New'
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
+    | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId, Status;
+let NodeDetails = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | project NodeId, NodeName, NodeLabel, Categories, NodeProperties;
+NewAttackPaths
+| join kind=inner (NodeDetails) on $left.SourceNodeId == $right.NodeId
+| project-rename SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories
+| join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
+| project-rename TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories, TargetProperties = NodeProperties
+| extend PathInvolvesCriticalAsset = TargetNodeId in~ (toscalar(CriticalAssets | summarize make_set(DeviceId)))
+| project 
+    Timestamp = now(),
+    AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
+    PathName = strcat(SourceName, ' → ', TargetName),
+    SourceNode = SourceName,
+    TargetNode = TargetName,
+    PathStatus = Status,
+    PathLength = PathCount,
+    PathRisk = PathCount * 10,
+    EdgeTypes,
+    SourceCategories,
+    TargetCategories,
+    PathInvolvesCriticalAsset
+| extend Severity = case(
+    PathInvolvesCriticalAsset and PathLength > 3, 'Critical',
+    PathInvolvesCriticalAsset, 'High',
+    'Medium')
+| order by Severity, PathLength desc
+```
+
+### Simplified Test Version
+```kql
+// Step 1: Check if Status column exists and see values
+ExposureGraphEdges
+| where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+| summarize PathCount = count() by Status
+| order by PathCount desc
+```
+
+```kql
+// Step 2: See sample NEW attack paths
+ExposureGraphEdges
+| where Status == 'New'
+| where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+| extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
+| take 10
+```
+
+```kql
+// Step 3: Count new paths by edge type
+ExposureGraphEdges
+| where Status == 'New'
+| summarize NewPathCount = count() by EdgeLabel, Status
+| order by NewPathCount desc
+```
+
+### All Attack Paths by Status (Summary)
+```kql
+// Overview of attack paths by status
+ExposureGraphEdges
+| where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+| summarize 
+    TotalPaths = count(),
+    NewPaths = countif(Status == 'New'),
+    ActivePaths = countif(Status == 'Active'),
+    InactivePaths = countif(Status == 'InActive')
+| extend 
+    NewPathsPercentage = round((NewPaths * 100.0) / TotalPaths, 2),
+    ActivePathsPercentage = round((ActivePaths * 100.0) / TotalPaths, 2)
+| project TotalPaths, NewPaths, ActivePaths, InactivePaths, NewPathsPercentage, ActivePathsPercentage
 ```
 
 ---
@@ -513,7 +604,7 @@ let OpenRecommendations = SecurityRecommendation
     | extend 
         AffectedEntitiesCount = 1,
         DaysOpen = datetime_diff('day', now(), Timestamp),
-        ImpactLevel = RecommendationSeverity,
+        ImpactLevel = Severity,
         EffortLevel = case(
             RecommendationName has_any ('Enable', 'Turn on', 'Configure'), 'Low',
             RecommendationName has_any ('Update', 'Patch', 'Install'), 'Medium',
@@ -671,6 +762,7 @@ SecureScoreControlProfiles
 ## 📝 Notes
 
 - **MSEM tables** (ExposureGraphNodes, ExposureGraphEdges) are **snapshot tables** - no Timestamp column
+- **ExposureGraphEdges Status column**: Use to filter for 'New', 'Active', or 'InActive' attack paths
 - **DeviceInfo** and **SecurityRecommendation** have Timestamp columns - filter with `ago()`
 - **No Risk column** - Calculate exposure scores using `array_length(Categories) * 10`
 - **No dcount() on Categories** - Use `array_length()` and `sum()` instead
