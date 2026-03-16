@@ -79,9 +79,9 @@ let CurrentExposure = ExposureGraphNodes
     | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
 let VulnerabilityCount = SecurityRecommendation
     | where Timestamp > ago(1d)
-    | where RemediationStatus == 'Active'
-    | where RecommendationSeverity in ('High', 'Critical')
-    | extend DeviceId = tostring(AdditionalFields.deviceId)
+    | where Status == 'Active'
+    | where Severity in ('High', 'Critical')
+    | where isnotempty(DeviceId)
     | summarize VulnerabilitiesCount = count() by DeviceId;
 CriticalDevices
 | join kind=leftouter (CurrentExposure) on DeviceId
@@ -124,12 +124,20 @@ ExposureGraphNodes
 ```
 
 ```kql
-// Step 3: Count vulnerabilities
+// Step 3: Count vulnerabilities (if SecurityRecommendation is available)
 SecurityRecommendation
 | where Timestamp > ago(7d)
-| where RemediationStatus == 'Active'
-| where RecommendationSeverity in ('High', 'Critical')
-| summarize VulnerabilitiesCount = count() by RecommendationSeverity
+| where Status == 'Active'
+| where Severity in ('High', 'Critical')
+| summarize VulnerabilitiesCount = count() by Severity
+```
+
+```kql
+// Step 3 Alternative: Use DeviceTvmSoftwareVulnerabilities if SecurityRecommendation not available
+DeviceTvmSoftwareVulnerabilities
+| where Timestamp > ago(7d)
+| where VulnerabilitySeverityLevel in ('High', 'Critical')
+| summarize VulnerabilitiesCount = count() by VulnerabilitySeverityLevel
 ```
 
 ---
@@ -158,7 +166,7 @@ AttackPaths
 | project-rename SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories
 | join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
 | project-rename TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories, TargetProperties = NodeProperties
-| extend PathInvolvesCriticalAsset = TargetNodeId in (CriticalAssets | project DeviceId)
+| extend PathInvolvesCriticalAsset = TargetNodeId in~ (toscalar(CriticalAssets | summarize make_set(DeviceId)))
 | project 
     Timestamp = now(),
     AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
@@ -261,11 +269,26 @@ DeviceInfo
 
 1. **ExposureGraphNodes / ExposureGraphEdges**: Requires Microsoft Security Exposure Management (MSEM) license
 2. **DeviceInfo**: Available with Microsoft Defender for Endpoint
-3. **SecurityRecommendation**: Available with Microsoft Defender Vulnerability Management
+3. **SecurityRecommendation**: Requires Microsoft Defender Vulnerability Management
+   - **How to enable**: 
+     1. License: Microsoft 365 E5 or Defender for Endpoint Plan 2
+     2. Navigate to: https://security.microsoft.com/tvm_dashboard
+     3. Onboard devices to Defender for Endpoint
+     4. Wait 24-48 hours for initial scan
+   - **Alternative if not available**: Use `DeviceTvmSoftwareVulnerabilities` table (see examples below)
+4. **DeviceTvmSoftwareVulnerabilities**: Same requirements as SecurityRecommendation
+   - **How to enable**: Same as SecurityRecommendation (Defender Vulnerability Management)
+   - **Test availability**: Run `DeviceTvmSoftwareVulnerabilities | take 1`
+   - **Alternative**: Remove vulnerability components or use MSEM exposure scores only
+5. **IdentityInfo**: Available with Microsoft Defender for Identity or Microsoft 365 E5
 
 ### If you get "Column not found" errors:
 
 Run the schema discovery queries at the top to see actual column names in your environment.
+
+**Common column name variations**:
+- SecurityRecommendation: `Status` (not `RemediationStatus`), `Severity` (not `RecommendationSeverity`), `Category` (not `RecommendationCategory`)
+- IdentityInfo: May not have `AuthenticationMethods` or `LastSeenDate` - use `Timestamp` instead
 
 ### If no data is returned:
 
@@ -377,19 +400,20 @@ ExposureMetrics
 let Yesterday = ago(1d);
 let CurrentRecommendations = SecurityRecommendation
     | where Timestamp > Yesterday
-    | summarize arg_max(Timestamp, *) by RecommendationId, RecommendationCategory
+    | summarize arg_max(Timestamp, *) by RecommendationId
     | extend 
-        IsComplete = RemediationStatus == 'Completed',
-        IsActive = RemediationStatus == 'Active',
-        IsFailed = RemediationStatus == 'Failed'
+        Category = coalesce(Category, "Uncategorized"),
+        IsComplete = Status == 'Completed',
+        IsActive = Status == 'Active',
+        IsFailed = Status == 'Failed'
     | summarize 
         TotalRecommendations = count(),
         CompletedCount = countif(IsComplete),
         ActiveCount = countif(IsActive),
         FailedCount = countif(IsFailed),
-        HighPriorityCount = countif(RecommendationSeverity == 'High'),
+        HighPriorityCount = countif(Severity == 'High'),
         LastUpdate = max(Timestamp)
-        by InitiativeName = RecommendationCategory
+        by InitiativeName = Category
     | extend CompletionPercentage = round((todouble(CompletedCount) / todouble(TotalRecommendations)) * 100, 2);
 CurrentRecommendations
 | where CompletionPercentage < 80 or FailedCount > 0
@@ -454,9 +478,9 @@ let IdentityDetails = IdentityInfo
     | summarize arg_max(Timestamp, *) by AccountUpn
     | extend 
         IsPrivileged = AssignedRoles has_any ('Global Administrator', 'Security Administrator', 'Exchange Administrator', 'SharePoint Administrator'),
-        HasMFA = array_length(AuthenticationMethods) > 1,
-        DaysSinceLastSignIn = datetime_diff('day', now(), LastSeenDate),
-        IsDormant = datetime_diff('day', now(), LastSeenDate) > 90
+        HasMFA = isnotempty(AccountUpn),
+        DaysSinceLastSignIn = datetime_diff('day', now(), Timestamp),
+        IsDormant = datetime_diff('day', now(), Timestamp) > 90
     | project AccountUpn, IsPrivileged, HasMFA, IsDormant, DaysSinceLastSignIn, Department, IsAccountEnabled, AssignedRoles;
 HighExposureIdentities
 | join kind=inner (IdentityDetails) on AccountUpn
@@ -482,18 +506,14 @@ HighExposureIdentities
 ```kql
 let OpenRecommendations = SecurityRecommendation
     | where Timestamp > ago(1d)
-    | where RemediationStatus == 'Active'
+    | where Status == 'Active'
     | summarize 
-        arg_max(Timestamp, *),
-        AffectedEntitiesCount = dcount(coalesce(
-            tostring(AdditionalFields.deviceId),
-            tostring(AdditionalFields.userId),
-            tostring(AdditionalFields.applicationId)
-        ))
+        arg_max(Timestamp, *)
         by RecommendationId
     | extend 
+        AffectedEntitiesCount = 1,
         DaysOpen = datetime_diff('day', now(), Timestamp),
-        ImpactLevel = RecommendationSeverity,
+        ImpactLevel = Severity,
         EffortLevel = case(
             RecommendationName has_any ('Enable', 'Turn on', 'Configure'), 'Low',
             RecommendationName has_any ('Update', 'Patch', 'Install'), 'Medium',
@@ -565,7 +585,16 @@ CriticalDevices
 
 ### Using DeviceTvmSoftwareVulnerabilities (Alternative)
 
-If you have Defender Vulnerability Management but SecurityRecommendation is missing, try:
+⚠️ **Important**: Both SecurityRecommendation and DeviceTvmSoftwareVulnerabilities require **Microsoft Defender Vulnerability Management**.
+
+**To enable these tables**:
+1. License: Microsoft 365 E5, Microsoft 365 E5 Security, or Defender for Endpoint Plan 2
+2. Go to: https://security.microsoft.com/tvm_dashboard
+3. Onboard devices via: Settings → Endpoints → Onboarding
+4. Wait 24-48 hours for vulnerability assessment to populate
+5. Test with: `DeviceTvmSoftwareVulnerabilities | take 1`
+
+If SecurityRecommendation is not available but DeviceTvmSoftwareVulnerabilities is:
 
 ```kql
 let CriticalDevices = DeviceInfo
@@ -583,6 +612,7 @@ let CurrentExposure = ExposureGraphNodes
 let VulnerabilityCount = DeviceTvmSoftwareVulnerabilities
     | where Timestamp > ago(7d)
     | where VulnerabilitySeverityLevel in ('High', 'Critical')
+    | where isnotempty(DeviceId)
     | summarize VulnerabilitiesCount = count() by DeviceId;
 CriticalDevices
 | join kind=leftouter (CurrentExposure) on DeviceId
