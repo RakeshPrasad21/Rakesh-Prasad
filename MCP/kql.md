@@ -79,8 +79,8 @@ let CurrentExposure = ExposureGraphNodes
     | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
 let VulnerabilityCount = SecurityRecommendation
     | where Timestamp > ago(1d)
-    | where Status == 'Active'
-    | where Severity in ('High', 'Critical')
+    //| where Status == 'Active'
+    | where RecommendationSeverity in ('High', 'Critical')
     | where isnotempty(DeviceId)
     | summarize VulnerabilitiesCount = count() by DeviceId;
 CriticalDevices
