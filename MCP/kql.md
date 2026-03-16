@@ -10,6 +10,9 @@ Test these queries in **Microsoft 365 Defender Advanced Hunting Portal**:
 2. [Critical Assets Monitoring](#critical-assets-monitoring)
 3. [Attack Paths Detection](#attack-paths-detection)
 4. [Simplified Test Queries](#simplified-test-queries)
+5. [SecurityRecommendation Table Alternatives](#securityrecommendation-table-alternatives)
+
+⚠️ **Important**: If `SecurityRecommendation` table is not available, see [SecurityRecommendation-Table-Guide.md](SecurityRecommendation-Table-Guide.md) for alternatives.
 
 ---
 
@@ -72,8 +75,8 @@ let CurrentExposure = ExposureGraphNodes
     | where NodeLabel in ('Device', 'Server')
     | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
     | where isnotempty(DeviceId)
-    | summarize AttackPathsCount = dcount(Categories), TotalCategories = sum(CategoriesCount) by DeviceId, NodeName
-    | extend ExposureScore = TotalCategories * 10;
+    | summarize TotalCategories = sum(CategoriesCount) by DeviceId, NodeName
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
 let VulnerabilityCount = SecurityRecommendation
     | where Timestamp > ago(1d)
     | where RemediationStatus == 'Active'
@@ -289,9 +292,9 @@ let HighExposureDevices = ExposureGraphNodes
     | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
     | where isnotempty(DeviceId)
     | summarize 
-        ExposureScore = sum(CategoriesCount) * 10,
-        AttackPathsCount = dcount(Categories)
+        TotalCategories = sum(CategoriesCount)
         by DeviceId, EntityName = NodeName
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories
     | where ExposureScore >= 70;
 let DeviceDetails = DeviceInfo
     | where Timestamp > ago(1d)
@@ -311,9 +314,9 @@ let HighExposureIdentities = ExposureGraphNodes
     | extend AccountUpn = tostring(NodeProperties.userPrincipalName), CategoriesCount = array_length(Categories)
     | where isnotempty(AccountUpn)
     | summarize 
-        ExposureScore = sum(CategoriesCount) * 10,
-        AttackPathsCount = dcount(Categories)
+        TotalCategories = sum(CategoriesCount)
         by AccountUpn, EntityName = NodeName
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories
     | where ExposureScore >= 70;
 let IdentityDetails = IdentityInfo
     | where Timestamp > ago(7d)
@@ -442,9 +445,9 @@ let HighExposureIdentities = ExposureGraphNodes
     | extend AccountUpn = tostring(NodeProperties.userPrincipalName), CategoriesCount = array_length(Categories)
     | where isnotempty(AccountUpn)
     | summarize 
-        ExposureScore = sum(CategoriesCount) * 10,
-        AttackPathsCount = dcount(Categories)
+        TotalCategories = sum(CategoriesCount)
         by AccountUpn
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories
     | where ExposureScore >= 70;
 let IdentityDetails = IdentityInfo
     | where Timestamp > ago(7d)
@@ -525,11 +528,123 @@ QuickWins
 
 ---
 
+## SecurityRecommendation Table Alternatives
+
+⚠️ **If SecurityRecommendation table is not available in your environment**, use these modified queries:
+
+### Critical Assets Monitoring (Without SecurityRecommendation)
+
+```kql
+let CriticalDevices = DeviceInfo
+    | where Timestamp > ago(1d)
+    | where isnotempty(DeviceId)
+    | summarize arg_max(Timestamp, *) by DeviceId
+    | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
+    | project DeviceId, DeviceName, DeviceType, OSPlatform, LastSeen = Timestamp;
+let CurrentExposure = ExposureGraphNodes
+    | where NodeLabel in ('Device', 'Server')
+    | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
+    | where isnotempty(DeviceId)
+    | summarize TotalCategories = sum(CategoriesCount) by DeviceId, NodeName
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
+CriticalDevices
+| join kind=inner (CurrentExposure) on DeviceId
+| project 
+    Timestamp = LastSeen,
+    AssetId = DeviceId,
+    AssetName = coalesce(NodeName, DeviceName),
+    AssetType = DeviceType,
+    ExposureScore,
+    AttackPathsCount
+| extend Severity = case(
+    ExposureScore >= 85, 'Critical',
+    AttackPathsCount >= 50, 'High',
+    'Medium')
+| order by ExposureScore desc
+```
+
+### Using DeviceTvmSoftwareVulnerabilities (Alternative)
+
+If you have Defender Vulnerability Management but SecurityRecommendation is missing, try:
+
+```kql
+let CriticalDevices = DeviceInfo
+    | where Timestamp > ago(1d)
+    | where isnotempty(DeviceId)
+    | summarize arg_max(Timestamp, *) by DeviceId
+    | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
+    | project DeviceId, DeviceName, DeviceType, OSPlatform, LastSeen = Timestamp;
+let CurrentExposure = ExposureGraphNodes
+    | where NodeLabel in ('Device', 'Server')
+    | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
+    | where isnotempty(DeviceId)
+    | summarize TotalCategories = sum(CategoriesCount) by DeviceId, NodeName
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
+let VulnerabilityCount = DeviceTvmSoftwareVulnerabilities
+    | where Timestamp > ago(7d)
+    | where VulnerabilitySeverityLevel in ('High', 'Critical')
+    | summarize VulnerabilitiesCount = count() by DeviceId;
+CriticalDevices
+| join kind=leftouter (CurrentExposure) on DeviceId
+| join kind=leftouter (VulnerabilityCount) on DeviceId
+| where isnotempty(ExposureScore) or isnotempty(VulnerabilitiesCount)
+| project 
+    Timestamp = LastSeen,
+    AssetId = DeviceId,
+    AssetName = coalesce(NodeName, DeviceName),
+    AssetType = DeviceType,
+    ExposureScore = coalesce(ExposureScore, 0),
+    AttackPathsCount = coalesce(AttackPathsCount, 0),
+    VulnerabilitiesCount = coalesce(VulnerabilitiesCount, 0)
+| extend Severity = case(
+    ExposureScore >= 85 or VulnerabilitiesCount >= 10, 'Critical',
+    AttackPathsCount >= 50 or VulnerabilitiesCount >= 5, 'High',
+    'Medium')
+| order by ExposureScore desc
+```
+
+### Security Recommendations (Without SecurityRecommendation)
+
+Since SecurityRecommendation is the primary table for this query, use Secure Score instead:
+
+```kql
+// Alternative: Use SecureScore control profiles
+SecureScoreControlProfiles
+| where ControlName != ""
+| extend 
+    ImpactLevel = case(
+        Tier == "Essential", "Critical",
+        Tier == "Advanced", "High",
+        "Medium"
+    ),
+    EffortLevel = case(
+        ImplementationCost == "Low", "Low",
+        ImplementationCost == "Moderate", "Medium",
+        "High"
+    )
+| where ImpactLevel in ("Critical", "High")
+| project 
+    RecommendationName = ControlName,
+    ImpactLevel,
+    EffortLevel,
+    Category = ControlCategory,
+    AffectedEntitiesCount = UserImpact,
+    Score = ScoreInPercentage
+| order by ImpactLevel, EffortLevel
+| take 20
+```
+
+**Note**: SecureScore tables have a different schema. See [SecurityRecommendation-Table-Guide.md](SecurityRecommendation-Table-Guide.md) for full details.
+
+---
+
 ## 📝 Notes
 
 - **MSEM tables** (ExposureGraphNodes, ExposureGraphEdges) are **snapshot tables** - no Timestamp column
 - **DeviceInfo** and **SecurityRecommendation** have Timestamp columns - filter with `ago()`
 - **No Risk column** - Calculate exposure scores using `array_length(Categories) * 10`
+- **No dcount() on Categories** - Use `array_length()` and `sum()` instead
+- **SecurityRecommendation requires Defender Vulnerability Management** - See SecurityRecommendation-Table-Guide.md for alternatives
 - Always test queries in the portal before using in Logic Apps
 - Queries are optimized for Logic App HTTP POST to: `https://api.security.microsoft.com/api/advancedhunting/run`
 
@@ -543,7 +658,7 @@ Before deploying Logic Apps, verify:
 - [ ] ExposureGraphNodes returns data
 - [ ] ExposureGraphEdges returns data  
 - [ ] DeviceInfo has recent data (last 24 hours)
-- [ ] SecurityRecommendation has active recommendations
+- [ ] SecurityRecommendation is available OR alternative approach selected
 - [ ] IdentityInfo table is available (for identity queries)
 - [ ] SecureScore table is available (for score tracking)
 - [ ] Your account has permission to run Advanced Hunting queries
