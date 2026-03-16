@@ -513,7 +513,7 @@ let OpenRecommendations = SecurityRecommendation
     | extend 
         AffectedEntitiesCount = 1,
         DaysOpen = datetime_diff('day', now(), Timestamp),
-        ImpactLevel = Severity,
+        ImpactLevel = RecommendationSeverity,
         EffortLevel = case(
             RecommendationName has_any ('Enable', 'Turn on', 'Configure'), 'Low',
             RecommendationName has_any ('Update', 'Patch', 'Install'), 'Medium',
