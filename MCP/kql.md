@@ -651,20 +651,30 @@ Edges
 
 ---
 
-## 🎯 Logic App Recommendation - Implementing Status Tracking
+## 🎯 Logic App Recommendation - Status Already Available! ✅
 
-**Problem**: MSEM tables don't have Status field (New/Active/Inactive), so we can't track attack path lifecycle.
+**Great News**: MSEM calculates Status from existing fields - no complex storage needed!
 
-**Solution**: Implement our own status tracking using Azure Storage Table snapshots.
+**Status Logic** (from MSEM actual behavior):
+- **New**: `firstSeenByInventory` within 7 days AND `lastSeen` = today
+- **Active**: `firstSeenByInventory` > 7 days ago AND `lastSeen` = today
+- **Inactive**: Both `firstSeenByInventory` and `lastSeen` > 7 days ago
+
+**Implementation**: Use Query 8 (all statuses) or Query 9A/9B/9C (filtered by status)
 
 ---
 
-## 📊 Query 8: Attack Path Snapshot with Lifecycle Tracking
+## 📊 Query 8: Attack Path Snapshot with Status Calculation (Based on MSEM Logic)
 
-**Purpose**: Generate complete attack path snapshot with metadata for lifecycle tracking
+**Purpose**: Generate attack paths with **Status** calculated from firstSeenByInventory and lastSeen fields
+
+**MSEM Status Logic (Discovered):**
+- **New**: firstSeenByInventory within 7 days AND lastSeen = today
+- **Active**: firstSeenByInventory > 7 days ago AND lastSeen = today  
+- **Inactive**: Both firstSeenByInventory and lastSeen > 7 days ago
 
 ```kql
-// Generate comprehensive attack path snapshot for lifecycle tracking
+// Generate attack paths with Status based on MSEM actual logic
 let Edges = ExposureGraphEdges
     | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
@@ -673,28 +683,45 @@ let Nodes = ExposureGraphNodes
     | extend 
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
         firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, firstSeenByInventory;
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
-    SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories,
-    SourceIsHighValue = IsHighValue, SourceExposure = exposureScore, SourceDeviceName = deviceName,
-    SourceFirstSeen = firstSeenByInventory
+    EntryPointNodeId = SourceNodeId,
+    EntryPointName = NodeName, 
+    EntryPointType = NodeLabel, 
+    EntryPointCategories = Categories,
+    EntryPointIsHighValue = IsHighValue, 
+    EntryPointExposure = exposureScore, 
+    EntryPointDeviceName = deviceName,
+    EntryPointLastSeen = lastSeen, 
+    EntryPointFirstSeen = firstSeenByInventory
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename 
-    TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories,
-    TargetIsHighValue = IsHighValue, TargetExposure = exposureScore, TargetDeviceName = deviceName,
+    TargetName = NodeName, 
+    TargetType = NodeLabel, 
+    TargetCategories = Categories,
+    TargetIsHighValue = IsHighValue, 
+    TargetExposure = exposureScore, 
+    TargetDeviceName = deviceName,
+    TargetLastSeen = lastSeen, 
     TargetFirstSeen = firstSeenByInventory
 | extend 
-    // Generate unique attack path ID
-    AttackPathId = hash_sha256(strcat(SourceNodeId, '|', EdgeLabel, '|', TargetNodeId)),
+    // Generate unique attack path ID based on EntryPoint → Target
+    AttackPathId = hash_sha256(strcat(EntryPointNodeId, '|', EdgeLabel, '|', TargetNodeId)),
     
     // Metadata
-    AttackPathName = strcat(SourceName, ' → ', TargetName),
-    AttackPathDescription = strcat(SourceType, ' ', EdgeLabel, ' ', TargetType),
+    AttackPathName = strcat(coalesce(EntryPointDeviceName, EntryPointName), ' → ', TargetName),
+    AttackPathDescription = strcat(EntryPointType, ' ', EdgeLabel, ' ', TargetType),
+    
+    // Calculate Status based on MSEM actual logic
+    DaysSinceEntryPointFirstSeen = datetime_diff('day', now(), EntryPointFirstSeen),
+    DaysSinceEntryPointLastSeen = datetime_diff('day', now(), EntryPointLastSeen),
+    IsLastSeenToday = datetime_diff('day', now(), EntryPointLastSeen) == 0,
     
     // Risk calculation
     BaseRisk = 20,
@@ -720,16 +747,39 @@ Edges
         BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 80, 'High',
         BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 50, 'Medium',
         'Low'
+    )
+| extend 
+    // Calculate Status based on MSEM actual logic
+    Status = case(
+        // New: firstSeen within 7 days AND lastSeen = today
+        DaysSinceEntryPointFirstSeen <= 7 and IsLastSeenToday, 'New',
+        // Active: firstSeen > 7 days ago AND lastSeen = today
+        DaysSinceEntryPointFirstSeen > 7 and IsLastSeenToday, 'Active',
+        // Inactive: both firstSeen and lastSeen > 7 days ago
+        DaysSinceEntryPointFirstSeen > 7 and DaysSinceEntryPointLastSeen > 7, 'Inactive',
+        'Unknown'
     ),
-    SnapshotTimestamp = now()
+    AlertPriority = case(
+        DaysSinceEntryPointFirstSeen <= 7 and IsLastSeenToday, 'Critical - New Attack Path',
+        DaysSinceEntryPointFirstSeen > 7 and IsLastSeenToday and TotalRiskScore >= 100, 'High - Active Critical Path',
+        DaysSinceEntryPointLastSeen > 7, 'Info - Inactive Path',
+        'Medium - Active Path'
+    )
 | project 
+    Timestamp = now(),
+    Status,
+    AlertPriority,
     AttackPathId,
     AttackPathName,
     AttackPathDescription,
-    SourceNodeId,
-    SourceName,
-    SourceType,
-    SourceExposure,
+    EntryPointNodeId,
+    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
+    EntryPointType,
+    EntryPointExposure,
+    EntryPointFirstSeen,
+    EntryPointLastSeen,
+    DaysSinceEntryPointFirstSeen,
+    DaysSinceEntryPointLastSeen,
     EdgeLabel,
     TargetNodeId,
     TargetName,
@@ -737,240 +787,430 @@ Edges
     TargetExposure,
     TotalRiskScore,
     RiskLevel,
-    SourceCategories,
-    TargetCategories,
-    SnapshotTimestamp
+    EntryPointCategories,
+    TargetCategories
+| order by 
+    case(Status, 'New', 1, 'Active', 2, 'Inactive', 3, 4),  // Status priority
+    TotalRiskScore desc
 ```
 
 ---
 
-## 🏗️ Complete Solution Architecture
+## 🎯 Query 9: Filter Attack Paths by Status (Alert-Ready Queries)
 
-### Azure Storage Table Schema
+### Query 9A: NEW Attack Paths Only (🆕 ALERT ON THESE)
 
-**Table Name**: `MSEMAttackPathSnapshots`
+```kql
+// Get ONLY New attack paths (firstSeen within 7 days, lastSeen today)
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | extend 
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+    | extend 
+        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
+        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
+        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
+    // Filter: NEW status only (firstSeen ≤ 7 days AND lastSeen = today)
+    | where DaysSinceFirstSeen <= 7 and IsLastSeenToday
+    | extend 
+        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen;
+Edges
+| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
+| project-rename 
+    EntryPointNodeId = SourceNodeId,
+    EntryPointName = NodeName, 
+    EntryPointType = NodeLabel,
+    EntryPointExposure = exposureScore, 
+    EntryPointDeviceName = deviceName,
+    EntryPointFirstSeen = firstSeenByInventory,
+    EntryPointLastSeen = lastSeen,
+    DaysSinceEntryPointFirstSeen = DaysSinceFirstSeen
+| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | project NodeId, TargetName = NodeName, TargetType = NodeLabel) 
+    on $left.TargetNodeId == $right.NodeId
+| extend 
+    AttackPathId = hash_sha256(strcat(EntryPointNodeId, '|', EdgeLabel, '|', TargetNodeId)),
+    AttackPathName = strcat(coalesce(EntryPointDeviceName, EntryPointName), ' → ', TargetName),
+    Status = 'New',
+    AlertMessage = strcat(
+        '🆕 NEW ATTACK PATH DETECTED\n',
+        'Entry Point: ', coalesce(EntryPointDeviceName, EntryPointName), ' (', EntryPointType, ')\n',
+        'Target: ', TargetName, ' (', TargetType, ')\n',
+        'Method: ', EdgeLabel, '\n',
+        'First Discovered: ', format_datetime(EntryPointFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceEntryPointFirstSeen, ' days ago)\n',
+        'Exposure Score: ', EntryPointExposure, '\n',
+        '⚠️ ACTION REQUIRED: Immediate investigation needed!'
+    )
+| project 
+    Timestamp = now(),
+    Status,
+    AlertMessage,
+    AttackPathId,
+    AttackPathName,
+    EntryPointNodeId,
+    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
+    EntryPointType,
+    EntryPointExposure,
+    EntryPointFirstSeen,
+    DaysSinceEntryPointFirstSeen,
+    EdgeLabel,
+    TargetNodeId,
+    TargetName,
+    TargetType
+| order by DaysSinceEntryPointFirstSeen asc
+```
 
-| Column | Type | Description |
-|--------|------|-------------|
-| PartitionKey | String | "AttackPath" (fixed) |
-| RowKey | String | AttackPathId (SHA256 hash) |
-| AttackPathName | String | Human-readable path name |
-| AttackPathDescription | String | Path description |
-| SourceNodeId | String | Source node ID |
-| SourceName | String | Source node name |
-| SourceType | String | Source node type |
-| EdgeLabel | String | Edge relationship type |
-| TargetNodeId | String | Target node ID |
-| TargetName | String | Target node name |
-| TargetType | String | Target node type |
-| RiskScore | Int | Calculated risk score |
-| RiskLevel | String | Critical/High/Medium/Low |
-| **FirstSeenTimestamp** | DateTime | When path first appeared |
-| **LastSeenTimestamp** | DateTime | When path last appeared |
-| **Status** | String | **New/Active/Inactive/Reactivated** |
-| **DaysSinceFirstSeen** | Int | Age of attack path |
-| **DaysSinceLastSeen** | Int | Days since last observed |
+### Query 9B: ACTIVE Attack Paths Only (Monitor High-Risk)
+
+```kql
+// Get ONLY Active attack paths (firstSeen > 7 days, lastSeen today)
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | extend 
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+    | extend 
+        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
+        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
+        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
+    // Filter: ACTIVE status only (firstSeen > 7 days AND lastSeen = today)
+    | where DaysSinceFirstSeen > 7 and IsLastSeenToday
+    | extend 
+        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen;
+Edges
+| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
+| project-rename 
+    EntryPointNodeId = SourceNodeId,
+    EntryPointName = NodeName, 
+    EntryPointType = NodeLabel,
+    EntryPointIsHighValue = IsHighValue,
+    EntryPointExposure = exposureScore, 
+    EntryPointDeviceName = deviceName,
+    EntryPointFirstSeen = firstSeenByInventory,
+    DaysSinceEntryPointFirstSeen = DaysSinceFirstSeen
+| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal') | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue) 
+    on $left.TargetNodeId == $right.NodeId
+| extend 
+    RiskScore = case(
+        TargetIsHighValue, 95,
+        TargetType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'user', 'manageidentity'), 80,
+        60
+    ) + case(EntryPointExposure == 'High', 15, EntryPointExposure == 'Medium', 10, 0),
+    Status = 'Active',
+    DaysActive = DaysSinceEntryPointFirstSeen
+| where RiskScore >= 80  // Only high-risk active paths
+| project 
+    Timestamp = now(),
+    Status,
+    DaysActive,
+    RiskScore,
+    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
+    EntryPointType,
+    EntryPointExposure,
+    EdgeLabel,
+    TargetName,
+    TargetType,
+    EntryPointFirstSeen
+| order by RiskScore desc, DaysActive desc
+```
+
+### Query 9C: INACTIVE Attack Paths (Remediation Report)
+
+```kql
+// Get ONLY Inactive attack paths (both firstSeen and lastSeen > 7 days ago)
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | extend 
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+    | extend 
+        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
+        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen)
+    // Filter: INACTIVE status only (both > 7 days ago)
+    | where DaysSinceFirstSeen > 7 and DaysSinceLastSeen > 7
+    | project NodeId, NodeName, NodeLabel, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen;
+Edges
+| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
+| project-rename 
+    EntryPointName = NodeName, 
+    EntryPointType = NodeLabel,
+    EntryPointDeviceName = deviceName,
+    EntryPointFirstSeen = firstSeenByInventory,
+    EntryPointLastSeen = lastSeen,
+    DaysSinceEntryPointLastSeen = DaysSinceLastSeen
+| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | project NodeId, TargetName = NodeName, TargetType = NodeLabel) 
+    on $left.TargetNodeId == $right.NodeId
+| extend 
+    Status = 'Inactive',
+    InactiveDuration = DaysSinceEntryPointLastSeen
+| project 
+    Timestamp = now(),
+    Status,
+    InactiveDuration,
+    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
+    EntryPointType,
+    EdgeLabel,
+    TargetName,
+    TargetType,
+    EntryPointLastSeen
+| order by InactiveDuration asc  // Recently inactive first
+```
 
 ---
 
-## 🔄 Logic App Implementation (⭐ RECOMMENDED SOLUTION)
+## 🏗️ Simplified Logic App Architecture
 
-### **Workflow: Daily Attack Path Snapshot with Status Tracking**
+### **No Storage Table Needed!** ✅
+
+Status is calculated directly from:
+- `firstSeenByInventory` (from NodeProperties.rawData)
+- `lastSeen` (from NodeProperties.rawData)
+- Current date comparison
+
+### Logic App Workflow (Simplified)
 
 ```mermaid
 graph TD
-    A[Scheduled Trigger - Daily] --> B[Run Query 8]
-    B --> C[Get Current Snapshot]
-    C --> D[Query Azure Storage Table]
-    D --> E{Compare Snapshots}
+    A[Scheduled Trigger - Daily] --> B[Run Query 9A: NEW Paths]
+    B --> C{Any New Paths?}
+    C -->|Yes| D[🆕 Alert: New Attack Paths]
+    C -->|No| E[Run Query 9B: ACTIVE High-Risk]
     
-    E -->|Not in Storage| F[NEW Attack Path]
-    E -->|In Storage + Recent LastSeen| G[ACTIVE Attack Path]
-    E -->|In Storage + Old LastSeen| H[REACTIVATED Attack Path]
+    E --> F{Any Critical Active?}
+    F -->|Yes| G[⚠️ Alert: Active Critical Paths]
+    F -->|No| H[Run Query 9C: INACTIVE]
     
-    F --> I[Insert: FirstSeen=Now, LastSeen=Now, Status=New]
-    G --> J[Update: LastSeen=Now, Status=Active]
-    H --> K[Update: LastSeen=Now, Status=Reactivated]
+    H --> I{Recently Inactive?}
+    I -->|Yes| J[✅ Info: Remediated Paths]
+    I -->|No| K[End - No Alerts]
     
-    D --> L[Find Missing Paths]
-    L -->|In Storage but not Current| M[Mark as INACTIVE]
-    M --> N[Update: Status=Inactive, keep old LastSeen]
-    
-    I --> O[Generate Alerts]
-    K --> O
-    N --> O
-    
-    O --> P[Send to Teams/Email]
-    P --> Q[End]
+    D --> L[Send to Teams/Email]
+    G --> L
+    J --> L
+    L --> M[End]
 ```
+
+### Logic App Steps (Simplified)
+
+**Step 1: Run Query 9A (NEW Attack Paths)**
+- Method: POST to Advanced Hunting API
+- Query: Query 9A (filters: firstSeen ≤ 7 days, lastSeen = today)
+- Output: NewAttackPaths array
+
+**Step 2: Check if Any Results**
+- Condition: `length(NewAttackPaths) > 0`
+- If Yes → Step 3 (Alert)
+- If No → Continue to Step 4
+
+**Step 3: Send NEW Attack Path Alerts**
+- Action: Post to Teams/Send Email
+- Message: Use AlertMessage field from query
+- Priority: Critical
+
+**Step 4: Run Query 9B (ACTIVE High-Risk)**
+- Query: Query 9B (filters: firstSeen > 7 days, lastSeen = today, RiskScore >= 80)
+- Output: HighRiskActivePaths array
+
+**Step 5: Send Active High-Risk Alerts** (if any)
+- Action: Post to Teams/Send Email
+- Priority: High
+
+**Step 6: Run Query 9C (INACTIVE Paths)** (Optional - for reporting)
+- Query: Query 9C (filters: firstSeen > 7 days, lastSeen > 7 days)
+- Output: InactivePaths array
+- Use for: Weekly remediation reports
 
 ---
 
-## 📋 Logic App Steps Implementation
+## 📧 Alert Templates (Based on Status Queries)
 
-### **Step 1: Run Query 8 (HTTP - Advanced Hunting API)**
-- Method: POST
-- URL: `https://api.security.microsoft.com/api/advancedhunting/run`
-- Authentication: Managed Identity
-- Body: Query 8 KQL
-- Output: CurrentSnapshot (array of attack paths)
-
-### **Step 2: Query Existing Paths (Azure Storage Table)**
-- Action: Get entities from Azure Table Storage
-- Table: MSEMAttackPathSnapshots
-- Filter: PartitionKey eq 'AttackPath'
-- Output: PreviousSnapshot
-
-### **Step 3: Classify Each Current Path (For Each Loop)**
-
-```javascript
-// Pseudo-logic for each path in CurrentSnapshot
-if (AttackPathId NOT in PreviousSnapshot) {
-    Status = "New"
-    FirstSeenTimestamp = Now
-    LastSeenTimestamp = Now
-    Alert = TRUE
-    AlertType = "🆕 NEW Attack Path Discovered"
-}
-else if (PreviousSnapshot[AttackPathId].LastSeenTimestamp < (Now - 7 days)) {
-    Status = "Reactivated"
-    FirstSeenTimestamp = PreviousSnapshot[AttackPathId].FirstSeenTimestamp  // Keep original
-    LastSeenTimestamp = Now
-    Alert = TRUE
-    AlertType = "⚠️ Attack Path REACTIVATED"
-}
-else {
-    Status = "Active"
-    FirstSeenTimestamp = PreviousSnapshot[AttackPathId].FirstSeenTimestamp  // Keep original
-    LastSeenTimestamp = Now
-    Alert = FALSE  // Only alert if RiskScore increased
-}
-```
-
-### **Step 4: Find Inactive Paths**
-
-```javascript
-// For each path in PreviousSnapshot
-if (AttackPathId NOT in CurrentSnapshot) {
-    Status = "Inactive"
-    // Keep existing FirstSeen and LastSeen (don't update)
-    Alert = TRUE
-    AlertType = "✅ Attack Path REMEDIATED (Inactive)"
-}
-```
-
-### **Step 5: Update Storage Table**
-- Insert/Update entities in MSEMAttackPathSnapshots
-- Batch operation for performance
-
-### **Step 6: Generate Alerts**
-
-**Alert on:**
-- ✅ **New Paths** (Status = New)
-- ✅ **Reactivated Paths** (Status = Reactivated)  
-- ✅ **Inactive Paths** (Status = Inactive) - Good news!
-- ⚠️ **High-Risk Active Paths** (RiskScore >= 100)
-
----
-
-## 📧 Alert Templates
-
-### New Attack Path Alert
+### NEW Attack Path Alert (Query 9A)
 ```
 🆕 NEW ATTACK PATH DETECTED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Attack Path: [AttackPathName]
-Risk Level: [RiskLevel] (Score: [RiskScore])
-First Seen: [FirstSeenTimestamp]
+Entry Point: [EntryPointName] ([EntryPointType])
+Target: [TargetName] ([TargetType])
+Method: [EdgeLabel]
+Risk Score: [RiskScore]
 
-Path Details:
-[SourceName] ([SourceType]) 
-   ↓ [EdgeLabel]
-[TargetName] ([TargetType])
+Timeline:
+First Discovered: [EntryPointFirstSeen]
+Days Since Discovery: [DaysSinceEntryPointFirstSeen]
+Entry Point Exposure: [EntryPointExposure]
 
 Status: NEW
-Action Required: Immediate investigation
+Priority: CRITICAL
+⚠️ ACTION REQUIRED: Immediate investigation needed!
+
+View in MSEM Portal → Attack Paths
 ```
 
-### Reactivated Attack Path Alert
+### ACTIVE High-Risk Path Alert (Query 9B)
 ```
-⚠️ ATTACK PATH REACTIVATED
+⚠️ ACTIVE HIGH-RISK ATTACK PATH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Attack Path: [AttackPathName]
-Risk Level: [RiskLevel] (Score: [RiskScore])
-First Seen: [FirstSeenTimestamp]
-Last Seen Previously: [PreviousLastSeen]
-Inactive Duration: [DaysInactive] days
-Reactivated: [Now]
+Entry Point: [EntryPointName] ([EntryPointType])
+Target: [TargetName] ([TargetType])
+Method: [EdgeLabel]
+Risk Score: [RiskScore]
 
-Status: REACTIVATED
-Warning: Previously remediated path has returned!
+Timeline:
+First Discovered: [EntryPointFirstSeen]
+Days Active: [DaysActive]
+Entry Point Exposure: [EntryPointExposure]
+
+Status: ACTIVE (Persistent)
+Priority: HIGH
+📊 Monitor for remediation progress
+
+View in MSEM Portal → Attack Paths
 ```
 
-### Remediated Attack Path (Good News!)
+### INACTIVE Path Report (Query 9C - Weekly Summary)
 ```
-✅ ATTACK PATH REMEDIATED
+✅ ATTACK PATH REMEDIATION REPORT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Attack Path: [AttackPathName]
-Risk Level: [RiskLevel] (Score: [RiskScore])
-First Seen: [FirstSeenTimestamp]
-Last Seen: [LastSeenTimestamp]
-Inactive Duration: [DaysInactive] days
+Inactive Paths Detected: [Count]
+
+Recently Inactive (Last 7-14 days):
+• [EntryPointName] → [TargetName] (Inactive: [InactiveDuration] days)
+• [EntryPointName] → [TargetName] (Inactive: [InactiveDuration] days)
 
 Status: INACTIVE
-Good News: Attack path no longer detected!
-Note: Monitoring continues for reactivation.
+Good News: These attack paths no longer detected!
+📈 Remediation efforts showing results
+
+View Full Report in MSEM Portal
 ```
 
 ---
 
 ## 🎯 Why This Solution Works
 
-### ✅ Solves Your Key Concerns:
+### ✅ Key Discovery: Status Fields Already Available!
 
-1. **NEW Detection**: Paths not in storage = genuinely new
-2. **ACTIVE Tracking**: Paths seen in current AND previous run = persistent threat
-3. **INACTIVE Detection**: Paths in storage but not current run = remediated
-4. **REACTIVATED Detection**: Paths inactive >7 days but back now = regression
-5. **No False Positives**: Hash-based AttackPathId ensures same path = same ID
-6. **Full Lifecycle Visibility**: Track from discovery → active → remediation → reactivation
+**MSEM stores the data we need:**
+- `firstSeenByInventory` → When entry point first appeared
+- `lastSeen` → Last time entry point was active
+- Simple date math → Calculate Status
 
-### ✅ Additional Benefits:
+**Status Logic** (from actual MSEM behavior):
+```kql
+Status = case(
+    DaysSinceFirstSeen <= 7 and IsLastSeenToday, 'New',      // ← NEW paths
+    DaysSinceFirstSeen > 7 and IsLastSeenToday, 'Active',    // ← ACTIVE paths
+    DaysSinceFirstSeen > 7 and DaysSinceLastSeen > 7, 'Inactive',  // ← INACTIVE paths
+    'Unknown'
+)
+```
 
-- **Trend Analysis**: DaysSinceFirstSeen shows path age
-- **Remediation Validation**: Inactive status confirms fix worked
-- **Regression Alerts**: Reactivated status catches regressions
-- **Risk Prioritization**: Focus on NEW high-risk paths
-- **Compliance Reporting**: Full audit trail of all attack paths
+### ✅ Benefits:
+
+1. **NEW Detection**: firstSeen ≤ 7 days + lastSeen = today → Alert immediately
+2. **ACTIVE Tracking**: firstSeen > 7 days + lastSeen = today → Monitor high-risk
+3. **INACTIVE Detection**: Both > 7 days → Remediation confirmed
+4. **No External Storage**: Everything calculated from MSEM data
+5. **Simple Logic App**: Just run queries and send alerts
+6. **Real-Time**: Matches MSEM portal exactly
+
+### ✅ Attack Path Grouping:
+
+**EntryPoint → Target** = Unique attack path (per your observation)
+- Same entry point can have multiple targets
+- Each combination tracked separately
+- AttackPathId = `hash_sha256(EntryPointNodeId | EdgeLabel | TargetNodeId)`
 
 ---
 
-## 🚀 Next Steps - Implementation Options
+## 🚀 Next Steps - Implementation Options (UPDATED)
 
-### Option A: Full Lifecycle Tracking (⭐ RECOMMENDED)
-1. **Logic App** with Query 8 + Azure Storage Table
-2. **Daily runs** with snapshot comparison
-3. **All status types**: New/Active/Inactive/Reactivated
-4. **Complete visibility** into attack path lifecycle
+### ⭐ Option A: NEW Attack Path Alerts (RECOMMENDED - Simplest)
+**Query**: Query 9A (NEW paths only)
+**Logic App**:
+- Daily trigger
+- Run Query 9A → Get NEW attack paths (firstSeen ≤ 7 days, lastSeen = today)
+- If results exist → Send critical alert to Teams
+- **No storage needed!**
 
-### Option B: New Entry Points Only (Simpler)
-1. **Logic App** with Query 7 (new devices via firstSeenByInventory)
-2. **No storage needed** - uses built-in field
-3. **Limited scope**: Only detects new entry point devices
-4. **Quick to implement** but misses path lifecycle
+**Use Case**: Detect newly discovered attack paths within 7 days
+**Benefit**: Immediate alerts on emerging threats
 
-### Option C: Hybrid Approach
-1. **Query 7** for new entry point devices (immediate)
-2. **Query 8** for full attack path lifecycle (comprehensive)
-3. **Best of both worlds** but more complex
+---
+
+### Option B: Multi-Status Monitoring (Comprehensive)
+**Queries**: Query 9A (NEW) + Query 9B (ACTIVE High-Risk) + Query 9C (INACTIVE)
+**Logic App**:
+- Daily trigger
+- Run all 3 queries in sequence
+- NEW paths → Critical alert
+- ACTIVE high-risk → High alert
+- INACTIVE → Weekly summary (good news!)
+- **No storage needed!**
+
+**Use Case**: Full visibility into attack path lifecycle
+**Benefit**: NEW alerts + active monitoring + remediation tracking
+
+---
+
+### Option C: Single Query with Conditional Alerts (Most Efficient)
+**Query**: Query 8 (all statuses in one query)
+**Logic App**:
+- Daily trigger
+- Run Query 8 → Get all paths with Status calculated
+- Filter results by Status and send appropriate alerts
+- **No storage needed!**
+
+**Use Case**: One query, multiple alert levels
+**Benefit**: Most efficient API usage
+
+---
+
+## 📋 Recommended Implementation Path
+
+**Start Here** → **Option A** (NEW paths only)
+- Simplest to implement
+- Immediate value
+- Matches MSEM portal behavior exactly
+
+**Then Add** → **Option B** queries for comprehensive monitoring
+- Active high-risk path alerts
+- Inactive path reports (weekly)
+
+**Final State** → Full multi-status monitoring with different alert channels per status
 
 ---
 
 ## 📝 Important Notes
 
+### ✅ Status CAN Be Calculated!
+
+**Update**: User discovered that **Status is calculable from existing fields**:
+- `firstSeenByInventory` (from NodeProperties.rawData) → When entry point first appeared
+- `lastSeen` (from NodeProperties.rawData) → Last activity timestamp
+
+**Status Logic**:
+- **New**: firstSeen ≤ 7 days AND lastSeen = today
+- **Active**: firstSeen > 7 days AND lastSeen = today
+- **Inactive**: firstSeen > 7 days AND lastSeen > 7 days
+
 ### Fields Not in KQL Tables
-These are **calculated by MSEM backend**, not available in ExposureGraphNodes/Edges:
-- ❌ **Status** (New/Active/Inactive) - Not in tables, calculated by MSEM
+These are still **calculated by MSEM backend**:
 - ❌ **Attack Path Name** - Must be generated from node names
 - ❌ **Attack Story** - Must be generated from path components
 - ❌ **Risk Score** - Must be calculated based on node types and edge types
@@ -988,7 +1228,8 @@ These are **calculated by MSEM backend**, not available in ExposureGraphNodes/Ed
 **Note**: Extract nested fields using `NodeProperties.rawData.<fieldname>` and convert types using `tostring()` for string fields
 
 ### Best Approach
-Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOMMENDED) for automatic detection of new entry points using `firstSeenByInventory`.
+✅ **Query 8** for all attack paths with Status calculated, OR
+✅ **Query 9A/9B/9C** for filtered status queries (NEW/ACTIVE/INACTIVE)
 
 ---
 
@@ -996,24 +1237,27 @@ Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOM
 
 I can create complete Logic App ARM templates for:
 
-### ⭐ Option A: Full Attack Path Lifecycle Tracking (RECOMMENDED)
-**Solves your Status problem completely!**
-- Creates Azure Storage Table for snapshots
-- Implements NEW/ACTIVE/INACTIVE/REACTIVATED status logic
-- Daily snapshot comparisons
-- Alerts on: New paths, Reactivated paths, Remediated paths
-- Full lifecycle visibility and audit trail
-- **Addresses your concern**: "without status we can't do anything"
+### ⭐ Option A: NEW Attack Path Alerts (RECOMMENDED - Simplest)
+**Perfect for immediate threat detection!**
+- Uses Query 9A (NEW paths only)
+- Daily scheduled trigger
+- Alerts on paths discovered within 7 days
+- **No storage needed** - Status calculated from MSEM fields
+- Matches MSEM portal behavior exactly
+- Quick to deploy and validate
 
-### Option B: New Entry Point Devices Only (Quick Start)
-- Uses Query 7 with firstSeenByInventory field
-- No storage needed
-- Alerts on newly discovered devices in last 7 days
-- Limited scope but quick to implement
+### Option B: Multi-Status Monitoring (Comprehensive)
+- Uses Query 9A + 9B + 9C (NEW, ACTIVE, INACTIVE)
+- Multiple alert levels based on Status
+- NEW → Critical alert, ACTIVE → High alert, INACTIVE → Weekly report
+- **No storage needed** - All status calculated from fields
+- Full lifecycle visibility
 
-### Option C: Hybrid Solution (Maximum Coverage)
-- Query 7 for new device alerts (immediate)
-- Query 8 for full lifecycle tracking (comprehensive)
-- Both stored state and time-based detection
+### Option C: All-in-One with Conditional Logic (Most Efficient)
+- Uses Query 8 (all statuses in one query)
+- Logic App filters and routes alerts based on Status
+- Single API call, multiple alert types
+- **No storage needed** - Status calculated in query
+- Most efficient for large environments
 
-**Which option would you like me to create?** Option A (Full Lifecycle) is recommended since it completely solves the Status field problem you identified.
+**Which option would you like me to create?** Option A (NEW Attack Path Alerts) is recommended to start - it's simple, effective, and matches exactly what you observed in MSEM.
