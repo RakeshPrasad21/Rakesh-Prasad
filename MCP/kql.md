@@ -2,6 +2,26 @@
 
 This guide shows how to construct **complete attack path chains** by following edges through nodes, matching what MSEM portal displays.
 
+## 🎯 Key Insights (Updated)
+
+### Attack Path Grouping
+**MSEM groups attack paths by EntryPoint (device) → unique Target:**
+- One EntryPoint can have multiple Targets
+- Each EntryPoint-Target pair = Unique attack path
+- Status calculated per EntryPoint based on `firstSeenByInventory` + `lastSeen`
+
+### Status Logic (Discovered from MSEM Logs)
+- **New**: firstSeen ≤ 7 days AND lastSeen = today
+- **Active**: firstSeen > 7 days AND lastSeen = today
+- **Inactive**: firstSeen > 7 days AND lastSeen > 7 days
+
+### Critical Field Locations
+- ✅ `exposureScore`: `NodeProperties.rawData.exposureScore` (string)
+- ✅ `criticalityLevel`: `NodeProperties.rawData.criticalityLevel.criticalityLevel` ⚠️ **Double nested!**
+- ✅ `deviceName`: `NodeProperties.rawData.deviceName`
+- ✅ `firstSeenByInventory`: `NodeProperties.rawData.firstSeenByInventory` (Status calculation)
+- ✅ `lastSeen`: `NodeProperties.rawData.lastSeen` (Status calculation)
+
 ---
 
 ## 🔗 Understanding Attack Path Structure
@@ -32,8 +52,16 @@ Node (Storage Account)
 - **deviceName**: Device name (alternative to NodeName) - `tostring(NodeProperties.rawData.deviceName)`
 - **lastSeen**: Last time device was seen - `NodeProperties.rawData.lastSeen`
 - **firstSeenByInventory**: When device first appeared in MSEM - `NodeProperties.rawData.firstSeenByInventory`
+- **criticalityLevel**: Asset criticality level - `tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)` ⚠️ **Double nested!**
 
 **Access Pattern**: Extract nested fields using `NodeProperties.rawData.<fieldname>` and convert types as needed
+**Note**: criticalityLevel is double-nested: `NodeProperties.rawData.criticalityLevel.criticalityLevel`
+
+### Attack Path Grouping Structure
+**MSEM groups attack paths by EntryPoint (device) with unique Targets:**
+- One EntryPoint → Multiple Targets = Multiple attack paths
+- Each EntryPoint-Target combination = Unique attack path
+- AttackPathId = `hash_sha256(EntryPointNodeId | EdgeLabel | TargetNodeId)`
 
 ## 📊 Query 1: Simple 2-Hop Attack Paths
 
@@ -54,18 +82,19 @@ let Nodes = ExposureGraphNodes
     | extend 
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
-    | project NodeId, NodeName, NodeLabel, Categories, exposureScore, deviceName, lastSeen, firstSeenByInventory;
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
+    | project NodeId, NodeName, NodeLabel, Categories, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename SourceNodeName = NodeName, SourceNodeType = NodeLabel, SourceCategories = Categories, 
     SourceExposure = exposureScore, SourceDeviceName = deviceName, 
-    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory
+    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory, SourceCriticalityLevel = criticalityLevel
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename TargetNodeName = NodeName, TargetNodeType = NodeLabel, TargetCategories = Categories,
     TargetExposure = exposureScore, TargetDeviceName = deviceName,
-    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory
+    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory, TargetCriticalityLevel = criticalityLevel
 | extend 
     AttackPathName = strcat(SourceNodeName, ' → ', TargetNodeName),
     AttackPathDescription = strcat(SourceNodeType, ' can access ', TargetNodeType, ' via ', EdgeLabel),
@@ -108,12 +137,14 @@ Edges
     SourceNodeName,
     SourceNodeType,
     SourceExposure,
+    SourceCriticalityLevel,
     SourceDeviceName,
     EdgeLabel,
     TargetNodeId,
     TargetNodeName,
     TargetNodeType,
     TargetExposure,
+    TargetCriticalityLevel,
     TargetDeviceName,
     SourceCategories,
     TargetCategories,
@@ -419,26 +450,27 @@ let Nodes = ExposureGraphNodes
         // Extract from NodeProperties.rawData
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
         IsSensitive = array_length(Categories) >= 3,
         IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, IsSensitive, IsPrivileged, exposureScore, deviceName, lastSeen, firstSeenByInventory;
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, IsSensitive, IsPrivileged, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
     SourceName = NodeName, SourceType = NodeLabel, SourceIsHighValue = IsHighValue, 
     SourceIsSensitive = IsSensitive, SourceCategories = Categories, SourceIsPrivileged = IsPrivileged,
     SourceExposure = exposureScore, SourceDeviceName = deviceName,
-    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory
+    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory, SourceCriticalityLevel = criticalityLevel
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename 
     TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue, 
     TargetIsSensitive = IsSensitive, TargetCategories = Categories, TargetIsPrivileged = IsPrivileged,
     TargetExposure = exposureScore, TargetDeviceName = deviceName,
-    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory
+    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory, TargetCriticalityLevel = criticalityLevel
 | extend 
     // Generate attack path ID (similar to MSEM)
     AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
@@ -519,12 +551,14 @@ Edges
     SourceName,
     SourceType,
     SourceExposure,
+    SourceCriticalityLevel,
     SourceDeviceName,
     SourceFirstSeen,
     TargetNodeId,
     TargetName,
     TargetType,
     TargetExposure,
+    TargetCriticalityLevel,
     TargetDeviceName,
     TargetFirstSeen,
     SourceCategories,
@@ -549,8 +583,8 @@ let RecentDevices = ExposureGraphNodes
         // Extract from NodeProperties.rawData
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory)
     | where isnotempty(firstSeenByInventory)
     | where firstSeenByInventory >= ago(7d)  // Discovered in last 7 days
     | project 
@@ -683,11 +717,12 @@ let Nodes = ExposureGraphNodes
     | extend 
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory;
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
@@ -699,7 +734,8 @@ Edges
     EntryPointExposure = exposureScore, 
     EntryPointDeviceName = deviceName,
     EntryPointLastSeen = lastSeen, 
-    EntryPointFirstSeen = firstSeenByInventory
+    EntryPointFirstSeen = firstSeenByInventory,
+    EntryPointCriticalityLevel = criticalityLevel
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename 
     TargetName = NodeName, 
@@ -709,7 +745,8 @@ Edges
     TargetExposure = exposureScore, 
     TargetDeviceName = deviceName,
     TargetLastSeen = lastSeen, 
-    TargetFirstSeen = firstSeenByInventory
+    TargetFirstSeen = firstSeenByInventory,
+    TargetCriticalityLevel = criticalityLevel
 | extend 
     // Generate unique attack path ID based on EntryPoint → Target
     AttackPathId = hash_sha256(strcat(EntryPointNodeId, '|', EdgeLabel, '|', TargetNodeId)),
@@ -776,6 +813,7 @@ Edges
     EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
     EntryPointType,
     EntryPointExposure,
+    EntryPointCriticalityLevel,
     EntryPointFirstSeen,
     EntryPointLastSeen,
     DaysSinceEntryPointFirstSeen,
@@ -785,6 +823,7 @@ Edges
     TargetName,
     TargetType,
     TargetExposure,
+    TargetCriticalityLevel,
     TotalRiskScore,
     RiskLevel,
     EntryPointCategories,
@@ -800,8 +839,11 @@ Edges
 
 ### Query 9A: NEW Attack Paths Only (🆕 ALERT ON THESE)
 
+**Shows**: Same EntryPoint (device) → Multiple unique Targets
+
 ```kql
 // Get ONLY New attack paths (firstSeen within 7 days, lastSeen today)
+// Groups by EntryPoint and shows all unique Targets accessible from that EntryPoint
 let Edges = ExposureGraphEdges
     | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
@@ -810,8 +852,9 @@ let Nodes = ExposureGraphNodes
     | extend 
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
     | extend 
         DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
         DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
@@ -820,7 +863,7 @@ let Nodes = ExposureGraphNodes
     | where DaysSinceFirstSeen <= 7 and IsLastSeenToday
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen;
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen, criticalityLevel;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
@@ -829,10 +872,11 @@ Edges
     EntryPointType = NodeLabel,
     EntryPointExposure = exposureScore, 
     EntryPointDeviceName = deviceName,
+    EntryPointCriticalityLevel = criticalityLevel,
     EntryPointFirstSeen = firstSeenByInventory,
     EntryPointLastSeen = lastSeen,
     DaysSinceEntryPointFirstSeen = DaysSinceFirstSeen
-| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | project NodeId, TargetName = NodeName, TargetType = NodeLabel) 
+| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend TargetCriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel) | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetCriticalityLevel) 
     on $left.TargetNodeId == $right.NodeId
 | extend 
     AttackPathId = hash_sha256(strcat(EntryPointNodeId, '|', EdgeLabel, '|', TargetNodeId)),
@@ -841,7 +885,9 @@ Edges
     AlertMessage = strcat(
         '🆕 NEW ATTACK PATH DETECTED\n',
         'Entry Point: ', coalesce(EntryPointDeviceName, EntryPointName), ' (', EntryPointType, ')\n',
+        'Entry Point Criticality: ', EntryPointCriticalityLevel, '\n',
         'Target: ', TargetName, ' (', TargetType, ')\n',
+        'Target Criticality: ', TargetCriticalityLevel, '\n',
         'Method: ', EdgeLabel, '\n',
         'First Discovered: ', format_datetime(EntryPointFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceEntryPointFirstSeen, ' days ago)\n',
         'Exposure Score: ', EntryPointExposure, '\n',
@@ -856,17 +902,21 @@ Edges
     EntryPointNodeId,
     EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
     EntryPointType,
+    EntryPointCriticalityLevel,
     EntryPointExposure,
     EntryPointFirstSeen,
     DaysSinceEntryPointFirstSeen,
     EdgeLabel,
     TargetNodeId,
     TargetName,
-    TargetType
-| order by DaysSinceEntryPointFirstSeen asc
+    TargetType,
+    TargetCriticalityLevel
+| order by EntryPointNodeId, DaysSinceEntryPointFirstSeen asc  // Groups by EntryPoint, shows all targets
 ```
 
 ### Query 9B: ACTIVE Attack Paths Only (Monitor High-Risk)
+
+**Shows**: Same EntryPoint (device) → Multiple unique Targets (Active for >7 days)
 
 ```kql
 // Get ONLY Active attack paths (firstSeen > 7 days, lastSeen today)
@@ -878,8 +928,9 @@ let Nodes = ExposureGraphNodes
     | extend 
         exposureScore = tostring(NodeProperties.rawData.exposureScore),
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
     | extend 
         DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
         DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
@@ -888,7 +939,7 @@ let Nodes = ExposureGraphNodes
     | where DaysSinceFirstSeen > 7 and IsLastSeenToday
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen;
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, criticalityLevel;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
@@ -896,11 +947,12 @@ Edges
     EntryPointName = NodeName, 
     EntryPointType = NodeLabel,
     EntryPointIsHighValue = IsHighValue,
+    EntryPointCriticalityLevel = criticalityLevel,
     EntryPointExposure = exposureScore, 
     EntryPointDeviceName = deviceName,
     EntryPointFirstSeen = firstSeenByInventory,
     DaysSinceEntryPointFirstSeen = DaysSinceFirstSeen
-| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal') | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue) 
+| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal') | extend TargetCriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel) | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue, TargetCriticalityLevel) 
     on $left.TargetNodeId == $right.NodeId
 | extend 
     RiskScore = case(
@@ -918,15 +970,19 @@ Edges
     RiskScore,
     EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
     EntryPointType,
+    EntryPointCriticalityLevel,
     EntryPointExposure,
     EdgeLabel,
     TargetName,
     TargetType,
+    TargetCriticalityLevel,
     EntryPointFirstSeen
-| order by RiskScore desc, DaysActive desc
+| order by EntryPointNodeId, RiskScore desc, DaysActive desc  // Groups by EntryPoint
 ```
 
 ### Query 9C: INACTIVE Attack Paths (Remediation Report)
+
+**Shows**: Same EntryPoint (device) → Multiple unique Targets (All inactive >7 days)
 
 ```kql
 // Get ONLY Inactive attack paths (both firstSeen and lastSeen > 7 days ago)
@@ -937,24 +993,27 @@ let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | extend 
         deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = NodeProperties.rawData.lastSeen,
-        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
     | extend 
         DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
         DaysSinceLastSeen = datetime_diff('day', now(), lastSeen)
     // Filter: INACTIVE status only (both > 7 days ago)
     | where DaysSinceFirstSeen > 7 and DaysSinceLastSeen > 7
-    | project NodeId, NodeName, NodeLabel, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen;
+    | project NodeId, NodeName, NodeLabel, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen, criticalityLevel;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
+    EntryPointNodeId = SourceNodeId,
     EntryPointName = NodeName, 
     EntryPointType = NodeLabel,
+    EntryPointCriticalityLevel = criticalityLevel,
     EntryPointDeviceName = deviceName,
     EntryPointFirstSeen = firstSeenByInventory,
     EntryPointLastSeen = lastSeen,
     DaysSinceEntryPointLastSeen = DaysSinceLastSeen
-| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | project NodeId, TargetName = NodeName, TargetType = NodeLabel) 
+| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend TargetCriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel) | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetCriticalityLevel) 
     on $left.TargetNodeId == $right.NodeId
 | extend 
     Status = 'Inactive',
@@ -965,11 +1024,13 @@ Edges
     InactiveDuration,
     EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
     EntryPointType,
+    EntryPointCriticalityLevel,
     EdgeLabel,
     TargetName,
     TargetType,
+    TargetCriticalityLevel,
     EntryPointLastSeen
-| order by InactiveDuration asc  // Recently inactive first
+| order by EntryPointNodeId, InactiveDuration asc  // Groups by EntryPoint, recently inactive first
 ```
 
 ---
@@ -1222,10 +1283,12 @@ These are still **calculated by MSEM backend**:
 - ✅ **NodeProperties.rawData.exposureScore** (string: High/Medium/Low/None) - `tostring()`
 - ✅ **NodeProperties.rawData.deviceName** (alternative name field for devices) - `tostring()`
 - ✅ **NodeProperties.rawData.lastSeen** (last time device was observed)
-- ✅ **NodeProperties.rawData.firstSeenByInventory** (when device first appeared in MSEM) - **KEY for detecting "NEW" devices**
+- ✅ **NodeProperties.rawData.firstSeenByInventory** (when device first appeared in MSEM) - **KEY for Status calculation**
+- ✅ **NodeProperties.rawData.criticalityLevel.criticalityLevel** (asset criticality) - **Double nested!** - `tostring()`
 - ✅ **SourceNodeId, TargetNodeId, EdgeLabel** (ExposureGraphEdges)
 
 **Note**: Extract nested fields using `NodeProperties.rawData.<fieldname>` and convert types using `tostring()` for string fields
+**Critical**: criticalityLevel is double-nested: `NodeProperties.rawData.criticalityLevel.criticalityLevel`
 
 ### Best Approach
 ✅ **Query 8** for all attack paths with Status calculated, OR
