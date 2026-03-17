@@ -18,13 +18,20 @@ Node (Storage Account)
 ```
 
 ### Data Structure
-- **Nodes**: `ExposureGraphNodes` → NodeId, NodeName, NodeLabel (type), Categories
+- **Nodes**: `ExposureGraphNodes` → NodeId, NodeName, NodeLabel (type), Categories, **CriticalityLevel**, **exposureScore**, **DeviceName**, **lastSeen**, **firstSeenbyinventory** (for Entry Point devices)
 - **Edges**: `ExposureGraphEdges` → SourceNodeId, TargetNodeId, EdgeLabel (relationship type)
 - **Path**: Chain of Nodes connected by Edges
 
 ---
 - **Edges**: `ExposureGraphEdges` -> EdgeLabel in ('contains', 'can authenticate to','member of','has role on','has credentials of', 'can authenticate as','frequently logged in','can impersonate as','affecting','runs on','routes traffic to', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
 - **Nodes**: `ExposureGraphNodes` -> NodeLabel in ('user','ec2.instance','computer-account','entra-userCookie','device', 'group','subscriptions', 'microsoft.logic/workflows','manageidentity','aws-userCookie','serviceprincipal','Microsoft Entra OAth App','resourcegroups','microsoft.hybridcompute/machines','microsoft.network/virtualnetworks','mdcSecurityRecommendation','mdcManagementRecommendation','Cve','microsoft.network/virtualnetworks/subnets','SaaS Application','mdcAuditingRecommendation','IP address','microsoft.keyvault/vaults','FileShare','microsoft.web/serverfarms','microsoft.resources/deployments','azure-logic-app-shared-access-signature','microsoft.authorization/locks','microsoft.compute/virtualmachines','microsoft.network/networkinterfaces','microsoft.web/site_azurefunction','microsoft.operationalinsights/workspaces','dataSensitivityScan','aws-access-key','microsoft.storage/storageaccounts','mdcSoftwareScanningtool','mde-healthFinding','ad-domain','microft.network/publicipaddresses','microsoft.network/networksecuritygroups','microsoft.automation/automationaccounts')
+
+### Additional Node Fields (Entry Point Devices)
+- **CriticalityLevel**: Device criticality (High/Medium/Low)
+- **exposureScore**: MSEM calculated exposure score (0-100)
+- **DeviceName**: Device name (alternative to NodeName)
+- **lastSeen**: Last time device was seen
+- **firstSeenbyinventory**: When device first appeared in MSEM
 
 ## 📊 Query 1: Simple 2-Hop Attack Paths
 
@@ -42,17 +49,22 @@ let Edges = ExposureGraphEdges
     | project SourceNodeId, TargetNodeId, EdgeLabel;
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
-    | project NodeId, NodeName, NodeLabel, Categories;
+    | project NodeId, NodeName, NodeLabel, Categories, CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename SourceNodeName = NodeName, SourceNodeType = NodeLabel, SourceCategories = Categories
+| project-rename SourceNodeName = NodeName, SourceNodeType = NodeLabel, SourceCategories = Categories, 
+    SourceCriticality = CriticalityLevel, SourceExposure = exposureScore, SourceDeviceName = DeviceName, 
+    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenbyinventory
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
-| project-rename TargetNodeName = NodeName, TargetNodeType = NodeLabel, TargetCategories = Categories
+| project-rename TargetNodeName = NodeName, TargetNodeType = NodeLabel, TargetCategories = Categories,
+    TargetCriticality = CriticalityLevel, TargetExposure = exposureScore, TargetDeviceName = DeviceName,
+    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenbyinventory
 | extend 
     AttackPathName = strcat(SourceNodeName, ' → ', TargetNodeName),
     AttackPathDescription = strcat(SourceNodeType, ' can access ', TargetNodeType, ' via ', EdgeLabel),
     PathLength = 2,
-    RiskScore = case(
+    // Enhanced risk scoring with CriticalityLevel and exposureScore
+    BaseRiskScore = case(
         // Critical: Key infrastructure and secrets
         TargetNodeType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
         // High: Compute and logic resources
@@ -64,13 +76,25 @@ Edges
         // Medium: Other Azure resources
         TargetNodeType has_any ('microsoft.', 'aws-'), 60,
         40
+    ),
+    CriticalityBonus = case(
+        TargetCriticality == 'High', 10,
+        TargetCriticality == 'Medium', 5,
+        0
+    ),
+    ExposureBonus = case(
+        TargetExposure >= 80, 10,
+        TargetExposure >= 60, 5,
+        0
     )
-| extend RiskLevel = case(
-    RiskScore >= 75, 'Critical',
-    RiskScore >= 60, 'High',
-    RiskScore >= 40, 'Medium',
-    'Low'
-)
+| extend 
+    RiskScore = BaseRiskScore + CriticalityBonus + ExposureBonus,
+    RiskLevel = case(
+        BaseRiskScore + CriticalityBonus + ExposureBonus >= 90, 'Critical',
+        BaseRiskScore + CriticalityBonus + ExposureBonus >= 75, 'High',
+        BaseRiskScore + CriticalityBonus + ExposureBonus >= 50, 'Medium',
+        'Low'
+    )
 | project 
     AttackPathName,
     AttackPathDescription,
@@ -80,12 +104,18 @@ Edges
     SourceNodeId,
     SourceNodeName,
     SourceNodeType,
+    SourceCriticality,
+    SourceExposure,
     EdgeLabel,
     TargetNodeId,
     TargetNodeName,
     TargetNodeType,
+    TargetCriticality,
+    TargetExposure,
     SourceCategories,
-    TargetCategories
+    TargetCategories,
+    TargetLastSeen,
+    TargetFirstSeen
 | order by RiskScore desc
 | take 100
 ```
@@ -385,16 +415,21 @@ let Nodes = ExposureGraphNodes
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
         IsSensitive = array_length(Categories) >= 3,
-        IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account');
+        IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account')
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, IsSensitive, IsPrivileged, CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
     SourceName = NodeName, SourceType = NodeLabel, SourceIsHighValue = IsHighValue, 
-    SourceIsSensitive = IsSensitive, SourceCategories = Categories
+    SourceIsSensitive = IsSensitive, SourceCategories = Categories, SourceIsPrivileged = IsPrivileged,
+    SourceCriticality = CriticalityLevel, SourceExposure = exposureScore, SourceDeviceName = DeviceName,
+    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenbyinventory
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename 
     TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue, 
-    TargetIsSensitive = IsSensitive, TargetCategories = Categories
+    TargetIsSensitive = IsSensitive, TargetCategories = Categories, TargetIsPrivileged = IsPrivileged,
+    TargetCriticality = CriticalityLevel, TargetExposure = exposureScore, TargetDeviceName = DeviceName,
+    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenbyinventory
 | extend 
     // Generate attack path ID (similar to MSEM)
     AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
@@ -423,6 +458,17 @@ Edges
     BaseRisk = 20,
     TargetValueRisk = case(TargetIsHighValue, 40, 0),
     SensitivityRisk = array_length(TargetCategories) * 10,
+    CriticalityRisk = case(
+        TargetCriticality == 'High', 15,
+        TargetCriticality == 'Medium', 10,
+        5
+    ),
+    ExposureRisk = case(
+        TargetExposure >= 80, 15,
+        TargetExposure >= 60, 10,
+        TargetExposure >= 40, 5,
+        0
+    ),
     EdgeRisk = case(
         EdgeLabel in ('can admin to', 'can execute code', 'has credentials of'), 30,
         EdgeLabel in ('has permission to', 'can rdp', 'can authenticate as', 'can impersonate as'), 20,
@@ -433,11 +479,11 @@ Edges
     
     PathLength = 2
 | extend 
-    TotalRiskScore = BaseRisk + TargetValueRisk + SensitivityRisk + EdgeRisk,
+    TotalRiskScore = BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk,
     RiskLevel = case(
-        BaseRisk + TargetValueRisk + SensitivityRisk + EdgeRisk >= 80, 'Critical',
-        BaseRisk + TargetValueRisk + SensitivityRisk + EdgeRisk >= 60, 'High',
-        BaseRisk + TargetValueRisk + SensitivityRisk + EdgeRisk >= 40, 'Medium',
+        BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk >= 100, 'Critical',
+        BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk >= 80, 'High',
+        BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk >= 50, 'Medium',
         'Low'
     ),
     
@@ -468,9 +514,15 @@ Edges
     SourceNodeId,
     SourceName,
     SourceType,
+    SourceCriticality,
+    SourceExposure,
+    SourceFirstSeen,
     TargetNodeId,
     TargetName,
     TargetType,
+    TargetCriticality,
+    TargetExposure,
+    TargetFirstSeen,
     SourceCategories,
     TargetCategories,
     RemediationGuidance
@@ -480,10 +532,130 @@ Edges
 
 ---
 
+## 📊 Query 7: New Entry Point Devices (Detect Recent Threats)
+
+**Purpose**: Find newly discovered entry point devices and their attack paths
+
+```kql
+// Find entry point devices discovered in last 7 days
+let RecentDevices = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
+    | where isnotempty(firstSeenbyinventory)
+    | where firstSeenbyinventory >= ago(7d)  // Discovered in last 7 days
+    | project 
+        DeviceNodeId = NodeId, 
+        DeviceName = coalesce(DeviceName, NodeName), 
+        DeviceType = NodeLabel, 
+        CriticalityLevel, 
+        exposureScore, 
+        firstSeenbyinventory, 
+        lastSeen, 
+        Categories;
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | project NodeId, NodeName, NodeLabel, Categories;
+// Find all attack paths FROM these new devices
+Edges
+| join kind=inner (RecentDevices) on $left.SourceNodeId == $right.DeviceNodeId
+| join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
+| extend 
+    AttackPathId = strcat(DeviceNodeId, '_to_', TargetNodeId),
+    AttackPathName = strcat(DeviceName, ' [NEW] → ', NodeName),
+    AttackPathDescription = strcat('Newly discovered ', DeviceType, ' can access ', NodeLabel, ' via ', EdgeLabel),
+    AttackStory = strcat(
+        'NEW ENTRY POINT: Device "', DeviceName, '" was first discovered on ', format_datetime(firstSeenbyinventory, 'yyyy-MM-dd'), '. ',
+        'This device can ', EdgeLabel, ' ', NodeLabel, ' "', NodeName, '". ',
+        case(
+            CriticalityLevel == 'High', 'Device is marked as HIGH CRITICALITY. ',
+            CriticalityLevel == 'Medium', 'Device is marked as MEDIUM CRITICALITY. ',
+            ''
+        ),
+        case(
+            exposureScore >= 80, 'Device has HIGH exposure score (', exposureScore, '). ',
+            exposureScore >= 60, 'Device has MEDIUM exposure score (', exposureScore, '). ',
+            ''
+        ),
+        'Immediate review recommended.'
+    ),
+    DaysSinceDiscovery = datetime_diff('day', now(), firstSeenbyinventory),
+    // Enhanced risk scoring for NEW devices
+    BaseRiskScore = case(
+        NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
+        NodeLabel in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'), 85,
+        NodeLabel in ('user', 'manageidentity', 'Microsoft Entra OAuth App', 'entra-userCookie', 'aws-userCookie'), 80,
+        NodeLabel in ('microsoft.network/virtualnetworks', 'group', 'subscriptions', 'resourcegroups'), 65,
+        60
+    ),
+    NewDeviceBonus = 20,  // Additional risk because it's a NEW entry point
+    CriticalityBonus = case(
+        CriticalityLevel == 'High', 15,
+        CriticalityLevel == 'Medium', 10,
+        5
+    ),
+    ExposureBonus = case(
+        exposureScore >= 80, 15,
+        exposureScore >= 60, 10,
+        5
+    )
+| extend 
+    TotalRiskScore = BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus,
+    RiskLevel = case(
+        BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus >= 100, 'Critical',
+        BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus >= 85, 'High',
+        BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus >= 70, 'Medium',
+        'Low'
+    ),
+    RemediationGuidance = strcat(
+        'IMMEDIATE ACTION - New entry point discovered. ',
+        case(
+            EdgeLabel == 'can admin to', 'Review and restrict administrative access. ',
+            EdgeLabel == 'can execute code', 'Implement code execution controls. ',
+            EdgeLabel == 'has permission to', 'Review and minimize permissions. ',
+            EdgeLabel == 'can rdp', 'Secure RDP access with MFA. ',
+            EdgeLabel in ('can authenticate as', 'can authenticate to'), 'Review authentication delegation. ',
+            EdgeLabel == 'has credentials of', 'Secure credential storage. ',
+            ''
+        ),
+        'Verify device legitimacy and isolate if suspicious.'
+    )
+| project 
+    Timestamp = now(),
+    AlertSeverity = 'High - New Entry Point',
+    AttackPathId,
+    AttackPathName,
+    AttackPathDescription,
+    AttackStory,
+    TotalRiskScore,
+    RiskLevel,
+    DeviceNodeId,
+    DeviceName,
+    DeviceType,
+    CriticalityLevel,
+    exposureScore,
+    firstSeenbyinventory,
+    DaysSinceDiscovery,
+    lastSeen,
+    EdgeType = EdgeLabel,
+    TargetNodeId,
+    TargetName = NodeName,
+    TargetType = NodeLabel,
+    RemediationGuidance,
+    DeviceCategories = Categories,
+    TargetCategories = Categories1
+| order by TotalRiskScore desc, DaysSinceDiscovery asc
+```
+
+---
+
 ## 🎯 Logic App Recommendation
 
 **For "New Attack Paths" detection, use this approach:**
 
+### Option 1: State-Based Detection (Query 6)
 1. **Run Query 6** (Generate Attack Path Metadata) - gives you rich attack path data
 2. **Store baseline**: Save AttackPathId list in Logic App variable or Azure Storage
 3. **Compare on next run**: 
@@ -492,6 +664,20 @@ Edges
    ```
 4. **Alert when**: `count(NewPaths) > 0`
 5. **Include in alert**: AttackPathName, AttackStory, RiskLevel, RemediationGuidance
+
+### Option 2: Time-Based Detection (Query 7) ⭐ RECOMMENDED
+1. **Run Query 7** (New Entry Point Devices) - automatically finds devices discovered in last 7 days
+2. **No state storage needed** - uses `firstSeenbyinventory` field
+3. **Alert immediately** on any results (these are NEW entry points)
+4. **Include in alert**: 
+   - DeviceName, CriticalityLevel, exposureScore
+   - AttackPathName, AttackStory, TotalRiskScore
+   - DaysSinceDiscovery, RemediationGuidance
+5. **Bonus**: Can adjust timeframe (7d → 1d for more frequent checks)
+
+### Hybrid Approach (Best for Complete Coverage)
+- **Daily**: Run Query 7 for new entry point devices
+- **Weekly**: Run Query 6 for all attack paths and compare baseline
 
 ---
 
@@ -507,18 +693,39 @@ These are **calculated by MSEM backend**, not available in ExposureGraphNodes/Ed
 
 ### What IS Available in Tables
 - ✅ **NodeId, NodeName, NodeLabel** (ExposureGraphNodes)
-- ✅ **SourceNodeId, TargetNodeId, EdgeLabel** (ExposureGraphEdges)
 - ✅ **Categories** (exposure categories on nodes)
+- ✅ **CriticalityLevel** (High/Medium/Low for entry point devices)
+- ✅ **exposureScore** (0-100 MSEM calculated score for nodes)
+- ✅ **DeviceName** (alternative name field for devices)
+- ✅ **lastSeen** (last time device was observed)
+- ✅ **firstSeenbyinventory** (when device first appeared in MSEM) - **KEY for detecting "NEW" devices**
+- ✅ **SourceNodeId, TargetNodeId, EdgeLabel** (ExposureGraphEdges)
 
 ### Best Approach
-Use **Query 6** in your Logic App - it generates all the rich metadata that MSEM shows, calculated from the raw graph data.
+Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOMMENDED) for automatic detection of new entry points using `firstSeenbyinventory`.
 
 ---
 
 ## 🚀 Next Steps
 
 Want me to create a **Logic App ARM template** that:
+
+### Option A: New Entry Point Detection (⭐ RECOMMENDED)
+1. Runs Query 7 daily to find devices discovered in last 7 days
+2. Alerts immediately on any NEW entry point devices
+3. Includes: DeviceName, CriticalityLevel, exposureScore, Attack Paths, Risk Score
+4. Sends Teams/Email alerts with full context
+5. **No state storage needed** - uses firstSeenbyinventory
+
+### Option B: Attack Path Baseline Comparison
 1. Runs Query 6 daily/hourly
 2. Stores attack path IDs in Azure Storage Table
-3. Compares and finds NEW attack paths
-4. Sends Teams/Email alerts with AttackPathName, AttackStory, RiskLevel?
+3. Compares and finds NEW attack paths not in baseline
+4. Sends Teams/Email alerts with AttackPathName, AttackStory, RiskLevel
+5. Requires state management
+
+### Option C: Hybrid (Best Coverage)
+1. Both Query 7 (new devices) AND Query 6 (new paths)
+2. Immediate alerts for new entry points
+3. Weekly baseline comparison for all paths
+4. Complete visibility into exposure changes
