@@ -23,6 +23,8 @@ Node (Storage Account)
 - **Path**: Chain of Nodes connected by Edges
 
 ---
+- **Edges**: `ExposureGraphEdges` -> EdgeLabel in ('contains', 'can authenticate to','member of','has role on','has credentials of', 'can authenticate as','frequently logged in','can impersonate as','affecting','runs on','routes traffic to', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+- **Nodes**: `ExposureGraphNodes` -> NodeLabel in ('user','ec2.instance','computer-account','entra-userCookie','device', 'group','subscriptions', 'microsoft.logic/workflows','manageidentity','aws-userCookie','serviceprincipal','Microsoft Entra OAth App','resourcegroups','microsoft.hybridcompute/machines','microsoft.network/virtualnetworks','mdcSecurityRecommendation','mdcManagementRecommendation','Cve','microsoft.network/virtualnetworks/subnets','SaaS Application','mdcAuditingRecommendation','IP address','microsoft.keyvault/vaults','FileShare','microsoft.web/serverfarms','microsoft.resources/deployments','azure-logic-app-shared-access-signature','microsoft.authorization/locks','microsoft.compute/virtualmachines','microsoft.network/networkinterfaces','microsoft.web/site_azurefunction','microsoft.operationalinsights/workspaces','dataSensitivityScan','aws-access-key','microsoft.storage/storageaccounts','mdcSoftwareScanningtool','mde-healthFinding','ad-domain','microft.network/publicipaddresses','microsoft.network/networksecuritygroups','microsoft.automation/automationaccounts')
 
 ## 📊 Query 1: Simple 2-Hop Attack Paths
 
@@ -31,7 +33,11 @@ Node (Storage Account)
 ```kql
 // Get 2-hop attack paths with node details
 let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+    | where EdgeLabel in (
+        'can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code',
+        'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in',
+        'has role on', 'member of'
+    )
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
     | project SourceNodeId, TargetNodeId, EdgeLabel;
 let Nodes = ExposureGraphNodes
@@ -47,8 +53,16 @@ Edges
     AttackPathDescription = strcat(SourceNodeType, ' can access ', TargetNodeType, ' via ', EdgeLabel),
     PathLength = 2,
     RiskScore = case(
-        TargetNodeType has_any ('microsoft.storage', 'microsoft.sql', 'entra-application'), 80,
-        TargetNodeType in ('user', 'group'), 60,
+        // Critical: Key infrastructure and secrets
+        TargetNodeType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
+        // High: Compute and logic resources
+        TargetNodeType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'), 85,
+        // High: Identity resources
+        TargetNodeType in ('user', 'manageidentity', 'Microsoft Entra OAth App', 'entra-userCookie', 'aws-userCookie'), 80,
+        // Medium: Network and groups
+        TargetNodeType in ('microsoft.network/virtualnetworks', 'group', 'subscriptions', 'resourcegroups'), 65,
+        // Medium: Other Azure resources
+        TargetNodeType has_any ('microsoft.', 'aws-'), 60,
         40
     )
 | extend RiskLevel = case(
@@ -85,7 +99,7 @@ Edges
 ```kql
 // Build 3-hop attack paths
 let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
     | project SourceNodeId, TargetNodeId, EdgeLabel;
 let Nodes = ExposureGraphNodes
@@ -156,10 +170,12 @@ Hop3
     EndNode = NodeName,
     EndNodeType = NodeLabel,
     RiskScore = case(
-        NodeLabel has_any ('microsoft.storage', 'microsoft.sql', 'microsoft.keyvault', 'entra-application'), 95,
-        NodeLabel in ('user', 'group') and Intermediate1Type == 'device', 85,
-        NodeLabel == 'device' and StartNodeType == 'device', 75,
-        60
+        NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature'), 95,
+        NodeLabel in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'microsoft.hybridcompute/machines'), 85,
+        NodeLabel in ('user', 'manageidentity', 'Microsoft Entra OAuth App', 'entra-userCookie', 'aws-userCookie', 'computer-account'), 80,
+        NodeLabel in ('microsoft.network/virtualnetworks', 'microsoft.network/networksecuritygroups', 'group', 'subscriptions', 'resourcegroups', 'IP address'), 65,
+        NodeLabel startswith 'microsoft.' or NodeLabel startswith 'aws-', 60,
+        50
     )
 | extend RiskLevel = case(
     RiskScore >= 90, 'Critical',
@@ -182,16 +198,21 @@ Hop3
 let CriticalResourceTypes = dynamic([
     'microsoft.storage/storageaccounts',
     'microsoft.keyvault/vaults',
-    'microsoft.sql/servers',
     'microsoft.compute/virtualmachines',
-    'entra-application'
+    'microsoft.logic/workflows',
+    'microsoft.automation/automationaccounts',
+    'ec2.instance',
+    'aws-access-key',
+    'serviceprincipal',
+    'manageidentity',
+    'azure-logic-app-shared-access-signature'
 ]);
 let CriticalNodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | where NodeLabel has_any (CriticalResourceTypes)
     | project NodeId, CriticalNodeName = NodeName, CriticalNodeType = NodeLabel, Categories;
 let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'can modify')
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of', 'contains', 'affecting')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
@@ -240,15 +261,15 @@ Edges
 ```kql
 // Attack path summary statistics
 let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId);
 let PathStats = Edges
     | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
     | extend 
-        IsCriticalTarget = NodeLabel has_any ('microsoft.storage', 'microsoft.keyvault', 'microsoft.sql', 'entra-application'),
-        IsHighRiskEdge = EdgeLabel in ('can admin to', 'has permission to', 'can execute code')
+        IsCriticalTarget = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
+        IsHighRiskEdge = EdgeLabel in ('can admin to', 'has permission to', 'can execute code', 'can authenticate as', 'has credentials of')
     | summarize 
         TotalAttackPaths = count(),
         CriticalTargetPaths = countif(IsCriticalTarget),
@@ -262,9 +283,11 @@ PathStats
     PathCategory = case(
         EdgeLabel == 'can admin to', 'Administrative Access',
         EdgeLabel == 'can rdp', 'Remote Access',
-        EdgeLabel == 'can authenticate as', 'Authentication',
+        EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as'), 'Authentication',
         EdgeLabel == 'has permission to', 'Permission-Based',
         EdgeLabel == 'can execute code', 'Code Execution',
+        EdgeLabel in ('member of', 'has role on'), 'Group Membership',
+        EdgeLabel == 'frequently logged in', 'User Activity',
         'Other'
     )
 | project 
@@ -289,14 +312,14 @@ PathStats
 // Paths starting from devices and ending at cloud resources
 let StartDevices = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
-    | where NodeLabel in ('device', 'Device', 'Server')
+    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
     | project DeviceNodeId = NodeId, DeviceName = NodeName;
 let EndResources = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
-    | where NodeLabel has_any ('microsoft.', 'azure.', 'aws.')  // Cloud resources
+    | where NodeLabel in ('microsoft.storage/storageaccounts', 'microsoft.keyvault/vaults', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'serviceprincipal', 'manageidentity', 'aws-access-key')
     | project ResourceNodeId = NodeId, ResourceName = NodeName, ResourceType = NodeLabel;
 let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
 // Build 2-hop paths: Device → Intermediate → Resource
 let Hop1 = Edges
@@ -318,13 +341,23 @@ Hop2
         '" which ', Edge2, ' ', ResourceType, ' "', ResourceName, '"'
     ),
     PathLength = 3,
-    RiskScore = 85  // Device to cloud resource is high risk
+    RiskScore = case(
+        ResourceType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key'), 95,
+        ResourceType in ('microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'serviceprincipal'), 85,
+        ResourceType in ('manageidentity', 'Microsoft Entra OAuth App'), 80,
+        70
+    ),
+    RiskLevel = case(
+        ResourceType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key'), 'Critical',
+        ResourceType in ('microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'serviceprincipal'), 'High',
+        'Medium'
+    )
 | project 
     AttackPathName,
     AttackStory,
     PathLength,
     RiskScore,
-    RiskLevel = 'High',
+    RiskLevel,
     StartDevice = DeviceName,
     IntermediateEntity = IntermediateName,
     IntermediateType,
@@ -332,7 +365,7 @@ Hop2
     ResourceType,
     Edge1,
     Edge2
-| order by AttackPathName
+| order by RiskScore desc
 | take 100
 ```
 
@@ -345,14 +378,14 @@ Hop2
 ```kql
 // Generate attack path metadata with risk assessment
 let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | extend 
-        IsHighValue = NodeLabel has_any ('microsoft.storage', 'microsoft.keyvault', 'microsoft.sql', 'entra-application'),
+        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
         IsSensitive = array_length(Categories) >= 3,
-        IsPrivileged = NodeLabel in ('user', 'group', 'entra-application');
+        IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account');
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
@@ -391,9 +424,11 @@ Edges
     TargetValueRisk = case(TargetIsHighValue, 40, 0),
     SensitivityRisk = array_length(TargetCategories) * 10,
     EdgeRisk = case(
-        EdgeLabel in ('can admin to', 'can execute code'), 30,
-        EdgeLabel in ('has permission to', 'can rdp'), 20,
-        10
+        EdgeLabel in ('can admin to', 'can execute code', 'has credentials of'), 30,
+        EdgeLabel in ('has permission to', 'can rdp', 'can authenticate as', 'can impersonate as'), 20,
+        EdgeLabel in ('can authenticate to', 'has role on', 'frequently logged in'), 15,
+        EdgeLabel == 'member of', 10,
+        5
     ),
     
     PathLength = 2
@@ -412,7 +447,12 @@ Edges
         EdgeLabel == 'can execute code', 'Implement code execution controls',
         EdgeLabel == 'has permission to', 'Review and minimize permissions',
         EdgeLabel == 'can rdp', 'Secure RDP access with MFA and network controls',
-        EdgeLabel == 'can authenticate as', 'Review authentication delegation',
+        EdgeLabel in ('can authenticate as', 'can authenticate to'), 'Review authentication delegation',
+        EdgeLabel == 'has credentials of', 'Secure credential storage and rotation',
+        EdgeLabel == 'can impersonate as', 'Review impersonation permissions',
+        EdgeLabel == 'has role on', 'Review role assignments',
+        EdgeLabel == 'member of', 'Review group membership',
+        EdgeLabel == 'frequently logged in', 'Monitor user activity patterns',
         'Review and restrict access'
     )
 | project 
