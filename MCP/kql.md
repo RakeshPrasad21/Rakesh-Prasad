@@ -13,7 +13,28 @@ Test these queries in **Microsoft 365 Defender Advanced Hunting Portal**:
 5. [Simplified Test Queries](#simplified-test-queries)
 6. [SecurityRecommendation Table Alternatives](#securityrecommendation-table-alternatives)
 
-⚠️ **Important**: If `SecurityRecommendation` table is not available, see [SecurityRecommendation-Table-Guide.md](SecurityRecommendation-Table-Guide.md) for alternatives.
+⚠️ **Important**: 
+- If `SecurityRecommendation` table is not available, see [SecurityRecommendation-Table-Guide.md](SecurityRecommendation-Table-Guide.md) for alternatives.
+- **NodeProperties.deviceId may not exist** in your environment. Use NodeName-based matching or pure graph analysis instead (see queries below).
+
+---
+
+## ⚠️ Critical Note: DeviceId in ExposureGraphNodes
+
+**Issue**: `NodeProperties.deviceId` may not be available in all MSEM environments.
+
+**Solution**: Use one of these approaches:
+1. **NodeName matching**: Match `ExposureGraphNodes.NodeName` to `DeviceInfo.DeviceName`
+2. **Pure graph analysis**: Work only with MSEM data (NodeId, NodeName, Categories, EdgeLabel)
+3. **Discover available properties**: Run this first to see what's available:
+
+```kql
+ExposureGraphNodes
+| extend NodePropsKeys = bag_keys(NodeProperties)
+| mv-expand NodePropsKeys
+| summarize SampleValues = take_any(NodeProperties), Count = count() by tostring(NodePropsKeys)
+| order by Count desc
+```
 
 ---
 
@@ -64,7 +85,9 @@ ExposureGraphEdges
 **Purpose:** Find critical devices with exposure risks and vulnerabilities  
 **Used in:** `LogicApp-MSEM-ARM-Template.json`
 
-### Full Query (Production)
+⚠️ **Two versions provided**: Use DeviceId version if available, otherwise use NodeName-based matching
+
+### Version 1: Using DeviceId (If NodeProperties.deviceId exists)
 ```kql
 let CriticalDevices = DeviceInfo
     | where Timestamp > ago(1d)
@@ -103,6 +126,70 @@ CriticalDevices
 | order by ExposureScore desc
 ```
 
+### Version 2: Using NodeName Matching (If DeviceId NOT available) ⭐ RECOMMENDED
+```kql
+let CriticalDevices = DeviceInfo
+    | where Timestamp > ago(1d)
+    | where isnotempty(DeviceName)
+    | summarize arg_max(Timestamp, *) by DeviceName
+    | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
+    | project DeviceName, DeviceType, OSPlatform, LastSeen = Timestamp;
+let CurrentExposure = ExposureGraphNodes
+    | where NodeLabel in ('Device', 'Server')
+    | extend CategoriesCount = array_length(Categories)
+    | summarize TotalCategories = sum(CategoriesCount) by NodeName
+    | extend ExposureScore = TotalCategories * 10, AttackPathsCount = TotalCategories;
+let VulnerabilityCount = SecurityRecommendation
+    | where Timestamp > ago(1d)
+    | where Status == 'Active'
+    | where Severity in ('High', 'Critical')
+    | where isnotempty(DeviceName)
+    | summarize VulnerabilitiesCount = count() by DeviceName;
+CriticalDevices
+| join kind=leftouter (CurrentExposure) on $left.DeviceName == $right.NodeName
+| join kind=leftouter (VulnerabilityCount) on DeviceName
+| where isnotempty(ExposureScore) or isnotempty(VulnerabilitiesCount)
+| project 
+    Timestamp = LastSeen,
+    AssetName = DeviceName,
+    AssetType = DeviceType,
+    ExposureScore = coalesce(ExposureScore, 0),
+    AttackPathsCount = coalesce(AttackPathsCount, 0),
+    VulnerabilitiesCount = coalesce(VulnerabilitiesCount, 0),
+    OSPlatform
+| extend Severity = case(
+    ExposureScore >= 85 or VulnerabilitiesCount >= 10, 'Critical',
+    AttackPathsCount >= 5 or VulnerabilitiesCount >= 5, 'High',
+    'Medium')
+| order by ExposureScore desc
+```
+
+### Version 3: Pure MSEM Data (No DeviceInfo correlation)
+**Use when**: You only want MSEM exposure data without device details
+
+```kql
+ExposureGraphNodes
+| where NodeLabel in ('Device', 'Server')
+| extend CategoriesCount = array_length(Categories)
+| summarize TotalCategories = sum(CategoriesCount) by NodeName, NodeLabel
+| extend 
+    ExposureScore = TotalCategories * 10,
+    AttackPathsCount = TotalCategories
+| where ExposureScore >= 50  // Only show exposed assets
+| extend Severity = case(
+    ExposureScore >= 85, 'Critical',
+    ExposureScore >= 70, 'High',
+    'Medium')
+| project 
+    Timestamp = now(),
+    AssetName = NodeName,
+    AssetType = NodeLabel,
+    ExposureScore,
+    AttackPathsCount,
+    Severity
+| order by ExposureScore desc
+```
+
 ### Simplified Test Version
 ```kql
 // Step 1: Find critical devices
@@ -115,12 +202,20 @@ DeviceInfo
 ```
 
 ```kql
-// Step 2: Check exposure data for devices
+// Step 2: Check what's available in NodeProperties
 ExposureGraphNodes
 | where NodeLabel in ('Device', 'Server')
-| extend DeviceId = tostring(NodeProperties.deviceId)
-| where isnotempty(DeviceId)
-| project NodeId, NodeName, NodeLabel, DeviceId, Categories
+| project NodeId, NodeName, NodeLabel, NodeProperties, Categories
+| take 5
+```
+
+```kql
+// Step 3: Check exposure data (without deviceId dependency)
+ExposureGraphNodes
+| where NodeLabel in ('Device', 'Server')
+| extend CategoriesCount = array_length(Categories)
+| project NodeName, NodeLabel, CategoriesCount, Categories
+| order by CategoriesCount desc
 | take 10
 ```
 
@@ -219,160 +314,220 @@ ExposureGraphNodes
 **Used in:** P1 notifications for new attack path alerts  
 **UI Location:** MSEM → Attack Surface Management → Attack Paths
 
-⚠️ **Note**: ExposureGraphEdges is a snapshot table with no Status or Timestamp columns. We use alternative detection methods:
+⚠️ **Note**: ExposureGraphEdges is a snapshot table with no Status or Timestamp columns. NodeProperties may not contain deviceId.
 
-### Method 1: Paths Involving Recently Active Devices (Recommended)
-Detects paths to/from devices that were recently seen - indicates newly discovered or changed paths.
+### First: Discover What's in NodeProperties
 
 ```kql
-let RecentlyActiveDevices = DeviceInfo
-    | where Timestamp > ago(6h)  // Devices seen in last 6 hours
-    | where isnotempty(DeviceId)
-    | distinct DeviceId;
-let CriticalAssets = DeviceInfo
-    | where Timestamp > ago(1d)
-    | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
-    | distinct DeviceId, DeviceName;
-let PotentiallyNewPaths = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp','can admin to', 'has permission to', 'can execute code')
+// Check what properties are available in NodeProperties
+ExposureGraphNodes
+| extend NodePropsKeys = bag_keys(NodeProperties)
+| mv-expand NodePropsKeys
+| summarize count() by tostring(NodePropsKeys)
+| order by count_ desc
+```
+
+```kql
+// See sample NodeProperties values
+ExposureGraphNodes
+| where NodeLabel == 'Device'
+| project NodeId, NodeName, NodeLabel, NodeProperties
+| take 10
+```
+
+---
+
+### Method 1: Count-Based Detection (Recommended for Logic Apps)
+**Best for**: Automated monitoring without complex correlation  
+**How it works**: Store baseline attack path count, alert when it increases significantly
+
+```kql
+// Get current attack path statistics - run this in Logic App
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+| summarize 
+    TotalPaths = count(),
+    UniqueSourceNodes = dcount(SourceNodeId),
+    UniqueTargetNodes = dcount(TargetNodeId),
+    AuthPaths = countif(EdgeLabel == 'can authenticate as'),
+    RdpPaths = countif(EdgeLabel == 'can rdp'),
+    AdminPaths = countif(EdgeLabel == 'can admin to'),
+    PermissionPaths = countif(EdgeLabel == 'has permission to'),
+    ExecutePaths = countif(EdgeLabel == 'can execute code')
+| extend 
+    Timestamp = now(),
+    HighRiskPaths = AuthPaths + RdpPaths + AdminPaths
+| project Timestamp, TotalPaths, HighRiskPaths, UniqueSourceNodes, UniqueTargetNodes, AuthPaths, RdpPaths, AdminPaths, PermissionPaths, ExecutePaths
+```
+
+**Logic App Implementation**:
+1. Run query hourly/daily
+2. Store `TotalPaths` value in variable
+3. On next run, compare: `CurrentPaths - PreviousPaths`
+4. Alert if increase > 10 new paths OR > 5% growth
+5. Update stored value
+
+---
+
+### Method 2: High-Risk Attack Paths (Pure Graph Analysis)
+**Best for**: Identifying critical paths without device correlation  
+**How it works**: Find paths with multiple hops or high category counts
+
+```kql
+// Find complex attack paths (multi-hop, high exposure)
+let HighExposureNodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId), CategoriesCount = array_length(Categories)
+    | where CategoriesCount >= 3  // Nodes with multiple exposure categories
+    | project NodeId, NodeName, NodeLabel, CategoriesCount, Categories;
+let AttackPaths = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-    | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
-let NodeDetails = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId), DeviceId = tostring(NodeProperties.deviceId)
-    | project NodeId, NodeName, NodeLabel, Categories, NodeProperties, DeviceId;
-let PathsWithDeviceInfo = PotentiallyNewPaths
-    | join kind=inner (NodeDetails) on $left.SourceNodeId == $right.NodeId
-    | project-rename SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories, SourceDeviceId = DeviceId
-    | join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
-    | project-rename TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories, TargetDeviceId = DeviceId;
-PathsWithDeviceInfo
-| where SourceDeviceId in (RecentlyActiveDevices) or TargetDeviceId in (RecentlyActiveDevices)
-| extend PathInvolvesCriticalAsset = TargetDeviceId in~ (toscalar(CriticalAssets | summarize make_set(DeviceId)))
+    | summarize EdgeCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
+AttackPaths
+| join kind=inner (HighExposureNodes) on $left.TargetNodeId == $right.NodeId
+| extend 
+    PathRisk = EdgeCount * CategoriesCount * 10,
+    Severity = case(
+        CategoriesCount >= 5 and EdgeCount >= 3, 'Critical',
+        CategoriesCount >= 3 or EdgeCount >= 5, 'High',
+        'Medium'
+    )
 | project 
     Timestamp = now(),
-    AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
-    PathName = strcat(SourceName, ' → ', TargetName),
-    SourceNode = SourceName,
-    TargetNode = TargetName,
-    PathLength = PathCount,
-    PathRisk = PathCount * 10,
+    TargetNode = NodeName,
+    TargetNodeType = NodeLabel,
+    SourceNodeId,
+    PathRisk,
+    EdgeCount,
+    CategoriesCount,
+    Categories,
     EdgeTypes,
-    SourceCategories,
-    TargetCategories,
-    PathInvolvesCriticalAsset,
-    IsRecentlyActive = true
-| extend Severity = case(
-    PathInvolvesCriticalAsset and PathLength > 3, 'Critical',
-    PathInvolvesCriticalAsset, 'High',
-    'Medium')
-| order by Severity, PathLength desc
+    Severity
+| order by PathRisk desc
+| take 50
 ```
 
-### Method 2: Count-Based Detection (For Logic Apps)
-Compare current total attack paths count to detect significant increases. Store baseline count in Logic App variable.
+---
+
+### Method 3: NodeName-Based Matching (If DeviceId Not Available)
+**Best for**: Correlating with DeviceInfo using names  
+**How it works**: Match NodeName to DeviceName for recent activity detection
 
 ```kql
-// Get current attack path statistics
-let CurrentPaths = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp','can admin to', 'has permission to', 'can execute code')
-    | summarize 
-        TotalPaths = count(),
-        UniqueEdgeTypes = dcount(EdgeLabel),
-        HighRiskPaths = countif(EdgeLabel in ('CanExecute', 'HasPermission'))
-    | extend 
-        Timestamp = now(),
-        HighRiskPercentage = round((HighRiskPaths * 100.0) / TotalPaths, 2);
-CurrentPaths
-| project Timestamp, TotalPaths, HighRiskPaths, HighRiskPercentage, UniqueEdgeTypes
-```
-
-**Logic App Implementation**: Store `TotalPaths` value, compare on next run. Alert if increase > 10%.
-
-### Method 3: Paths to Recently Onboarded Devices
-Detects paths targeting devices that appeared in DeviceInfo recently.
-
-```kql
-let NewDevices = DeviceInfo
-    | where Timestamp > ago(7d)
-    | summarize FirstSeen = min(Timestamp), LastSeen = max(Timestamp) by DeviceId
-    | where datetime_diff('day', LastSeen, FirstSeen) <= 3  // Devices first seen in last 3 days
-    | distinct DeviceId;
+// Find paths involving recently seen devices (name-based matching)
+let RecentDeviceNames = DeviceInfo
+    | where Timestamp > ago(6h)
+    | distinct DeviceName;
+let NodeNamesList = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | where NodeName in (RecentDeviceNames)
+    | distinct NodeId, NodeName;
 let AttackPaths = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can rdp','can admin to', 'has permission to', 'can execute code')
+    | where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-    | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
-let NodeDetails = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId), DeviceId = tostring(NodeProperties.deviceId)
-    | project NodeId, NodeName, NodeLabel, Categories, DeviceId;
+    | summarize EdgeCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
 AttackPaths
-| join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
-| where DeviceId in (NewDevices)
+| join kind=inner (NodeNamesList) on $left.TargetNodeId == $right.NodeId
 | project 
     Timestamp = now(),
     TargetDevice = NodeName,
-    TargetDeviceId = DeviceId,
-    PathCount,
-    EdgeTypes,
-    Categories
+    TargetNodeId,
+    EdgeCount,
+    EdgeTypes
 | extend Severity = case(
-    PathCount > 5, 'High',
-    PathCount > 2, 'Medium',
+    EdgeCount > 5, 'High',
+    EdgeCount > 2, 'Medium',
     'Low')
+| order by EdgeCount desc
+```
+
+---
+
+### Method 4: Edge Type Distribution Changes
+**Best for**: Detecting changes in attack path patterns  
+**How it works**: Compare edge type distribution over time
+
+```kql
+// Current edge distribution by type and node labels
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+| extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
+| join kind=inner (
+    ExposureGraphNodes 
+    | extend NodeId = tostring(NodeId)
+    | project NodeId, TargetLabel = NodeLabel
+) on $left.TargetNodeId == $right.NodeId
+| summarize 
+    PathCount = count(),
+    UniqueTargets = dcount(TargetNodeId)
+    by EdgeLabel, TargetLabel
+| extend 
+    Timestamp = now(),
+    PathDensity = round(todouble(PathCount) / todouble(UniqueTargets), 2)
 | order by PathCount desc
 ```
 
-### Simplified Test Version
-```kql
-// Step 1: Check ExposureGraphEdges schema (verify no Status column)
-ExposureGraphEdges
-| getschema
-| where ColumnName == "Status"  // Should return empty if no Status column
-```
+---
+
+### Simplified Test Queries
 
 ```kql
-// Step 2: Count paths involving recently active devices (last 6 hours)
-let RecentDevices = DeviceInfo
-    | where Timestamp > ago(6h)
-    | distinct DeviceId;
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId), DeviceId = tostring(NodeProperties.deviceId)
-    | where DeviceId in (RecentDevices)
-    | distinct NodeId;
+// Test 1: Get total attack paths (baseline)
 ExposureGraphEdges
-| where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
-| extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-| where SourceNodeId in (Nodes) or TargetNodeId in (Nodes)
-| summarize PathsInvolvingRecentDevices = count() by EdgeLabel
-| order by PathsInvolvingRecentDevices desc
-```
-
-```kql
-// Step 3: Get baseline attack path count (run and note the number)
-ExposureGraphEdges
-| where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+| where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
 | summarize TotalAttackPaths = count()
 ```
 
-### Attack Path Trend Summary
 ```kql
-// Current attack path metrics for trend tracking
-let PathMetrics = ExposureGraphEdges
-    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
-    | summarize 
-        TotalPaths = count(),
-        AuthPaths = countif(EdgeLabel == 'CanAuthenticate'),
-        MovePaths = countif(EdgeLabel == 'CanMove'),
-        PermissionPaths = countif(EdgeLabel == 'HasPermission'),
-        ExecutePaths = countif(EdgeLabel == 'CanExecute')
-    | extend Timestamp = now();
-PathMetrics
-| project Timestamp, TotalPaths, AuthPaths, MovePaths, PermissionPaths, ExecutePaths
+// Test 2: Attack paths by edge type
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+| summarize PathCount = count() by EdgeLabel
+| order by PathCount desc
 ```
 
-**Recommendation for Logic Apps**:
-1. Use **Method 1** (Recently Active Devices) for daily alerts
-2. Use **Method 2** (Count-Based) with Logic App variables to track growth over time
-3. Adjust the time window (6h, 12h, 24h) based on your environment's change frequency
+```kql
+// Test 3: Top targets (nodes with most incoming paths)
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
+| extend TargetNodeId = tostring(TargetNodeId)
+| summarize IncomingPaths = count() by TargetNodeId
+| join kind=inner (
+    ExposureGraphNodes 
+    | extend NodeId = tostring(NodeId)
+    | project NodeId, NodeName, NodeLabel
+) on $left.TargetNodeId == $right.NodeId
+| project NodeName, NodeLabel, IncomingPaths
+| order by IncomingPaths desc
+| take 20
+```
+
+---
+
+### Recommended Approach for Logic Apps
+
+**Use Method 1 (Count-Based Detection)** - it's the most reliable and doesn't require deviceId:
+
+1. **Hourly/Daily run**: Execute count-based query
+2. **Store metrics**: Save TotalPaths, HighRiskPaths, AuthPaths, etc.
+3. **Compare**: Calculate delta from previous run
+4. **Alert conditions**:
+   - New paths > 10 AND growth > 5%
+   - HighRiskPaths increased by > 3
+   - AuthPaths or RdpPaths increased (critical)
+5. **Update**: Store newbaseline for next comparison
+
+**Sample Logic App variable storage**:
+```json
+{
+  "LastRun": "2026-03-17T10:00:00Z",
+  "TotalPaths": 1847,
+  "HighRiskPaths": 234,
+  "AuthPaths": 156,
+  "RdpPaths": 42,
+  "AdminPaths": 36
+}
+```
 
 ---
 
