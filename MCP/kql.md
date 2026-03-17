@@ -651,33 +651,318 @@ Edges
 
 ---
 
-## 🎯 Logic App Recommendation
+## 🎯 Logic App Recommendation - Implementing Status Tracking
 
-**For "New Attack Paths" detection, use this approach:**
+**Problem**: MSEM tables don't have Status field (New/Active/Inactive), so we can't track attack path lifecycle.
 
-### Option 1: State-Based Detection (Query 6)
-1. **Run Query 6** (Generate Attack Path Metadata) - gives you rich attack path data
-2. **Store baseline**: Save AttackPathId list in Logic App variable or Azure Storage
-3. **Compare on next run**: 
-   ```
-   NewPaths = CurrentAttackPathIds - StoredAttackPathIds
-   ```
-4. **Alert when**: `count(NewPaths) > 0`
-5. **Include in alert**: AttackPathName, AttackStory, RiskLevel, RemediationGuidance
+**Solution**: Implement our own status tracking using Azure Storage Table snapshots.
 
-### Option 2: Time-Based Detection (Query 7) ⭐ RECOMMENDED
-1. **Run Query 7** (New Entry Point Devices) - automatically finds devices discovered in last 7 days
-2. **No state storage needed** - uses `firstSeenByInventory` field
-3. **Alert immediately** on any results (these are NEW entry points)
-4. **Include in alert**: 
-   - DeviceName, exposureScore (High/Medium/Low/None)
-   - AttackPathName, AttackStory, TotalRiskScore
-   - DaysSinceDiscovery, RemediationGuidance
-5. **Bonus**: Can adjust timeframe (7d → 1d for more frequent checks)
+---
 
-### Hybrid Approach (Best for Complete Coverage)
-- **Daily**: Run Query 7 for new entry point devices
-- **Weekly**: Run Query 6 for all attack paths and compare baseline
+## 📊 Query 8: Attack Path Snapshot with Lifecycle Tracking
+
+**Purpose**: Generate complete attack path snapshot with metadata for lifecycle tracking
+
+```kql
+// Generate comprehensive attack path snapshot for lifecycle tracking
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | extend 
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+    | extend 
+        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, firstSeenByInventory;
+Edges
+| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
+| project-rename 
+    SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories,
+    SourceIsHighValue = IsHighValue, SourceExposure = exposureScore, SourceDeviceName = deviceName,
+    SourceFirstSeen = firstSeenByInventory
+| join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
+| project-rename 
+    TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories,
+    TargetIsHighValue = IsHighValue, TargetExposure = exposureScore, TargetDeviceName = deviceName,
+    TargetFirstSeen = firstSeenByInventory
+| extend 
+    // Generate unique attack path ID
+    AttackPathId = hash_sha256(strcat(SourceNodeId, '|', EdgeLabel, '|', TargetNodeId)),
+    
+    // Metadata
+    AttackPathName = strcat(SourceName, ' → ', TargetName),
+    AttackPathDescription = strcat(SourceType, ' ', EdgeLabel, ' ', TargetType),
+    
+    // Risk calculation
+    BaseRisk = 20,
+    TargetValueRisk = case(TargetIsHighValue, 40, 0),
+    SensitivityRisk = array_length(TargetCategories) * 10,
+    ExposureRisk = case(
+        TargetExposure == 'High', 20,
+        TargetExposure == 'Medium', 15,
+        TargetExposure == 'Low', 10,
+        0
+    ),
+    EdgeRisk = case(
+        EdgeLabel in ('can admin to', 'can execute code', 'has credentials of'), 30,
+        EdgeLabel in ('has permission to', 'can rdp', 'can authenticate as', 'can impersonate as'), 20,
+        EdgeLabel in ('can authenticate to', 'has role on', 'frequently logged in'), 15,
+        EdgeLabel == 'member of', 10,
+        5
+    )
+| extend 
+    TotalRiskScore = BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk,
+    RiskLevel = case(
+        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 100, 'Critical',
+        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 80, 'High',
+        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 50, 'Medium',
+        'Low'
+    ),
+    SnapshotTimestamp = now()
+| project 
+    AttackPathId,
+    AttackPathName,
+    AttackPathDescription,
+    SourceNodeId,
+    SourceName,
+    SourceType,
+    SourceExposure,
+    EdgeLabel,
+    TargetNodeId,
+    TargetName,
+    TargetType,
+    TargetExposure,
+    TotalRiskScore,
+    RiskLevel,
+    SourceCategories,
+    TargetCategories,
+    SnapshotTimestamp
+```
+
+---
+
+## 🏗️ Complete Solution Architecture
+
+### Azure Storage Table Schema
+
+**Table Name**: `MSEMAttackPathSnapshots`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| PartitionKey | String | "AttackPath" (fixed) |
+| RowKey | String | AttackPathId (SHA256 hash) |
+| AttackPathName | String | Human-readable path name |
+| AttackPathDescription | String | Path description |
+| SourceNodeId | String | Source node ID |
+| SourceName | String | Source node name |
+| SourceType | String | Source node type |
+| EdgeLabel | String | Edge relationship type |
+| TargetNodeId | String | Target node ID |
+| TargetName | String | Target node name |
+| TargetType | String | Target node type |
+| RiskScore | Int | Calculated risk score |
+| RiskLevel | String | Critical/High/Medium/Low |
+| **FirstSeenTimestamp** | DateTime | When path first appeared |
+| **LastSeenTimestamp** | DateTime | When path last appeared |
+| **Status** | String | **New/Active/Inactive/Reactivated** |
+| **DaysSinceFirstSeen** | Int | Age of attack path |
+| **DaysSinceLastSeen** | Int | Days since last observed |
+
+---
+
+## 🔄 Logic App Implementation (⭐ RECOMMENDED SOLUTION)
+
+### **Workflow: Daily Attack Path Snapshot with Status Tracking**
+
+```mermaid
+graph TD
+    A[Scheduled Trigger - Daily] --> B[Run Query 8]
+    B --> C[Get Current Snapshot]
+    C --> D[Query Azure Storage Table]
+    D --> E{Compare Snapshots}
+    
+    E -->|Not in Storage| F[NEW Attack Path]
+    E -->|In Storage + Recent LastSeen| G[ACTIVE Attack Path]
+    E -->|In Storage + Old LastSeen| H[REACTIVATED Attack Path]
+    
+    F --> I[Insert: FirstSeen=Now, LastSeen=Now, Status=New]
+    G --> J[Update: LastSeen=Now, Status=Active]
+    H --> K[Update: LastSeen=Now, Status=Reactivated]
+    
+    D --> L[Find Missing Paths]
+    L -->|In Storage but not Current| M[Mark as INACTIVE]
+    M --> N[Update: Status=Inactive, keep old LastSeen]
+    
+    I --> O[Generate Alerts]
+    K --> O
+    N --> O
+    
+    O --> P[Send to Teams/Email]
+    P --> Q[End]
+```
+
+---
+
+## 📋 Logic App Steps Implementation
+
+### **Step 1: Run Query 8 (HTTP - Advanced Hunting API)**
+- Method: POST
+- URL: `https://api.security.microsoft.com/api/advancedhunting/run`
+- Authentication: Managed Identity
+- Body: Query 8 KQL
+- Output: CurrentSnapshot (array of attack paths)
+
+### **Step 2: Query Existing Paths (Azure Storage Table)**
+- Action: Get entities from Azure Table Storage
+- Table: MSEMAttackPathSnapshots
+- Filter: PartitionKey eq 'AttackPath'
+- Output: PreviousSnapshot
+
+### **Step 3: Classify Each Current Path (For Each Loop)**
+
+```javascript
+// Pseudo-logic for each path in CurrentSnapshot
+if (AttackPathId NOT in PreviousSnapshot) {
+    Status = "New"
+    FirstSeenTimestamp = Now
+    LastSeenTimestamp = Now
+    Alert = TRUE
+    AlertType = "🆕 NEW Attack Path Discovered"
+}
+else if (PreviousSnapshot[AttackPathId].LastSeenTimestamp < (Now - 7 days)) {
+    Status = "Reactivated"
+    FirstSeenTimestamp = PreviousSnapshot[AttackPathId].FirstSeenTimestamp  // Keep original
+    LastSeenTimestamp = Now
+    Alert = TRUE
+    AlertType = "⚠️ Attack Path REACTIVATED"
+}
+else {
+    Status = "Active"
+    FirstSeenTimestamp = PreviousSnapshot[AttackPathId].FirstSeenTimestamp  // Keep original
+    LastSeenTimestamp = Now
+    Alert = FALSE  // Only alert if RiskScore increased
+}
+```
+
+### **Step 4: Find Inactive Paths**
+
+```javascript
+// For each path in PreviousSnapshot
+if (AttackPathId NOT in CurrentSnapshot) {
+    Status = "Inactive"
+    // Keep existing FirstSeen and LastSeen (don't update)
+    Alert = TRUE
+    AlertType = "✅ Attack Path REMEDIATED (Inactive)"
+}
+```
+
+### **Step 5: Update Storage Table**
+- Insert/Update entities in MSEMAttackPathSnapshots
+- Batch operation for performance
+
+### **Step 6: Generate Alerts**
+
+**Alert on:**
+- ✅ **New Paths** (Status = New)
+- ✅ **Reactivated Paths** (Status = Reactivated)  
+- ✅ **Inactive Paths** (Status = Inactive) - Good news!
+- ⚠️ **High-Risk Active Paths** (RiskScore >= 100)
+
+---
+
+## 📧 Alert Templates
+
+### New Attack Path Alert
+```
+🆕 NEW ATTACK PATH DETECTED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Attack Path: [AttackPathName]
+Risk Level: [RiskLevel] (Score: [RiskScore])
+First Seen: [FirstSeenTimestamp]
+
+Path Details:
+[SourceName] ([SourceType]) 
+   ↓ [EdgeLabel]
+[TargetName] ([TargetType])
+
+Status: NEW
+Action Required: Immediate investigation
+```
+
+### Reactivated Attack Path Alert
+```
+⚠️ ATTACK PATH REACTIVATED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Attack Path: [AttackPathName]
+Risk Level: [RiskLevel] (Score: [RiskScore])
+First Seen: [FirstSeenTimestamp]
+Last Seen Previously: [PreviousLastSeen]
+Inactive Duration: [DaysInactive] days
+Reactivated: [Now]
+
+Status: REACTIVATED
+Warning: Previously remediated path has returned!
+```
+
+### Remediated Attack Path (Good News!)
+```
+✅ ATTACK PATH REMEDIATED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Attack Path: [AttackPathName]
+Risk Level: [RiskLevel] (Score: [RiskScore])
+First Seen: [FirstSeenTimestamp]
+Last Seen: [LastSeenTimestamp]
+Inactive Duration: [DaysInactive] days
+
+Status: INACTIVE
+Good News: Attack path no longer detected!
+Note: Monitoring continues for reactivation.
+```
+
+---
+
+## 🎯 Why This Solution Works
+
+### ✅ Solves Your Key Concerns:
+
+1. **NEW Detection**: Paths not in storage = genuinely new
+2. **ACTIVE Tracking**: Paths seen in current AND previous run = persistent threat
+3. **INACTIVE Detection**: Paths in storage but not current run = remediated
+4. **REACTIVATED Detection**: Paths inactive >7 days but back now = regression
+5. **No False Positives**: Hash-based AttackPathId ensures same path = same ID
+6. **Full Lifecycle Visibility**: Track from discovery → active → remediation → reactivation
+
+### ✅ Additional Benefits:
+
+- **Trend Analysis**: DaysSinceFirstSeen shows path age
+- **Remediation Validation**: Inactive status confirms fix worked
+- **Regression Alerts**: Reactivated status catches regressions
+- **Risk Prioritization**: Focus on NEW high-risk paths
+- **Compliance Reporting**: Full audit trail of all attack paths
+
+---
+
+## 🚀 Next Steps - Implementation Options
+
+### Option A: Full Lifecycle Tracking (⭐ RECOMMENDED)
+1. **Logic App** with Query 8 + Azure Storage Table
+2. **Daily runs** with snapshot comparison
+3. **All status types**: New/Active/Inactive/Reactivated
+4. **Complete visibility** into attack path lifecycle
+
+### Option B: New Entry Points Only (Simpler)
+1. **Logic App** with Query 7 (new devices via firstSeenByInventory)
+2. **No storage needed** - uses built-in field
+3. **Limited scope**: Only detects new entry point devices
+4. **Quick to implement** but misses path lifecycle
+
+### Option C: Hybrid Approach
+1. **Query 7** for new entry point devices (immediate)
+2. **Query 8** for full attack path lifecycle (comprehensive)
+3. **Best of both worlds** but more complex
 
 ---
 
@@ -707,26 +992,28 @@ Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOM
 
 ---
 
-## 🚀 Next Steps
+## 🚀 Ready to Implement?
 
-Want me to create a **Logic App ARM template** that:
+I can create complete Logic App ARM templates for:
 
-### Option A: New Entry Point Detection (⭐ RECOMMENDED)
-1. Runs Query 7 daily to find devices discovered in last 7 days
-2. Alerts immediately on any NEW entry point devices
-3. Includes: DeviceName, exposureScore (High/Medium/Low/None), Attack Paths, Risk Score
-4. Sends Teams/Email alerts with full context
-5. **No state storage needed** - uses firstSeenByInventory
+### ⭐ Option A: Full Attack Path Lifecycle Tracking (RECOMMENDED)
+**Solves your Status problem completely!**
+- Creates Azure Storage Table for snapshots
+- Implements NEW/ACTIVE/INACTIVE/REACTIVATED status logic
+- Daily snapshot comparisons
+- Alerts on: New paths, Reactivated paths, Remediated paths
+- Full lifecycle visibility and audit trail
+- **Addresses your concern**: "without status we can't do anything"
 
-### Option B: Attack Path Baseline Comparison
-1. Runs Query 6 daily/hourly
-2. Stores attack path IDs in Azure Storage Table
-3. Compares and finds NEW attack paths not in baseline
-4. Sends Teams/Email alerts with AttackPathName, AttackStory, RiskLevel
-5. Requires state management
+### Option B: New Entry Point Devices Only (Quick Start)
+- Uses Query 7 with firstSeenByInventory field
+- No storage needed
+- Alerts on newly discovered devices in last 7 days
+- Limited scope but quick to implement
 
-### Option C: Hybrid (Best Coverage)
-1. Both Query 7 (new devices) AND Query 6 (new paths)
-2. Immediate alerts for new entry points
-3. Weekly baseline comparison for all paths
-4. Complete visibility into exposure changes
+### Option C: Hybrid Solution (Maximum Coverage)
+- Query 7 for new device alerts (immediate)
+- Query 8 for full lifecycle tracking (comprehensive)
+- Both stored state and time-based detection
+
+**Which option would you like me to create?** Option A (Full Lifecycle) is recommended since it completely solves the Status field problem you identified.
