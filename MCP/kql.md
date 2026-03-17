@@ -169,7 +169,7 @@ CriticalDevices
 
 ```kql
 ExposureGraphNodes
-| where NodeLabel in ('Device', 'Server')
+| where NodeLabel in ('device', 'server')
 | extend CategoriesCount = array_length(Categories)
 | summarize TotalCategories = sum(CategoriesCount) by NodeName, NodeLabel
 | extend 
@@ -204,7 +204,7 @@ DeviceInfo
 ```kql
 // Step 2: Check what's available in NodeProperties
 ExposureGraphNodes
-| where NodeLabel in ('Device', 'Server')
+| where  in ('device', 'server')
 | project NodeId, NodeName, NodeLabel, NodeProperties, Categories
 | take 5
 ```
@@ -212,7 +212,7 @@ ExposureGraphNodes
 ```kql
 // Step 3: Check exposure data (without deviceId dependency)
 ExposureGraphNodes
-| where NodeLabel in ('Device', 'Server')
+| where NodeLabel in ('device', 'server')
 | extend CategoriesCount = array_length(Categories)
 | project NodeName, NodeLabel, CategoriesCount, Categories
 | order by CategoriesCount desc
@@ -330,7 +330,7 @@ ExposureGraphNodes
 ```kql
 // See sample NodeProperties values
 ExposureGraphNodes
-| where NodeLabel == 'Device'
+| where NodeLabel == 'device'
 | project NodeId, NodeName, NodeLabel, NodeProperties
 | take 10
 ```
@@ -630,7 +630,7 @@ union
 ### Devices with High Exposure
 ```kql
 let HighExposureDevices = ExposureGraphNodes
-    | where NodeLabel == 'Device'
+    | where NodeLabel == 'device'
     | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
     | where isnotempty(DeviceId)
     | summarize 
@@ -652,7 +652,7 @@ HighExposureDevices
 ### Identities with High Exposure
 ```kql
 let HighExposureIdentities = ExposureGraphNodes
-    | where NodeLabel in ('User', 'Identity')
+    | where NodeLabel in ('user', 'managedidentity')
     | extend AccountUpn = tostring(NodeProperties.userPrincipalName), CategoriesCount = array_length(Categories)
     | where isnotempty(AccountUpn)
     | summarize 
@@ -750,7 +750,7 @@ CurrentRecommendations
 ```kql
 // Current exposed devices count
 let CurrentExposedDevices = ExposureGraphNodes
-    | where NodeLabel == 'Device'
+    | where NodeLabel == 'device'
     | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
     | where isnotempty(DeviceId)
     | summarize ExposureScore = sum(CategoriesCount) * 10 by DeviceId
@@ -758,7 +758,7 @@ let CurrentExposedDevices = ExposureGraphNodes
     | summarize CurrentCount = dcount(DeviceId);
 // Exposure level breakdown
 let ExposureBreakdown = ExposureGraphNodes
-    | where NodeLabel == 'Device'
+    | where NodeLabel == 'device'
     | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
     | where isnotempty(DeviceId)
     | summarize ExposureScore = sum(CategoriesCount) * 10 by DeviceId
@@ -784,7 +784,7 @@ ExposureBreakdown
 
 ```kql
 let HighExposureIdentities = ExposureGraphNodes
-    | where NodeLabel in ('User', 'Identity')
+    | where NodeLabel in ('user', 'managedidentity')
     | extend AccountUpn = tostring(NodeProperties.userPrincipalName), CategoriesCount = array_length(Categories)
     | where isnotempty(AccountUpn)
     | summarize 
@@ -923,7 +923,7 @@ let CriticalDevices = DeviceInfo
     | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
     | project DeviceId, DeviceName, DeviceType, OSPlatform, LastSeen = Timestamp;
 let CurrentExposure = ExposureGraphNodes
-    | where NodeLabel in ('Device', 'Server')
+    | where NodeLabel in ('device', 'server')
     | extend DeviceId = tostring(NodeProperties.deviceId), CategoriesCount = array_length(Categories)
     | where isnotempty(DeviceId)
     | summarize TotalCategories = sum(CategoriesCount) by DeviceId, NodeName
