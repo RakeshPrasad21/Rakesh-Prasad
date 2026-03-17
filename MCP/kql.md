@@ -19,7 +19,7 @@ Node (Storage Account)
 
 ### Data Structure
 - **Nodes**: `ExposureGraphNodes` → NodeId, NodeName, NodeLabel (type), Categories, **NodeProperties** (JSON with rawData)
-  - NodeProperties.rawData contains: CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory
+  - NodeProperties.rawData contains: exposureScore (string: High/Medium/Low/None), deviceName, lastSeen, firstSeenByInventory
 - **Edges**: `ExposureGraphEdges` → SourceNodeId, TargetNodeId, EdgeLabel (relationship type)
 - **Path**: Chain of Nodes connected by Edges
 
@@ -28,13 +28,12 @@ Node (Storage Account)
 - **Nodes**: `ExposureGraphNodes` -> NodeLabel in ('user','ec2.instance','computer-account','entra-userCookie','device', 'group','subscriptions', 'microsoft.logic/workflows','manageidentity','aws-userCookie','serviceprincipal','Microsoft Entra OAth App','resourcegroups','microsoft.hybridcompute/machines','microsoft.network/virtualnetworks','mdcSecurityRecommendation','mdcManagementRecommendation','Cve','microsoft.network/virtualnetworks/subnets','SaaS Application','mdcAuditingRecommendation','IP address','microsoft.keyvault/vaults','FileShare','microsoft.web/serverfarms','microsoft.resources/deployments','azure-logic-app-shared-access-signature','microsoft.authorization/locks','microsoft.compute/virtualmachines','microsoft.network/networkinterfaces','microsoft.web/site_azurefunction','microsoft.operationalinsights/workspaces','dataSensitivityScan','aws-access-key','microsoft.storage/storageaccounts','mdcSoftwareScanningtool','mde-healthFinding','ad-domain','microft.network/publicipaddresses','microsoft.network/networksecuritygroups','microsoft.automation/automationaccounts')
 
 ### Additional Node Fields (Entry Point Devices - in NodeProperties.rawData)
-- **CriticalityLevel**: Device criticality (High/Medium/Low)
-- **exposureScore**: MSEM calculated exposure score (0-100)
-- **DeviceName**: Device name (alternative to NodeName)
-- **lastSeen**: Last time device was seen
-- **firstSeenbyinventory**: When device first appeared in MSEM
+- **exposureScore**: MSEM calculated exposure score (Medium, Low, High, None) - `tostring(NodeProperties.rawData.exposureScore)`
+- **deviceName**: Device name (alternative to NodeName) - `tostring(NodeProperties.rawData.deviceName)`
+- **lastSeen**: Last time device was seen - `NodeProperties.rawData.lastSeen`
+- **firstSeenByInventory**: When device first appeared in MSEM - `NodeProperties.rawData.firstSeenByInventory`
 
-**Access Pattern**: `NodeProperties.rawData.CriticalityLevel` or parse as JSON
+**Access Pattern**: Extract nested fields using `NodeProperties.rawData.<fieldname>` and convert types as needed
 
 ## 📊 Query 1: Simple 2-Hop Attack Paths
 
@@ -53,21 +52,20 @@ let Edges = ExposureGraphEdges
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | extend 
-        CriticalityLevel = tostring(NodeProperties.rawData.CriticalityLevel),
-        exposureScore = toint(NodeProperties.rawData.exposureScore),
-        DeviceName = tostring(NodeProperties.rawData.DeviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenbyinventory = todatetime(NodeProperties.rawData.firstSeenbyinventory)
-    | project NodeId, NodeName, NodeLabel, Categories, CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory;
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+    | project NodeId, NodeName, NodeLabel, Categories, exposureScore, deviceName, lastSeen, firstSeenByInventory;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename SourceNodeName = NodeName, SourceNodeType = NodeLabel, SourceCategories = Categories, 
-    SourceCriticality = CriticalityLevel, SourceExposure = exposureScore, SourceDeviceName = DeviceName, 
-    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenbyinventory
+    SourceExposure = exposureScore, SourceDeviceName = deviceName, 
+    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename TargetNodeName = NodeName, TargetNodeType = NodeLabel, TargetCategories = Categories,
-    TargetCriticality = CriticalityLevel, TargetExposure = exposureScore, TargetDeviceName = DeviceName,
-    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenbyinventory
+    TargetExposure = exposureScore, TargetDeviceName = deviceName,
+    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory
 | extend 
     AttackPathName = strcat(SourceNodeName, ' → ', TargetNodeName),
     AttackPathDescription = strcat(SourceNodeType, ' can access ', TargetNodeType, ' via ', EdgeLabel),
@@ -86,22 +84,18 @@ Edges
         TargetNodeType has_any ('microsoft.', 'aws-'), 60,
         40
     ),
-    CriticalityBonus = case(
-        TargetCriticality == 'High', 10,
-        TargetCriticality == 'Medium', 5,
-        0
-    ),
     ExposureBonus = case(
-        TargetExposure >= 80, 10,
-        TargetExposure >= 60, 5,
-        0
+        TargetExposure == 'High', 15,
+        TargetExposure == 'Medium', 10,
+        TargetExposure == 'Low', 5,
+        0  // None or empty
     )
 | extend 
-    RiskScore = BaseRiskScore + CriticalityBonus + ExposureBonus,
+    RiskScore = BaseRiskScore + ExposureBonus,
     RiskLevel = case(
-        BaseRiskScore + CriticalityBonus + ExposureBonus >= 90, 'Critical',
-        BaseRiskScore + CriticalityBonus + ExposureBonus >= 75, 'High',
-        BaseRiskScore + CriticalityBonus + ExposureBonus >= 50, 'Medium',
+        BaseRiskScore + ExposureBonus >= 95, 'Critical',
+        BaseRiskScore + ExposureBonus >= 80, 'High',
+        BaseRiskScore + ExposureBonus >= 60, 'Medium',
         'Low'
     )
 | project 
@@ -113,14 +107,14 @@ Edges
     SourceNodeId,
     SourceNodeName,
     SourceNodeType,
-    SourceCriticality,
     SourceExposure,
+    SourceDeviceName,
     EdgeLabel,
     TargetNodeId,
     TargetNodeName,
     TargetNodeType,
-    TargetCriticality,
     TargetExposure,
+    TargetDeviceName,
     SourceCategories,
     TargetCategories,
     TargetLastSeen,
@@ -423,29 +417,28 @@ let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | extend 
         // Extract from NodeProperties.rawData
-        CriticalityLevel = tostring(NodeProperties.rawData.CriticalityLevel),
-        exposureScore = toint(NodeProperties.rawData.exposureScore),
-        DeviceName = tostring(NodeProperties.rawData.DeviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenbyinventory = todatetime(NodeProperties.rawData.firstSeenbyinventory)
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
     | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
         IsSensitive = array_length(Categories) >= 3,
         IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, IsSensitive, IsPrivileged, CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory;
+    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, IsSensitive, IsPrivileged, exposureScore, deviceName, lastSeen, firstSeenByInventory;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
 | project-rename 
     SourceName = NodeName, SourceType = NodeLabel, SourceIsHighValue = IsHighValue, 
     SourceIsSensitive = IsSensitive, SourceCategories = Categories, SourceIsPrivileged = IsPrivileged,
-    SourceCriticality = CriticalityLevel, SourceExposure = exposureScore, SourceDeviceName = DeviceName,
-    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenbyinventory
+    SourceExposure = exposureScore, SourceDeviceName = deviceName,
+    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory
 | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
 | project-rename 
     TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue, 
     TargetIsSensitive = IsSensitive, TargetCategories = Categories, TargetIsPrivileged = IsPrivileged,
-    TargetCriticality = CriticalityLevel, TargetExposure = exposureScore, TargetDeviceName = DeviceName,
-    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenbyinventory
+    TargetExposure = exposureScore, TargetDeviceName = deviceName,
+    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory
 | extend 
     // Generate attack path ID (similar to MSEM)
     AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
@@ -474,16 +467,11 @@ Edges
     BaseRisk = 20,
     TargetValueRisk = case(TargetIsHighValue, 40, 0),
     SensitivityRisk = array_length(TargetCategories) * 10,
-    CriticalityRisk = case(
-        TargetCriticality == 'High', 15,
-        TargetCriticality == 'Medium', 10,
-        5
-    ),
     ExposureRisk = case(
-        TargetExposure >= 80, 15,
-        TargetExposure >= 60, 10,
-        TargetExposure >= 40, 5,
-        0
+        TargetExposure == 'High', 20,
+        TargetExposure == 'Medium', 15,
+        TargetExposure == 'Low', 10,
+        0  // None or empty
     ),
     EdgeRisk = case(
         EdgeLabel in ('can admin to', 'can execute code', 'has credentials of'), 30,
@@ -495,11 +483,11 @@ Edges
     
     PathLength = 2
 | extend 
-    TotalRiskScore = BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk,
+    TotalRiskScore = BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk,
     RiskLevel = case(
-        BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk >= 100, 'Critical',
-        BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk >= 80, 'High',
-        BaseRisk + TargetValueRisk + SensitivityRisk + CriticalityRisk + ExposureRisk + EdgeRisk >= 50, 'Medium',
+        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 100, 'Critical',
+        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 80, 'High',
+        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 50, 'Medium',
         'Low'
     ),
     
@@ -530,14 +518,14 @@ Edges
     SourceNodeId,
     SourceName,
     SourceType,
-    SourceCriticality,
     SourceExposure,
+    SourceDeviceName,
     SourceFirstSeen,
     TargetNodeId,
     TargetName,
     TargetType,
-    TargetCriticality,
     TargetExposure,
+    TargetDeviceName,
     TargetFirstSeen,
     SourceCategories,
     TargetCategories,
@@ -559,20 +547,18 @@ let RecentDevices = ExposureGraphNodes
     | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
     | extend 
         // Extract from NodeProperties.rawData
-        CriticalityLevel = tostring(NodeProperties.rawData.CriticalityLevel),
-        exposureScore = toint(NodeProperties.rawData.exposureScore),
-        DeviceName = tostring(NodeProperties.rawData.DeviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenbyinventory = todatetime(NodeProperties.rawData.firstSeenbyinventory)
-    | where isnotempty(firstSeenbyinventory)
-    | where firstSeenbyinventory >= ago(7d)  // Discovered in last 7 days
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = NodeProperties.rawData.lastSeen,
+        firstSeenByInventory = NodeProperties.rawData.firstSeenByInventory
+    | where isnotempty(firstSeenByInventory)
+    | where firstSeenByInventory >= ago(7d)  // Discovered in last 7 days
     | project 
         DeviceNodeId = NodeId, 
-        DeviceName = coalesce(DeviceName, NodeName), 
+        DeviceName = coalesce(deviceName, NodeName), 
         DeviceType = NodeLabel, 
-        CriticalityLevel, 
         exposureScore, 
-        firstSeenbyinventory, 
+        firstSeenByInventory, 
         lastSeen, 
         Categories;
 let Edges = ExposureGraphEdges
@@ -590,21 +576,17 @@ Edges
     AttackPathName = strcat(DeviceName, ' [NEW] → ', NodeName),
     AttackPathDescription = strcat('Newly discovered ', DeviceType, ' can access ', NodeLabel, ' via ', EdgeLabel),
     AttackStory = strcat(
-        'NEW ENTRY POINT: Device "', DeviceName, '" was first discovered on ', format_datetime(firstSeenbyinventory, 'yyyy-MM-dd'), '. ',
+        'NEW ENTRY POINT: Device "', DeviceName, '" was first discovered on ', format_datetime(firstSeenByInventory, 'yyyy-MM-dd'), '. ',
         'This device can ', EdgeLabel, ' ', NodeLabel, ' "', NodeName, '". ',
         case(
-            CriticalityLevel == 'High', 'Device is marked as HIGH CRITICALITY. ',
-            CriticalityLevel == 'Medium', 'Device is marked as MEDIUM CRITICALITY. ',
-            ''
-        ),
-        case(
-            exposureScore >= 80, 'Device has HIGH exposure score (', exposureScore, '). ',
-            exposureScore >= 60, 'Device has MEDIUM exposure score (', exposureScore, '). ',
+            exposureScore == 'High', 'Device has HIGH exposure score. ',
+            exposureScore == 'Medium', 'Device has MEDIUM exposure score. ',
+            exposureScore == 'Low', 'Device has LOW exposure score. ',
             ''
         ),
         'Immediate review recommended.'
     ),
-    DaysSinceDiscovery = datetime_diff('day', now(), firstSeenbyinventory),
+    DaysSinceDiscovery = datetime_diff('day', now(), firstSeenByInventory),
     // Enhanced risk scoring for NEW devices
     BaseRiskScore = case(
         NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
@@ -613,23 +595,19 @@ Edges
         NodeLabel in ('microsoft.network/virtualnetworks', 'group', 'subscriptions', 'resourcegroups'), 65,
         60
     ),
-    NewDeviceBonus = 20,  // Additional risk because it's a NEW entry point
-    CriticalityBonus = case(
-        CriticalityLevel == 'High', 15,
-        CriticalityLevel == 'Medium', 10,
-        5
-    ),
+    NewDeviceBonus = 25,  // Additional risk because it's a NEW entry point
     ExposureBonus = case(
-        exposureScore >= 80, 15,
-        exposureScore >= 60, 10,
-        5
+        exposureScore == 'High', 20,
+        exposureScore == 'Medium', 15,
+        exposureScore == 'Low', 10,
+        0  // None or empty
     )
 | extend 
-    TotalRiskScore = BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus,
+    TotalRiskScore = BaseRiskScore + NewDeviceBonus + ExposureBonus,
     RiskLevel = case(
-        BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus >= 100, 'Critical',
-        BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus >= 85, 'High',
-        BaseRiskScore + NewDeviceBonus + CriticalityBonus + ExposureBonus >= 70, 'Medium',
+        BaseRiskScore + NewDeviceBonus + ExposureBonus >= 110, 'Critical',
+        BaseRiskScore + NewDeviceBonus + ExposureBonus >= 90, 'High',
+        BaseRiskScore + NewDeviceBonus + ExposureBonus >= 70, 'Medium',
         'Low'
     ),
     RemediationGuidance = strcat(
@@ -657,9 +635,8 @@ Edges
     DeviceNodeId,
     DeviceName,
     DeviceType,
-    CriticalityLevel,
     exposureScore,
-    firstSeenbyinventory,
+    firstSeenByInventory,
     DaysSinceDiscovery,
     lastSeen,
     EdgeType = EdgeLabel,
@@ -690,10 +667,10 @@ Edges
 
 ### Option 2: Time-Based Detection (Query 7) ⭐ RECOMMENDED
 1. **Run Query 7** (New Entry Point Devices) - automatically finds devices discovered in last 7 days
-2. **No state storage needed** - uses `firstSeenbyinventory` field
+2. **No state storage needed** - uses `firstSeenByInventory` field
 3. **Alert immediately** on any results (these are NEW entry points)
 4. **Include in alert**: 
-   - DeviceName, CriticalityLevel, exposureScore
+   - DeviceName, exposureScore (High/Medium/Low/None)
    - AttackPathName, AttackStory, TotalRiskScore
    - DaysSinceDiscovery, RemediationGuidance
 5. **Bonus**: Can adjust timeframe (7d → 1d for more frequent checks)
@@ -717,17 +694,16 @@ These are **calculated by MSEM backend**, not available in ExposureGraphNodes/Ed
 ### What IS Available in Tables
 - ✅ **NodeId, NodeName, NodeLabel** (ExposureGraphNodes)
 - ✅ **Categories** (exposure categories on nodes)
-- ✅ **NodeProperties.rawData.CriticalityLevel** (High/Medium/Low for entry point devices)
-- ✅ **NodeProperties.rawData.exposureScore** (0-100 MSEM calculated score for nodes)
-- ✅ **NodeProperties.rawData.DeviceName** (alternative name field for devices)
+- ✅ **NodeProperties.rawData.exposureScore** (string: High/Medium/Low/None) - `tostring()`
+- ✅ **NodeProperties.rawData.deviceName** (alternative name field for devices) - `tostring()`
 - ✅ **NodeProperties.rawData.lastSeen** (last time device was observed)
-- ✅ **NodeProperties.rawData.firstSeenbyinventory** (when device first appeared in MSEM) - **KEY for detecting "NEW" devices**
+- ✅ **NodeProperties.rawData.firstSeenByInventory** (when device first appeared in MSEM) - **KEY for detecting "NEW" devices**
 - ✅ **SourceNodeId, TargetNodeId, EdgeLabel** (ExposureGraphEdges)
 
-**Note**: Extract nested fields using `NodeProperties.rawData.<fieldname>` syntax
+**Note**: Extract nested fields using `NodeProperties.rawData.<fieldname>` and convert types using `tostring()` for string fields
 
 ### Best Approach
-Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOMMENDED) for automatic detection of new entry points using `firstSeenbyinventory`.
+Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOMMENDED) for automatic detection of new entry points using `firstSeenByInventory`.
 
 ---
 
@@ -738,9 +714,9 @@ Want me to create a **Logic App ARM template** that:
 ### Option A: New Entry Point Detection (⭐ RECOMMENDED)
 1. Runs Query 7 daily to find devices discovered in last 7 days
 2. Alerts immediately on any NEW entry point devices
-3. Includes: DeviceName, CriticalityLevel, exposureScore, Attack Paths, Risk Score
+3. Includes: DeviceName, exposureScore (High/Medium/Low/None), Attack Paths, Risk Score
 4. Sends Teams/Email alerts with full context
-5. **No state storage needed** - uses firstSeenbyinventory
+5. **No state storage needed** - uses firstSeenByInventory
 
 ### Option B: Attack Path Baseline Comparison
 1. Runs Query 6 daily/hourly
