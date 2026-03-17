@@ -215,43 +215,52 @@ ExposureGraphNodes
 
 ## New Attack Paths Detection
 
-**Purpose:** Identify newly discovered attack paths (Status = 'New')  
+**Purpose:** Identify newly discovered attack paths  
 **Used in:** P1 notifications for new attack path alerts  
-**UI Location:** MSEM → Attack Surface Management → Attack Paths (Status column)
+**UI Location:** MSEM → Attack Surface Management → Attack Paths
 
-### Full Query (Production)
+⚠️ **Note**: ExposureGraphEdges is a snapshot table with no Status or Timestamp columns. We use alternative detection methods:
+
+### Method 1: Paths Involving Recently Active Devices (Recommended)
+Detects paths to/from devices that were recently seen - indicates newly discovered or changed paths.
+
 ```kql
+let RecentlyActiveDevices = DeviceInfo
+    | where Timestamp > ago(6h)  // Devices seen in last 6 hours
+    | where isnotempty(DeviceId)
+    | distinct DeviceId;
 let CriticalAssets = DeviceInfo
     | where Timestamp > ago(1d)
     | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
     | distinct DeviceId, DeviceName;
-let NewAttackPaths = ExposureGraphEdges
+let PotentiallyNewPaths = ExposureGraphEdges
     | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
-    | where Status == 'New'
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-    | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId, Status;
+    | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
 let NodeDetails = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | project NodeId, NodeName, NodeLabel, Categories, NodeProperties;
-NewAttackPaths
-| join kind=inner (NodeDetails) on $left.SourceNodeId == $right.NodeId
-| project-rename SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories
-| join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
-| project-rename TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories, TargetProperties = NodeProperties
-| extend PathInvolvesCriticalAsset = TargetNodeId in~ (toscalar(CriticalAssets | summarize make_set(DeviceId)))
+    | extend NodeId = tostring(NodeId), DeviceId = tostring(NodeProperties.deviceId)
+    | project NodeId, NodeName, NodeLabel, Categories, NodeProperties, DeviceId;
+let PathsWithDeviceInfo = PotentiallyNewPaths
+    | join kind=inner (NodeDetails) on $left.SourceNodeId == $right.NodeId
+    | project-rename SourceName = NodeName, SourceType = NodeLabel, SourceCategories = Categories, SourceDeviceId = DeviceId
+    | join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
+    | project-rename TargetName = NodeName, TargetType = NodeLabel, TargetCategories = Categories, TargetDeviceId = DeviceId;
+PathsWithDeviceInfo
+| where SourceDeviceId in (RecentlyActiveDevices) or TargetDeviceId in (RecentlyActiveDevices)
+| extend PathInvolvesCriticalAsset = TargetDeviceId in~ (toscalar(CriticalAssets | summarize make_set(DeviceId)))
 | project 
     Timestamp = now(),
     AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
     PathName = strcat(SourceName, ' → ', TargetName),
     SourceNode = SourceName,
     TargetNode = TargetName,
-    PathStatus = Status,
     PathLength = PathCount,
     PathRisk = PathCount * 10,
     EdgeTypes,
     SourceCategories,
     TargetCategories,
-    PathInvolvesCriticalAsset
+    PathInvolvesCriticalAsset,
+    IsRecentlyActive = true
 | extend Severity = case(
     PathInvolvesCriticalAsset and PathLength > 3, 'Critical',
     PathInvolvesCriticalAsset, 'High',
@@ -259,47 +268,111 @@ NewAttackPaths
 | order by Severity, PathLength desc
 ```
 
-### Simplified Test Version
+### Method 2: Count-Based Detection (For Logic Apps)
+Compare current total attack paths count to detect significant increases. Store baseline count in Logic App variable.
+
 ```kql
-// Step 1: Check if Status column exists and see values
-ExposureGraphEdges
-| where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
-| summarize PathCount = count() by Status
+// Get current attack path statistics
+let CurrentPaths = ExposureGraphEdges
+    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | summarize 
+        TotalPaths = count(),
+        UniqueEdgeTypes = dcount(EdgeLabel),
+        HighRiskPaths = countif(EdgeLabel in ('CanExecute', 'HasPermission'))
+    | extend 
+        Timestamp = now(),
+        HighRiskPercentage = round((HighRiskPaths * 100.0) / TotalPaths, 2);
+CurrentPaths
+| project Timestamp, TotalPaths, HighRiskPaths, HighRiskPercentage, UniqueEdgeTypes
+```
+
+**Logic App Implementation**: Store `TotalPaths` value, compare on next run. Alert if increase > 10%.
+
+### Method 3: Paths to Recently Onboarded Devices
+Detects paths targeting devices that appeared in DeviceInfo recently.
+
+```kql
+let NewDevices = DeviceInfo
+    | where Timestamp > ago(7d)
+    | summarize FirstSeen = min(Timestamp), LastSeen = max(Timestamp) by DeviceId
+    | where datetime_diff('day', LastSeen, FirstSeen) <= 3  // Devices first seen in last 3 days
+    | distinct DeviceId;
+let AttackPaths = ExposureGraphEdges
+    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
+    | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
+let NodeDetails = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId), DeviceId = tostring(NodeProperties.deviceId)
+    | project NodeId, NodeName, NodeLabel, Categories, DeviceId;
+AttackPaths
+| join kind=inner (NodeDetails) on $left.TargetNodeId == $right.NodeId
+| where DeviceId in (NewDevices)
+| project 
+    Timestamp = now(),
+    TargetDevice = NodeName,
+    TargetDeviceId = DeviceId,
+    PathCount,
+    EdgeTypes,
+    Categories
+| extend Severity = case(
+    PathCount > 5, 'High',
+    PathCount > 2, 'Medium',
+    'Low')
 | order by PathCount desc
 ```
 
+### Simplified Test Version
 ```kql
-// Step 2: See sample NEW attack paths
+// Step 1: Check ExposureGraphEdges schema (verify no Status column)
 ExposureGraphEdges
-| where Status == 'New'
+| getschema
+| where ColumnName == "Status"  // Should return empty if no Status column
+```
+
+```kql
+// Step 2: Count paths involving recently active devices (last 6 hours)
+let RecentDevices = DeviceInfo
+    | where Timestamp > ago(6h)
+    | distinct DeviceId;
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId), DeviceId = tostring(NodeProperties.deviceId)
+    | where DeviceId in (RecentDevices)
+    | distinct NodeId;
+ExposureGraphEdges
 | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
 | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-| take 10
+| where SourceNodeId in (Nodes) or TargetNodeId in (Nodes)
+| summarize PathsInvolvingRecentDevices = count() by EdgeLabel
+| order by PathsInvolvingRecentDevices desc
 ```
 
 ```kql
-// Step 3: Count new paths by edge type
-ExposureGraphEdges
-| where Status == 'New'
-| summarize NewPathCount = count() by EdgeLabel, Status
-| order by NewPathCount desc
-```
-
-### All Attack Paths by Status (Summary)
-```kql
-// Overview of attack paths by status
+// Step 3: Get baseline attack path count (run and note the number)
 ExposureGraphEdges
 | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
-| summarize 
-    TotalPaths = count(),
-    NewPaths = countif(Status == 'New'),
-    ActivePaths = countif(Status == 'Active'),
-    InactivePaths = countif(Status == 'InActive')
-| extend 
-    NewPathsPercentage = round((NewPaths * 100.0) / TotalPaths, 2),
-    ActivePathsPercentage = round((ActivePaths * 100.0) / TotalPaths, 2)
-| project TotalPaths, NewPaths, ActivePaths, InactivePaths, NewPathsPercentage, ActivePathsPercentage
+| summarize TotalAttackPaths = count()
 ```
+
+### Attack Path Trend Summary
+```kql
+// Current attack path metrics for trend tracking
+let PathMetrics = ExposureGraphEdges
+    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | summarize 
+        TotalPaths = count(),
+        AuthPaths = countif(EdgeLabel == 'CanAuthenticate'),
+        MovePaths = countif(EdgeLabel == 'CanMove'),
+        PermissionPaths = countif(EdgeLabel == 'HasPermission'),
+        ExecutePaths = countif(EdgeLabel == 'CanExecute')
+    | extend Timestamp = now();
+PathMetrics
+| project Timestamp, TotalPaths, AuthPaths, MovePaths, PermissionPaths, ExecutePaths
+```
+
+**Recommendation for Logic Apps**:
+1. Use **Method 1** (Recently Active Devices) for daily alerts
+2. Use **Method 2** (Count-Based) with Logic App variables to track growth over time
+3. Adjust the time window (6h, 12h, 24h) based on your environment's change frequency
 
 ---
 
@@ -761,8 +834,8 @@ SecureScoreControlProfiles
 
 ## 📝 Notes
 
-- **MSEM tables** (ExposureGraphNodes, ExposureGraphEdges) are **snapshot tables** - no Timestamp column
-- **ExposureGraphEdges Status column**: Use to filter for 'New', 'Active', or 'InActive' attack paths
+- **MSEM tables** (ExposureGraphNodes, ExposureGraphEdges) are **snapshot tables** - no Timestamp or Status columns in raw data
+- **New attack path detection**: Use time-based correlation with recently active devices (see New Attack Paths Detection section)
 - **DeviceInfo** and **SecurityRecommendation** have Timestamp columns - filter with `ago()`
 - **No Risk column** - Calculate exposure scores using `array_length(Categories) * 10`
 - **No dcount() on Categories** - Use `array_length()` and `sum()` instead
