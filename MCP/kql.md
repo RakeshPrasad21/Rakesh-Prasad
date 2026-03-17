@@ -5,10 +5,27 @@ This guide shows how to construct **complete attack path chains** by following e
 ## 🎯 Key Insights (Updated)
 
 ### Attack Path Grouping
-**MSEM groups attack paths by EntryPoint (device) → unique Target:**
-- One EntryPoint can have multiple Targets
-- Each EntryPoint-Target pair = Unique attack path
+**MSEM groups attack paths by EntryPoint (device) → unique FinalTarget:**
+- One EntryPoint can have multiple paths to different FinalTargets
+- **FinalTarget = High-value resources** (storage accounts, key vaults)
+- **Intermediate nodes** (users, cookies) are NOT counted as targets
+- Each complete chain = Unique attack path
 - Status calculated per EntryPoint based on `firstSeenByInventory` + `lastSeen`
+
+### Attack Path Structure (CRITICAL!)
+**Multi-hop chains** (not simple 2-hop):
+```
+Device (EntryPoint)
+   ↓ Edge 1
+Intermediate Node 1 (e.g., entra-userCookie)
+   ↓ Edge 2
+Intermediate Node 2 (e.g., user)  ← Users are INTERMEDIATE, not targets!
+   ↓ Edge 3
+FinalTarget (storage/keyvault)     ← THIS is the target
+```
+
+**Example from real data**:
+- device (a3f79) → entra-userCookie (36c56) → user (dbc6c) → storage account (2e17099)
 
 ### Status Logic (Discovered from MSEM Logs)
 - **New**: firstSeen ≤ 7 days AND lastSeen = today
@@ -21,6 +38,25 @@ This guide shows how to construct **complete attack path chains** by following e
 - ✅ `deviceName`: `NodeProperties.rawData.deviceName`
 - ✅ `firstSeenByInventory`: `NodeProperties.rawData.firstSeenByInventory` (Status calculation)
 - ✅ `lastSeen`: `NodeProperties.rawData.lastSeen` (Status calculation)
+
+### Recommended Queries
+- ⭐ **Query 7B**: Multi-hop paths to storage/keyvault (all statuses)
+- ⭐ **Query 7C**: NEW multi-hop paths to storage/keyvault (ALERTS)
+- ⚠️ **Query 8, 9A, 9B, 9C**: 2-hop queries (may show users as targets - less accurate)
+
+---
+
+## ⚡ Quick Start - What to Use
+
+**For Logic App Alerts**: Use **Query 7C** 
+- Shows: Device → userCookie → user → **storage/keyvault**
+- Filters: NEW paths only (discovered ≤ 7 days)
+- Target: Only high-value resources (storage accounts, key vaults)
+- Users are intermediate nodes, NOT targets ✅
+
+**For Analysis**: Use **Query 7B**
+- Same as 7C but shows all statuses (NEW/ACTIVE/INACTIVE)
+- Great for dashboards and trending
 
 ---
 
@@ -698,6 +734,346 @@ Edges
 
 ---
 
+## 📊 Query 7B: Multi-Hop Attack Paths to High-Value Targets (⭐ MATCHING MSEM STRUCTURE)
+
+**Purpose**: Build complete 3-hop attack path chains from devices through intermediate nodes to storage/keyvault
+
+**Structure**: Device → Intermediate1 (userCookie/etc) → Intermediate2 (user/etc) → FinalTarget (storage/keyvault)
+
+**Example from your data**:
+- Device (a3f79) → entra-userCookie (36c56) → user (dbc6c) → storage account (2e17099)
+
+```kql
+// Build multi-hop attack paths: Device -> Intermediates -> High-Value Resource
+// Users/Cookies are intermediate nodes, NOT final targets
+let HighValueTargets = dynamic([
+    'microsoft.storage/storageaccounts',
+    'microsoft.keyvault/vaults'
+]);
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | extend 
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
+    | project NodeId, NodeName, NodeLabel, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
+// EntryPoint: Device nodes only
+let EntryPoints = Nodes
+    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
+    | extend 
+        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
+        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
+        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
+    | project 
+        EntryPointId = NodeId, 
+        EntryPointName = coalesce(deviceName, NodeName),
+        EntryPointType = NodeLabel,
+        EntryPointExposure = exposureScore,
+        EntryPointCriticalityLevel = criticalityLevel,
+        EntryPointFirstSeen = firstSeenByInventory,
+        EntryPointLastSeen = lastSeen,
+        DaysSinceFirstSeen,
+        DaysSinceLastSeen,
+        IsLastSeenToday;
+// FinalTarget: High-Value Resources ONLY
+let FinalTargets = Nodes
+    | where NodeLabel has_any (HighValueTargets)
+    | project 
+        FinalTargetId = NodeId,
+        FinalTargetName = NodeName,
+        FinalTargetType = NodeLabel,
+        FinalTargetCriticalityLevel = criticalityLevel;
+// Hop 1: EntryPoint (device) -> Intermediate1
+let Hop1 = Edges
+    | join kind=inner (EntryPoints) on $left.SourceNodeId == $right.EntryPointId
+    | project 
+        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
+        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen, DaysSinceLastSeen, IsLastSeenToday,
+        Edge1 = EdgeLabel,
+        Intermediate1Id = TargetNodeId;
+// Hop 2: Intermediate1 -> Intermediate2
+let Hop2 = Hop1
+    | join kind=inner (Edges) on $left.Intermediate1Id == $right.SourceNodeId
+    | join kind=inner (Nodes) on $left.Intermediate1Id == $right.NodeId
+    | project 
+        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
+        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen, DaysSinceLastSeen, IsLastSeenToday,
+        Edge1,
+        Intermediate1Id,
+        Intermediate1Name = NodeName,
+        Intermediate1Type = NodeLabel,
+        Edge2 = EdgeLabel,
+        Intermediate2Id = TargetNodeId;
+// Hop 3: Intermediate2 -> FinalTarget
+let Hop3 = Hop2
+    | join kind=inner (Edges) on $left.Intermediate2Id == $right.SourceNodeId
+    | join kind=inner (Nodes) on $left.Intermediate2Id == $right.NodeId
+    | project 
+        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
+        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen, DaysSinceLastSeen, IsLastSeenToday,
+        Edge1, Intermediate1Id, Intermediate1Name, Intermediate1Type,
+        Edge2,
+        Intermediate2Id,
+        Intermediate2Name = NodeName,
+        Intermediate2Type = NodeLabel,
+        Edge3 = EdgeLabel,
+        FinalTargetId = TargetNodeId;
+// Match with high-value targets ONLY
+Hop3
+| join kind=inner (FinalTargets) on FinalTargetId
+| extend 
+    // Generate consistent attack path ID
+    AttackPathId = hash_sha256(strcat(EntryPointId, '|', Intermediate1Id, '|', Intermediate2Id, '|', FinalTargetId)),
+    
+    // Human-readable path name
+    AttackPathName = strcat(EntryPointName, ' → ', Intermediate1Name, ' → ', Intermediate2Name, ' → ', FinalTargetName),
+    
+    // Attack story
+    AttackStory = strcat(
+        'Device "', EntryPointName, '" ', Edge1, ' ', Intermediate1Type, ' "', Intermediate1Name, '" which ',
+        Edge2, ' ', Intermediate2Type, ' "', Intermediate2Name, '" which ',
+        Edge3, ' ', FinalTargetType, ' "', FinalTargetName, '"'
+    ),
+    
+    PathLength = 4,  // 4 nodes total
+    
+    // Calculate Status based on EntryPoint (device)
+    Status = case(
+        DaysSinceFirstSeen <= 7 and IsLastSeenToday, 'New',
+        DaysSinceFirstSeen > 7 and IsLastSeenToday, 'Active',
+        DaysSinceFirstSeen > 7 and DaysSinceLastSeen > 7, 'Inactive',
+        'Unknown'
+    ),
+    
+    // Risk scoring - higher risk for paths to keyvault/storage
+    TargetRisk = case(
+        FinalTargetType == 'microsoft.keyvault/vaults', 100,
+        FinalTargetType == 'microsoft.storage/storageaccounts', 95,
+        80
+    ),
+    ExposureRisk = case(
+        EntryPointExposure == 'High', 20,
+        EntryPointExposure == 'Medium', 15,
+        EntryPointExposure == 'Low', 10,
+        0
+    )
+| extend 
+    TotalRiskScore = TargetRisk + ExposureRisk,
+    RiskLevel = case(
+        TargetRisk + ExposureRisk >= 110, 'Critical',
+        TargetRisk + ExposureRisk >= 90, 'High',
+        TargetRisk + ExposureRisk >= 70, 'Medium',
+        'Low'
+    ),
+    AlertPriority = case(
+        DaysSinceFirstSeen <= 7 and IsLastSeenToday, 'Critical - New Attack Path',
+        DaysSinceFirstSeen > 7 and IsLastSeenToday and (TargetRisk + ExposureRisk) >= 110, 'High - Active Critical Path',
+        DaysSinceLastSeen > 7, 'Info - Inactive Path',
+        'Medium - Active Path'
+    )
+| project 
+    Timestamp = now(),
+    Status,
+    AlertPriority,
+    AttackPathId,
+    AttackPathName,
+    AttackStory,
+    PathLength,
+    TotalRiskScore,
+    RiskLevel,
+    // Entry Point (Device)
+    EntryPointId,
+    EntryPointName,
+    EntryPointType,
+    EntryPointExposure,
+    EntryPointCriticalityLevel,
+    EntryPointFirstSeen,
+    DaysSinceFirstSeen,
+    DaysSinceLastSeen,
+    // Intermediate Nodes
+    Edge1,
+    Intermediate1Id,
+    Intermediate1Name,
+    Intermediate1Type,
+    Edge2,
+    Intermediate2Id,
+    Intermediate2Name,
+    Intermediate2Type,
+    Edge3,
+    // Final Target (Storage/KeyVault)
+    FinalTargetId,
+    FinalTargetName,
+    FinalTargetType,
+    FinalTargetCriticalityLevel
+| order by 
+    case(Status, 'New', 1, 'Active', 2, 'Inactive', 3, 4),
+    TotalRiskScore desc
+| take 100
+```
+
+**Key Differences from Query 8**:
+- ✅ Builds 3-hop paths (4 nodes total): Device → Intermediate1 → Intermediate2 → FinalTarget
+- ✅ FinalTarget filtered to ONLY storage/keyvault (high-value resources)
+- ✅ Users/cookies are intermediate nodes, NOT targets
+- ✅ Status calculated from EntryPoint (device) firstSeen/lastSeen
+- ✅ Matches your example: device (a3f79) → entra-userCookie (36c56) → user (dbc6c) → storage (2e17099)
+
+---
+
+## 📊 Query 7C: NEW Multi-Hop Paths to Storage/KeyVault (🆕 RECOMMENDED FOR ALERTS)
+
+**Purpose**: Filter Query 7B to show ONLY NEW attack paths (discovered within 7 days)
+
+**Use Case**: Daily alerts on newly discovered attack paths to storage accounts and key vaults
+
+```kql
+// Get ONLY New multi-hop attack paths to storage/keyvault
+let HighValueTargets = dynamic([
+    'microsoft.storage/storageaccounts',
+    'microsoft.keyvault/vaults'
+]);
+let Edges = ExposureGraphEdges
+    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
+let Nodes = ExposureGraphNodes
+    | extend NodeId = tostring(NodeId)
+    | extend 
+        exposureScore = tostring(NodeProperties.rawData.exposureScore),
+        deviceName = tostring(NodeProperties.rawData.deviceName),
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
+        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
+    | project NodeId, NodeName, NodeLabel, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
+// EntryPoint: Device nodes with NEW filter (firstSeen ≤ 7 days, lastSeen = today)
+let EntryPoints = Nodes
+    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
+    | extend 
+        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
+        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
+        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
+    | where DaysSinceFirstSeen <= 7 and IsLastSeenToday  // NEW filter
+    | project 
+        EntryPointId = NodeId, 
+        EntryPointName = coalesce(deviceName, NodeName),
+        EntryPointType = NodeLabel,
+        EntryPointExposure = exposureScore,
+        EntryPointCriticalityLevel = criticalityLevel,
+        EntryPointFirstSeen = firstSeenByInventory,
+        EntryPointLastSeen = lastSeen,
+        DaysSinceFirstSeen;
+// FinalTarget: Storage/KeyVault ONLY
+let FinalTargets = Nodes
+    | where NodeLabel has_any (HighValueTargets)
+    | project 
+        FinalTargetId = NodeId,
+        FinalTargetName = NodeName,
+        FinalTargetType = NodeLabel,
+        FinalTargetCriticalityLevel = criticalityLevel;
+// Hop 1: EntryPoint -> Intermediate1
+let Hop1 = Edges
+    | join kind=inner (EntryPoints) on $left.SourceNodeId == $right.EntryPointId
+    | project 
+        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
+        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen,
+        Edge1 = EdgeLabel,
+        Intermediate1Id = TargetNodeId;
+// Hop 2: Intermediate1 -> Intermediate2
+let Hop2 = Hop1
+    | join kind=inner (Edges) on $left.Intermediate1Id == $right.SourceNodeId
+    | join kind=inner (Nodes) on $left.Intermediate1Id == $right.NodeId
+    | project 
+        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
+        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen,
+        Edge1,
+        Intermediate1Id,
+        Intermediate1Name = NodeName,
+        Intermediate1Type = NodeLabel,
+        Edge2 = EdgeLabel,
+        Intermediate2Id = TargetNodeId;
+// Hop 3: Intermediate2 -> FinalTarget
+let Hop3 = Hop2
+    | join kind=inner (Edges) on $left.Intermediate2Id == $right.SourceNodeId
+    | join kind=inner (Nodes) on $left.Intermediate2Id == $right.NodeId
+    | project 
+        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
+        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen,
+        Edge1, Intermediate1Id, Intermediate1Name, Intermediate1Type,
+        Edge2,
+        Intermediate2Id,
+        Intermediate2Name = NodeName,
+        Intermediate2Type = NodeLabel,
+        Edge3 = EdgeLabel,
+        FinalTargetId = TargetNodeId;
+// Match with storage/keyvault ONLY
+Hop3
+| join kind=inner (FinalTargets) on FinalTargetId
+| extend 
+    AttackPathId = hash_sha256(strcat(EntryPointId, '|', Intermediate1Id, '|', Intermediate2Id, '|', FinalTargetId)),
+    AttackPathName = strcat(EntryPointName, ' → ', Intermediate1Name, ' → ', Intermediate2Name, ' → ', FinalTargetName),
+    Status = 'New',
+    AlertMessage = strcat(
+        '🆕 NEW ATTACK PATH TO ', toupper(FinalTargetType), '\n',
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
+        'Entry Point: ', EntryPointName, ' (', EntryPointType, ')\n',
+        'Entry Point Criticality: ', EntryPointCriticalityLevel, '\n',
+        'Entry Point Exposure: ', EntryPointExposure, '\n',
+        'First Discovered: ', format_datetime(EntryPointFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceFirstSeen, ' days ago)\n',
+        '\nATTACK CHAIN:\n',
+        '1️⃣ ', EntryPointName, ' (', EntryPointType, ')\n',
+        '   ↓ ', Edge1, '\n',
+        '2️⃣ ', Intermediate1Name, ' (', Intermediate1Type, ')\n',
+        '   ↓ ', Edge2, '\n',
+        '3️⃣ ', Intermediate2Name, ' (', Intermediate2Type, ')\n',
+        '   ↓ ', Edge3, '\n',
+        '4️⃣ ', FinalTargetName, ' (', FinalTargetType, ') ⚠️\n',
+        'Target Criticality: ', FinalTargetCriticalityLevel, '\n',
+        '\n⚠️ CRITICAL: New path to high-value resource!\n',
+        '🔍 ACTION REQUIRED: Immediate investigation!'
+    ),
+    TargetRisk = case(
+        FinalTargetType == 'microsoft.keyvault/vaults', 100,
+        FinalTargetType == 'microsoft.storage/storageaccounts', 95,
+        80
+    )
+| project 
+    Timestamp = now(),
+    Status,
+    AlertMessage,
+    AttackPathId,
+    AttackPathName,
+    TargetRisk,
+    // Entry Point
+    EntryPointId,
+    EntryPointName,
+    EntryPointType,
+    EntryPointCriticalityLevel,
+    EntryPointExposure,
+    EntryPointFirstSeen,
+    DaysSinceFirstSeen,
+    // Attack Chain
+    Edge1,
+    Intermediate1Name,
+    Intermediate1Type,
+    Edge2,
+    Intermediate2Name,
+    Intermediate2Type,
+    Edge3,
+    // Final Target
+    FinalTargetName,
+    FinalTargetType,
+    FinalTargetCriticalityLevel
+| order by TargetRisk desc, DaysSinceFirstSeen asc
+```
+
+**Alert Priority**: CRITICAL - These are newly discovered paths to your most sensitive resources!
+
+---
+
 ## 📊 Query 8: Attack Path Snapshot with Status Calculation (Based on MSEM Logic)
 
 **Purpose**: Generate attack paths with **Status** calculated from firstSeenByInventory and lastSeen fields
@@ -1201,59 +1577,65 @@ Status = case(
 
 ## 🚀 Next Steps - Implementation Options (UPDATED)
 
-### ⭐ Option A: NEW Attack Path Alerts (RECOMMENDED - Simplest)
-**Query**: Query 9A (NEW paths only)
+### ⭐ Option A: NEW Multi-Hop Paths to Storage/KeyVault (RECOMMENDED)
+**Query**: Query 7C (NEW multi-hop paths to high-value targets)
 **Logic App**:
 - Daily trigger
-- Run Query 9A → Get NEW attack paths (firstSeen ≤ 7 days, lastSeen = today)
-- If results exist → Send critical alert to Teams
+- Run Query 7C → Get NEW 3-hop attack paths ending at storage/keyvault
+- If results exist → Send CRITICAL alert to Teams
 - **No storage needed!**
 
-**Use Case**: Detect newly discovered attack paths within 7 days
-**Benefit**: Immediate alerts on emerging threats
+**Why Recommended**:
+- ✅ Matches MSEM structure: Device → Intermediates → Storage/KeyVault
+- ✅ Users/cookies are intermediate nodes, NOT targets
+- ✅ Only alerts on paths to actual high-value resources
+- ✅ Example: device → entra-userCookie → user → storage account
+
+**Use Case**: Detect newly discovered attack paths to your most critical assets
+**Benefit**: Actionable alerts on real threats to storage/keyvault
 
 ---
 
-### Option B: Multi-Status Monitoring (Comprehensive)
-**Queries**: Query 9A (NEW) + Query 9B (ACTIVE High-Risk) + Query 9C (INACTIVE)
+### Option B: All Multi-Hop Paths with Status Filtering
+**Query**: Query 7B (all multi-hop paths) with status filtering in Logic App
 **Logic App**:
 - Daily trigger
-- Run all 3 queries in sequence
-- NEW paths → Critical alert
-- ACTIVE high-risk → High alert
-- INACTIVE → Weekly summary (good news!)
+- Run Query 7B → Get all 3-hop paths to storage/keyvault
+- Filter by Status: NEW → Critical alert, ACTIVE → High alert, INACTIVE → Weekly report
 - **No storage needed!**
 
-**Use Case**: Full visibility into attack path lifecycle
-**Benefit**: NEW alerts + active monitoring + remediation tracking
+**Use Case**: Full lifecycle monitoring of paths to high-value resources
+**Benefit**: Complete visibility from discovery to remediation
 
 ---
 
-### Option C: Single Query with Conditional Alerts (Most Efficient)
-**Query**: Query 8 (all statuses in one query)
+### Option C: Combined Monitoring (Multi-hop + 2-hop)
+**Queries**: Query 7C (multi-hop NEW) + Query 9A (2-hop NEW)
 **Logic App**:
 - Daily trigger
-- Run Query 8 → Get all paths with Status calculated
-- Filter results by Status and send appropriate alerts
+- Run Query 7C first → Multi-hop paths to storage/keyvault (CRITICAL)
+- Run Query 9A second → 2-hop paths to other resources (HIGH)
+- Different alert priorities based on target type
 - **No storage needed!**
 
-**Use Case**: One query, multiple alert levels
-**Benefit**: Most efficient API usage
+**Use Case**: Comprehensive coverage - prioritize storage/keyvault, monitor everything else
+**Benefit**: Nothing falls through the cracks, but storage/keyvault gets highest priority
 
 ---
 
 ## 📋 Recommended Implementation Path
 
-**Start Here** → **Option A** (NEW paths only)
-- Simplest to implement
-- Immediate value
-- Matches MSEM portal behavior exactly
+**Start Here** → **Option A** (Query 7C - NEW multi-hop to storage/keyvault)
+- Matches MSEM portal exactly
+- Focuses on highest-value targets
+- Clear actionable alerts
+- **Solves your issue**: Only shows storage/keyvault as targets, users are intermediate
 
-**Then Add** → **Option B** queries for comprehensive monitoring
-- Active high-risk path alerts
-- Inactive path reports (weekly)
+**Then Add** → **Option B** for full lifecycle tracking
+- Active path monitoring
+- Inactive path reports (remediation validation)
 
-**Final State** → Full multi-status monitoring with different alert channels per status
+**Alternative** → **Option C** if you need broader coverage beyond storage/keyvault
 
 ---
 
