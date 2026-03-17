@@ -18,7 +18,8 @@ Node (Storage Account)
 ```
 
 ### Data Structure
-- **Nodes**: `ExposureGraphNodes` → NodeId, NodeName, NodeLabel (type), Categories, **CriticalityLevel**, **exposureScore**, **DeviceName**, **lastSeen**, **firstSeenbyinventory** (for Entry Point devices)
+- **Nodes**: `ExposureGraphNodes` → NodeId, NodeName, NodeLabel (type), Categories, **NodeProperties** (JSON with rawData)
+  - NodeProperties.rawData contains: CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory
 - **Edges**: `ExposureGraphEdges` → SourceNodeId, TargetNodeId, EdgeLabel (relationship type)
 - **Path**: Chain of Nodes connected by Edges
 
@@ -26,12 +27,14 @@ Node (Storage Account)
 - **Edges**: `ExposureGraphEdges` -> EdgeLabel in ('contains', 'can authenticate to','member of','has role on','has credentials of', 'can authenticate as','frequently logged in','can impersonate as','affecting','runs on','routes traffic to', 'can rdp', 'can admin to', 'has permission to', 'can execute code')
 - **Nodes**: `ExposureGraphNodes` -> NodeLabel in ('user','ec2.instance','computer-account','entra-userCookie','device', 'group','subscriptions', 'microsoft.logic/workflows','manageidentity','aws-userCookie','serviceprincipal','Microsoft Entra OAth App','resourcegroups','microsoft.hybridcompute/machines','microsoft.network/virtualnetworks','mdcSecurityRecommendation','mdcManagementRecommendation','Cve','microsoft.network/virtualnetworks/subnets','SaaS Application','mdcAuditingRecommendation','IP address','microsoft.keyvault/vaults','FileShare','microsoft.web/serverfarms','microsoft.resources/deployments','azure-logic-app-shared-access-signature','microsoft.authorization/locks','microsoft.compute/virtualmachines','microsoft.network/networkinterfaces','microsoft.web/site_azurefunction','microsoft.operationalinsights/workspaces','dataSensitivityScan','aws-access-key','microsoft.storage/storageaccounts','mdcSoftwareScanningtool','mde-healthFinding','ad-domain','microft.network/publicipaddresses','microsoft.network/networksecuritygroups','microsoft.automation/automationaccounts')
 
-### Additional Node Fields (Entry Point Devices)
+### Additional Node Fields (Entry Point Devices - in NodeProperties.rawData)
 - **CriticalityLevel**: Device criticality (High/Medium/Low)
 - **exposureScore**: MSEM calculated exposure score (0-100)
 - **DeviceName**: Device name (alternative to NodeName)
 - **lastSeen**: Last time device was seen
 - **firstSeenbyinventory**: When device first appeared in MSEM
+
+**Access Pattern**: `NodeProperties.rawData.CriticalityLevel` or parse as JSON
 
 ## 📊 Query 1: Simple 2-Hop Attack Paths
 
@@ -49,6 +52,12 @@ let Edges = ExposureGraphEdges
     | project SourceNodeId, TargetNodeId, EdgeLabel;
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
+    | extend 
+        CriticalityLevel = tostring(NodeProperties.rawData.CriticalityLevel),
+        exposureScore = toint(NodeProperties.rawData.exposureScore),
+        DeviceName = tostring(NodeProperties.rawData.DeviceName),
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenbyinventory = todatetime(NodeProperties.rawData.firstSeenbyinventory)
     | project NodeId, NodeName, NodeLabel, Categories, CriticalityLevel, exposureScore, DeviceName, lastSeen, firstSeenbyinventory;
 Edges
 | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
@@ -413,6 +422,13 @@ let Edges = ExposureGraphEdges
 let Nodes = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | extend 
+        // Extract from NodeProperties.rawData
+        CriticalityLevel = tostring(NodeProperties.rawData.CriticalityLevel),
+        exposureScore = toint(NodeProperties.rawData.exposureScore),
+        DeviceName = tostring(NodeProperties.rawData.DeviceName),
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenbyinventory = todatetime(NodeProperties.rawData.firstSeenbyinventory)
+    | extend 
         IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
         IsSensitive = array_length(Categories) >= 3,
         IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account')
@@ -541,6 +557,13 @@ Edges
 let RecentDevices = ExposureGraphNodes
     | extend NodeId = tostring(NodeId)
     | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
+    | extend 
+        // Extract from NodeProperties.rawData
+        CriticalityLevel = tostring(NodeProperties.rawData.CriticalityLevel),
+        exposureScore = toint(NodeProperties.rawData.exposureScore),
+        DeviceName = tostring(NodeProperties.rawData.DeviceName),
+        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+        firstSeenbyinventory = todatetime(NodeProperties.rawData.firstSeenbyinventory)
     | where isnotempty(firstSeenbyinventory)
     | where firstSeenbyinventory >= ago(7d)  // Discovered in last 7 days
     | project 
@@ -694,12 +717,14 @@ These are **calculated by MSEM backend**, not available in ExposureGraphNodes/Ed
 ### What IS Available in Tables
 - ✅ **NodeId, NodeName, NodeLabel** (ExposureGraphNodes)
 - ✅ **Categories** (exposure categories on nodes)
-- ✅ **CriticalityLevel** (High/Medium/Low for entry point devices)
-- ✅ **exposureScore** (0-100 MSEM calculated score for nodes)
-- ✅ **DeviceName** (alternative name field for devices)
-- ✅ **lastSeen** (last time device was observed)
-- ✅ **firstSeenbyinventory** (when device first appeared in MSEM) - **KEY for detecting "NEW" devices**
+- ✅ **NodeProperties.rawData.CriticalityLevel** (High/Medium/Low for entry point devices)
+- ✅ **NodeProperties.rawData.exposureScore** (0-100 MSEM calculated score for nodes)
+- ✅ **NodeProperties.rawData.DeviceName** (alternative name field for devices)
+- ✅ **NodeProperties.rawData.lastSeen** (last time device was observed)
+- ✅ **NodeProperties.rawData.firstSeenbyinventory** (when device first appeared in MSEM) - **KEY for detecting "NEW" devices**
 - ✅ **SourceNodeId, TargetNodeId, EdgeLabel** (ExposureGraphEdges)
+
+**Note**: Extract nested fields using `NodeProperties.rawData.<fieldname>` syntax
 
 ### Best Approach
 Use **Query 6** for comprehensive attack path metadata OR **Query 7** (⭐ RECOMMENDED) for automatic detection of new entry points using `firstSeenbyinventory`.
