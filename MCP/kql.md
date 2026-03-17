@@ -234,7 +234,7 @@ let CriticalAssets = DeviceInfo
     | where DeviceCategory in ('Server', 'Domain Controller') or AdditionalFields contains 'Critical'
     | distinct DeviceId, DeviceName;
 let PotentiallyNewPaths = ExposureGraphEdges
-    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | where EdgeLabel in ('can authenticate as', 'can rdp','can admin to', 'has permission to', 'can execute code')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
     | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
 let NodeDetails = ExposureGraphNodes
@@ -274,7 +274,7 @@ Compare current total attack paths count to detect significant increases. Store 
 ```kql
 // Get current attack path statistics
 let CurrentPaths = ExposureGraphEdges
-    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | where EdgeLabel in ('can authenticate as', 'can rdp','can admin to', 'has permission to', 'can execute code')
     | summarize 
         TotalPaths = count(),
         UniqueEdgeTypes = dcount(EdgeLabel),
@@ -298,7 +298,7 @@ let NewDevices = DeviceInfo
     | where datetime_diff('day', LastSeen, FirstSeen) <= 3  // Devices first seen in last 3 days
     | distinct DeviceId;
 let AttackPaths = ExposureGraphEdges
-    | where EdgeLabel in ('CanAuthenticate', 'CanMove', 'HasPermission', 'CanExecute')
+    | where EdgeLabel in ('can authenticate as', 'can rdp','can admin to', 'has permission to', 'can execute code')
     | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
     | summarize PathCount = count(), EdgeTypes = make_set(EdgeLabel) by SourceNodeId, TargetNodeId;
 let NodeDetails = ExposureGraphNodes
