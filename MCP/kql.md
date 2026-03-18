@@ -1,7 +1,72 @@
 # MSEM Attack Path Chain Queries
 
 This guide shows how to construct **complete attack path chains** by following edges through nodes, matching what MSEM portal displays.
-
+```
+let timeframe = 7d;
+// Step 1: Filter relevant edges
+let Edges = ExposureGraphEdges
+| where EdgeLabel in (
+    "contains","can authenticate to","member of","has role on",
+    "has credentials of","can authenticate as","frequently logged in",
+    "can impersonate as","affecting","runs on","routes traffic to",
+    "can rdp","can admin to","has permission to","can execute code"
+)
+| project EdgeId, SourceNodeId, TargetNodeId;
+// Step 2: Get nodes
+let Nodes = ExposureGraphNodes
+| project NodeId, NodeLabel, NodeName,
+          exposureScore = tostring(NodeProperties.rawData.exposureScore),
+          deviceName = tostring(NodeProperties.rawData.deviceName),
+          lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+          firstSeen = todatetime(NodeProperties.rawData.firstSeenByInventory),
+          criticality = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel);
+// Step 3: Build 3-hop chain (Device → Identity → User → Target)
+Edges
+| join kind=inner (Nodes | where NodeLabel == "device") on $left.SourceNodeId == $right.NodeId
+| extend EntryDevice = NodeName, EntryNodeId = NodeId, EntryFirstSeen = firstSeen, EntryLastSeen = lastSeen
+| join kind=inner (Edges) on $left.TargetNodeId == $right.SourceNodeId
+| join kind=inner (Nodes | where NodeLabel in ("entra-userCookie","aws-userCookie","serviceprincipal")) 
+    on $left.TargetNodeId == $right.NodeId
+| extend  IdentityNode = NodeName
+| join kind=inner (Edges) on $left.TargetNodeId1 == $right.SourceNodeId
+| join kind=inner (Nodes | where NodeLabel == "user") 
+    on $left.TargetNodeId1 == $right.NodeId
+| extend UserNode = NodeName
+| join kind=inner (Edges) on $left.TargetNodeId2 == $right.SourceNodeId
+| join kind=inner (Nodes 
+    | where NodeLabel in (
+        "microsoft.storage/storageaccounts",
+        "microsoft.keyvault/vaults",
+        "microsoft.compute/virtualmachines"
+    )) 
+    on $left.TargetNodeId2 == $right.NodeId
+| extend TargetResource = NodeName, TargetNodeId = NodeId
+// Step 4: Aggregate per Attack Path (Entry → Target)
+| summarize
+    FirstSeen = min(EntryFirstSeen),
+    LastSeen = max(EntryLastSeen),
+    ExposureScores = make_set(exposureScore),
+    Criticality = make_set(criticality)
+by EntryDevice, TargetResource
+// Step 5: Derive Status
+| extend Status =
+    case(
+        FirstSeen >= ago(timeframe) and LastSeen >= ago(1d), "New",
+        FirstSeen < ago(timeframe) and LastSeen >= ago(1d), "Active",
+        LastSeen < ago(timeframe), "Inactive",
+        "Unknown"
+    )
+// Step 6: Final Output
+| project
+    EntryDevice,
+    TargetResource,
+    FirstSeen,
+    LastSeen,
+    Status,
+    ExposureScores,
+    Criticality
+| order by LastSeen desc
+```
 ## 🎯 Key Insights (Updated)
 
 ### Attack Path Grouping
