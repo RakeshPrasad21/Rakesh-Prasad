@@ -3,7 +3,8 @@
 This guide shows how to construct **complete attack path chains** by following edges through nodes, matching what MSEM portal displays.
 ```
 let timeframe = 7d;
-// Step 1: Filter edges
+
+// Step 1: Edges
 let Edges = ExposureGraphEdges
 | where EdgeLabel in (
     "contains","can authenticate to","member of","has role on",
@@ -11,61 +12,66 @@ let Edges = ExposureGraphEdges
     "can impersonate as","affecting","runs on","routes traffic to",
     "can rdp","can admin to","has permission to","can execute code"
 )
-| project EdgeId, Src = SourceNodeId, Dst = TargetNodeId;
+| project Src = SourceNodeId, Dst = TargetNodeId;
+
 // Step 2: Nodes
 let Nodes = ExposureGraphNodes
-| project NodeId, NodeLabel, NodeName,
-          exposureScore = tostring(NodeProperties.rawData.exposureScore),
-          deviceName = tostring(NodeProperties.rawData.deviceName),
-          lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+| project NodeId, NodeName, NodeLabel,
           firstSeen = todatetime(NodeProperties.rawData.firstSeenByInventory),
-          criticality = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel);
-// Step 3: Device → Identity
-let Step1 =
-Edges
-| join kind=inner (Nodes | where NodeLabel == "device") on $left.Src == $right.NodeId
-| project EntryNodeId = NodeId, EntryDevice = NodeName,
-          EntryFirstSeen = firstSeen, EntryLastSeen = lastSeen,
-          MidNode1 = Dst;
-// Step 4: Identity → User
-let Step2 =
-Step1
-| join kind=inner (Edges) on $left.MidNode1 == $right.Src
-| join kind=inner (Nodes | where NodeLabel in ("entra-userCookie","aws-userCookie","serviceprincipal"))
-    on $left.MidNode1 == $right.NodeId
-| project EntryDevice, EntryFirstSeen, EntryLastSeen,
-          IdentityNode = NodeName,
-          MidNode2 = Dst;
-// Step 5: User hop
-let Step3 =
-Step2
-| join kind=inner (Edges) on $left.MidNode2 == $right.Src
-| join kind=inner (Nodes | where NodeLabel == "user")
-    on $left.MidNode2 == $right.NodeId
-| project EntryDevice, EntryFirstSeen, EntryLastSeen,
-          IdentityNode, UserNode = NodeName,
-          MidNode3 = Dst;
-// Step 6: Target
-Step3
-| join kind=inner (Edges) on $left.MidNode3 == $right.Src
-| join kind=inner (Nodes 
-    | where NodeLabel in (
-        "microsoft.storage/storageaccounts",
-        "microsoft.keyvault/vaults",
-        "microsoft.compute/virtualmachines"
-    ))
-    on $left.MidNode3 == $right.NodeId
-| project EntryDevice, EntryFirstSeen, EntryLastSeen,
-          IdentityNode, UserNode,
-          TargetResource = NodeName,
-          exposureScore, criticality
+          lastSeen = todatetime(NodeProperties.rawData.lastSeen);
+
+// Step 3: Entry Points (Devices)
+let EntryPoints =
+Nodes
+| where NodeLabel == "device"
+| project EntryNodeId = NodeId, EntryDevice = NodeName, firstSeen, lastSeen;
+
+// Step 4: Targets
+let Targets =
+Nodes
+| where NodeLabel in (
+    "microsoft.storage/storageaccounts",
+    "microsoft.keyvault/vaults",
+    "microsoft.compute/virtualmachines"
+)
+| project TargetNodeId = NodeId, TargetName = NodeName;
+
+// Step 5: Build Paths (up to 4 hops)
+EntryPoints
+| join kind=inner (Edges) on $left.EntryNodeId == $right.Src
+| project EntryDevice, firstSeen, lastSeen,
+          Path = pack_array(EntryDevice),
+          NextNode = Dst
+
+| join kind=inner (Nodes) on $left.NextNode == $right.NodeId
+| extend Path = array_concat(Path, pack_array(NodeName))
+| project EntryDevice, firstSeen, lastSeen, Path, NextNode = NodeId
+
+| join kind=inner (Edges) on $left.NextNode == $right.Src
+| project EntryDevice, firstSeen, lastSeen, Path, NextNode = Dst
+
+| join kind=inner (Nodes) on $left.NextNode == $right.NodeId
+| extend Path = array_concat(Path, pack_array(NodeName))
+| project EntryDevice, firstSeen, lastSeen, Path, NextNode = NodeId
+
+| join kind=inner (Edges) on $left.NextNode == $right.Src
+| project EntryDevice, firstSeen, lastSeen, Path, NextNode = Dst
+
+| join kind=inner (Nodes) on $left.NextNode == $right.NodeId
+| extend Path = array_concat(Path, pack_array(NodeName))
+| project EntryDevice, firstSeen, lastSeen, Path, NextNode = NodeId
+
+// Step 6: Match Target
+| join kind=inner (Targets) on $left.NextNode == $right.TargetNodeId
+| extend FullPath = array_concat(Path, pack_array(TargetName))
+
 // Step 7: Aggregate
 | summarize
-    FirstSeen = min(EntryFirstSeen),
-    LastSeen = max(EntryLastSeen),
-    ExposureScores = make_set(exposureScore),
-    Criticality = make_set(criticality)
-by EntryDevice, TargetResource
+    FirstSeen = min(firstSeen),
+    LastSeen = max(lastSeen),
+    Paths = make_set(FullPath)
+by EntryDevice, TargetName
+
 // Step 8: Status
 | extend Status =
     case(
@@ -74,6 +80,7 @@ by EntryDevice, TargetResource
         LastSeen < ago(timeframe), "Inactive",
         "Unknown"
     )
+
 | order by LastSeen desc
 ```
 ## 🎯 Key Insights (Updated)
