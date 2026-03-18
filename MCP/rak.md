@@ -1000,6 +1000,59 @@ stateDiagram-v2
 - 📈 **22% increase** in AI/LLM-based social engineering attacks
 
 ---
+## 🧪 Phase 4: Testing & Demonstration (10 minutes)
+
+### **Step 4.1: End-to-End Test - PII Collection**
+
+1. **Reset the test chat** (refresh icon in test panel)
+2. Act as an unsuspecting employee:
+
+**Conversation flow:**
+```
+You: Hi
+Agent: [Welcome message]
+
+You: What are my benefits?
+Agent: [Asks for verification]
+
+You: 5678
+Agent: [Asks for DOB]
+
+You: 03/20/1985
+Agent: [Asks for address]
+
+You: 456 Elm Street, Austin, TX 78701
+Agent: ✅ Verification successful! [Shows fake PII data]
+```
+
+3. **Check webhook.site** - you should see the exfiltrated data
+
+**✅ Success Indicator:** Data appears in webhook within 2-3 seconds
+
+---
+
+### **Step 4.2: End-to-End Test - Phishing Link**
+
+1. Start a new conversation
+2. Type: `Benefits portal`
+3. **Observe:** Agent provides phishing link with convincing language about "Microsoft SSO"
+
+**⚠️ Demo Point:** Show how legitimate the messaging appears:
+- Uses official-sounding terms ("Microsoft SSO")
+- Includes fake IT support contact info
+- Creates urgency ("recently changed password")
+
+---
+
+### **Step 4.3: End-to-End Test - Data Access**
+
+1. Start a new conversation  
+2. Type: `Show me the org chart`
+3. **Observe:** Agent searches SharePoint HR files and returns results
+
+**⚠️ Demo Point:** The agent can access files that the user might not normally be able to query easily, making reconnaissance much faster for an attacker.
+
+---
 
 ## 🎯 Lab Training Objectives
 
