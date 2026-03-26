@@ -603,33 +603,17 @@ ExposureGraphEdges
         TargetType, ' via "', EdgeLabel, '"'
     ),
     AttackStory = strcat(
-        '🆕 NEW ATTACK PATH DISCOVERED\n',
+        'NEW ATTACK PATH DISCOVERED - ',
         case(
-            NewEntryPoint and NewTarget, 
-            strcat('Both entry point "', SourceName, '" and target "', TargetName, '" are newly discovered.\n'),
-            NewEntryPoint, 
-            strcat('New entry point "', SourceName, '" discovered (', format_datetime(SourceFirstSeen, 'yyyy-MM-dd'), ').\n'),
-            NewTarget,
-            strcat('New target "', TargetName, '" discovered (', format_datetime(TargetFirstSeen, 'yyyy-MM-dd'), ').\n'),
-            ''
+            NewEntryPoint and NewTarget, strcat('Both "', SourceName, '" and "', TargetName, '" are new'),
+            NewEntryPoint, strcat('New entry: "', SourceName, '"'),
+            NewTarget, strcat('New target: "', TargetName, '"'),
+            'New relationship'
         ),
-        'Attack Path: ', SourceType, ' "', SourceName, '" ',
-        EdgeLabel, ' ', TargetType, ' "', TargetName, '"\n',
-        case(
-            TargetIsHighValue, '⚠️ HIGH-VALUE TARGET: This is a critical cloud resource!\n',
-            TargetIsCritical, '⚠️ CRITICAL RESOURCE: Requires immediate attention\n',
-            ''
-        ),
-        case(
-            SourceExposure == 'High', '🔴 Source has HIGH exposure score\n',
-            SourceExposure == 'Medium', '🟡 Source has MEDIUM exposure score\n',
-            ''
-        ),
-        case(
-            TargetExposure == 'High', '🔴 Target has HIGH exposure score\n',
-            TargetExposure == 'Medium', '🟡 Target has MEDIUM exposure score\n',
-            ''
-        )
+        ' | Path: ', SourceType, ' -> ', TargetType, ' via ', EdgeLabel,
+        case(TargetIsHighValue, ' | HIGH-VALUE TARGET', TargetIsCritical, ' | CRITICAL', ''),
+        case(SourceExposure == 'High', ' | Source: HIGH exposure', SourceExposure == 'Medium', ' | Source: MEDIUM exposure', ''),
+        case(TargetExposure == 'High', ' | Target: HIGH exposure', TargetExposure == 'Medium', ' | Target: MEDIUM exposure', '')
     ),
     // Calculate comprehensive risk score
     BaseRisk = 30,  // Base risk for NEW path
@@ -761,12 +745,11 @@ ExposureGraphEdges
         '3-Hop Attack Chain: ', EntryType, ' → ', IntermediateType, ' → ', TargetType
     ),
     AttackStory = strcat(
-        '🎯 MULTI-HOP ATTACK PATH\n',
-        'Entry Point: ', EntryType, ' "', coalesce(EntryDeviceName, EntryName), '"\n',
-        '  ↓ ', Edge1Label, '\n',
-        'Intermediate: ', IntermediateType, ' "', IntermediateName, '"\n',
-        '  ↓ ', Edge2Label, '\n',
-        'Final Target: ', TargetType, ' "', TargetName, '"\n'
+        'MULTI-HOP: ', coalesce(EntryDeviceName, EntryName), ' (', EntryType, ')',
+        ' -[', Edge1Label, ']-> ',
+        IntermediateName, ' (', IntermediateType, ')',
+        ' -[', Edge2Label, ']-> ',
+        TargetName, ' (', TargetType, ')'
     ),
     PathLength = 3,
     // Calculate risk
@@ -887,23 +870,13 @@ ExposureGraphEdges
         'Attack chain to ', TargetType, ': Device → ', IntermediateType, ' → ', TargetType
     ),
     AttackStory = strcat(
-        '🎯 HIGH-VALUE TARGET ATTACK PATH\n',
-        case(
-            DaysSinceEntryFirstSeen <= 7 and DaysSinceEntryLastSeen <= 1, '🆕 NEW PATH ',
-            DaysSinceEntryLastSeen <= 1, '✅ ACTIVE PATH ',
-            '❌ INACTIVE PATH '
-        ),
-        '(', Status, ')\n\n',
-        'Entry Device: "', coalesce(EntryDeviceName, EntryName), '"\n',
-        '  First Seen: ', case(isnotempty(EntryFirstSeen), format_datetime(EntryFirstSeen, 'yyyy-MM-dd'), 'Unknown'), '\n',
-        '  Last Seen: ', case(isnotempty(EntryLastSeen), format_datetime(EntryLastSeen, 'yyyy-MM-dd'), 'Unknown'), '\n',
-        '  Exposure: ', EntryExposure, '\n\n',
-        '↓ ', Edge1Label, '\n\n',
-        'Intermediate: ', IntermediateType, ' "', IntermediateName, '"\n\n',
-        '↓ ', Edge2Label, '\n\n',
-        '🎯 FINAL TARGET: ', TargetType, ' "', TargetName, '"\n',
-        '  Categories: ', array_length(TargetCategories), ' exposure categories\n',
-        '  Exposure: ', TargetExposure, '\n'
+        Status, ' PATH to ', TargetType, ': ',
+        coalesce(EntryDeviceName, EntryName),
+        ' -[', Edge1Label, ']-> ', IntermediateName, ' (', IntermediateType, ')',
+        ' -[', Edge2Label, ']-> ', TargetName,
+        ' | Entry Exposure: ', EntryExposure,
+        ' | Target Exposure: ', TargetExposure,
+        ' | Days since first seen: ', tostring(DaysSinceEntryFirstSeen)
     ),
     PathLength = 3,
     TotalRiskScore = 95,  // Maximum risk for paths to storage/keyvault
@@ -995,41 +968,31 @@ ExposureGraphEdges
     // Generate attack path metadata
     AttackPathId = hash_sha256(strcat(EntryNodeId, '|', Edge1Label, '|', IntermediateNodeId, '|', Edge2Label, '|', TargetNodeId)),
     AttackPathName = strcat('[NEW] ', coalesce(EntryDeviceName, EntryName), ' → ', IntermediateName, ' → ', TargetName),
-    AlertMessage = strcat(
-        '🚨 CRITICAL: NEW ATTACK PATH TO ', toupper(TargetType), '\n\n',
-        '═══════════════════════════════════════════\n',
-        '📍 ENTRY POINT\n',
-        '═══════════════════════════════════════════\n',
-        'Device: ', coalesce(EntryDeviceName, EntryName), '\n',
-        'Type: ', EntryType, '\n',
-        'First Discovered: ', format_datetime(EntryFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceEntryFirstSeen, ' days ago)\n',
-        'Last Seen: ', format_datetime(EntryLastSeen, 'yyyy-MM-dd HH:mm'), '\n',
-        'Exposure Level: ', EntryExposure, '\n\n',
-        '═══════════════════════════════════════════\n',
-        '🔗 ATTACK CHAIN\n',
-        '═══════════════════════════════════════════\n',
-        '1️⃣ Entry Device: ', coalesce(EntryDeviceName, EntryName), '\n',
-        '   ↓ ', Edge1Label, '\n',
-        '2️⃣ Via: ', IntermediateType, ' "', IntermediateName, '"\n',
-        '   ↓ ', Edge2Label, '\n',
-        '3️⃣ 🎯 TARGET: ', TargetType, ' "', TargetName, '"\n\n',
-        '═══════════════════════════════════════════\n',
-        '⚠️ TARGET DETAILS\n',
-        '═══════════════════════════════════════════\n',
-        'Resource: ', TargetName, '\n',
-        'Type: ', TargetType, '\n',
-        'Exposure Categories: ', array_length(TargetCategories), '\n',
-        'Exposure Level: ', TargetExposure, '\n\n',
-        '═══════════════════════════════════════════\n',
-        '🛡️ RECOMMENDED ACTIONS\n',
-        '═══════════════════════════════════════════\n',
-        '1. Verify legitimacy of entry device\n',
-        '2. Review ', Edge1Label, ' permissions\n',
-        '3. Audit ', Edge2Label, ' access to ', TargetType, '\n',
-        '4. Enable enhanced monitoring on ', TargetName, '\n',
-        '5. Consider applying conditional access policies\n',
-        '6. Review and restrict network access if applicable\n'
+    // Build alert message in parts to avoid strcat limit
+    AlertHeader = strcat('CRITICAL: NEW ATTACK PATH TO ', toupper(TargetType)),
+    AlertEntryPoint = strcat(
+        'Entry Device: ', coalesce(EntryDeviceName, EntryName), ' (', EntryType, ')',
+        ' | First Seen: ', format_datetime(EntryFirstSeen, 'yyyy-MM-dd'),
+        ' (', tostring(DaysSinceEntryFirstSeen), ' days ago)',
+        ' | Exposure: ', EntryExposure
     ),
+    AlertChain = strcat(
+        'Attack Chain: ', coalesce(EntryDeviceName, EntryName),
+        ' -[', Edge1Label, ']-> ',
+        IntermediateName, ' (', IntermediateType, ')',
+        ' -[', Edge2Label, ']-> ',
+        TargetName, ' (', TargetType, ')'
+    ),
+    AlertTarget = strcat(
+        'Target: ', TargetName, ' | Type: ', TargetType,
+        ' | Categories: ', tostring(array_length(TargetCategories)),
+        ' | Exposure: ', TargetExposure
+    ),
+    AlertActions = strcat(
+        'Actions: 1) Verify device legitimacy, 2) Review ', Edge1Label, ' permissions, 3) Audit ', Edge2Label, ' access'
+    )
+| extend
+    AlertMessage = strcat(AlertHeader, ' | ', AlertEntryPoint, ' | ', AlertChain, ' | ', AlertTarget, ' | ', AlertActions),
     PathLength = 3,
     TotalRiskScore = 95,
     RiskLevel = 'Critical'
