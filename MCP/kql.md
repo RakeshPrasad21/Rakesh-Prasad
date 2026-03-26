@@ -1,88 +1,7 @@
 # MSEM Attack Path Chain Queries
 
 This guide shows how to construct **complete attack path chains** by following edges through nodes, matching what MSEM portal displays.
-```
-let timeframe = 7d;
 
-// Step 1: Edges
-let Edges = ExposureGraphEdges
-| where EdgeLabel in (
-    "contains","can authenticate to","member of","has role on",
-    "has credentials of","can authenticate as","frequently logged in",
-    "can impersonate as","affecting","runs on","routes traffic to",
-    "can rdp","can admin to","has permission to","can execute code"
-)
-| project Src = SourceNodeId, Dst = TargetNodeId;
-
-// Step 2: Nodes
-let Nodes = ExposureGraphNodes
-| project NodeId, NodeName, NodeLabel,
-          firstSeen = todatetime(NodeProperties.rawData.firstSeenByInventory),
-          lastSeen = todatetime(NodeProperties.rawData.lastSeen);
-
-// Step 3: Entry Points (Devices)
-let EntryPoints =
-Nodes
-| where NodeLabel == "device"
-| project EntryNodeId = NodeId, EntryDevice = NodeName, firstSeen, lastSeen;
-
-// Step 4: Targets
-let Targets =
-Nodes
-| where NodeLabel in (
-    "microsoft.storage/storageaccounts",
-    "microsoft.keyvault/vaults",
-    "microsoft.compute/virtualmachines"
-)
-| project TargetNodeId = NodeId, TargetName = NodeName;
-
-// Step 5: Build Paths (up to 4 hops)
-EntryPoints
-| join kind=inner (Edges) on $left.EntryNodeId == $right.Src
-| project EntryDevice, firstSeen, lastSeen,
-          Path = pack_array(EntryDevice),
-          NextNode = Dst
-
-| join kind=inner (Nodes) on $left.NextNode == $right.NodeId
-| extend Path = array_concat(Path, pack_array(NodeName))
-| project EntryDevice, firstSeen, lastSeen, Path, NextNode = NodeId
-
-| join kind=inner (Edges) on $left.NextNode == $right.Src
-| project EntryDevice, firstSeen, lastSeen, Path, NextNode = Dst
-
-| join kind=inner (Nodes) on $left.NextNode == $right.NodeId
-| extend Path = array_concat(Path, pack_array(NodeName))
-| project EntryDevice, firstSeen, lastSeen, Path, NextNode = NodeId
-
-| join kind=inner (Edges) on $left.NextNode == $right.Src
-| project EntryDevice, firstSeen, lastSeen, Path, NextNode = Dst
-
-| join kind=inner (Nodes) on $left.NextNode == $right.NodeId
-| extend Path = array_concat(Path, pack_array(NodeName))
-| project EntryDevice, firstSeen, lastSeen, Path, NextNode = NodeId
-
-// Step 6: Match Target
-| join kind=inner (Targets) on $left.NextNode == $right.TargetNodeId
-| extend FullPath = array_concat(Path, pack_array(TargetName))
-
-// Step 7: Aggregate
-| summarize
-    FirstSeen = min(firstSeen),
-    LastSeen = max(lastSeen),
-    Paths = make_set(FullPath)
-by EntryDevice, TargetName
-
-// Step 8: Status
-| extend Status =
-    case(
-        FirstSeen >= ago(timeframe) and LastSeen >= ago(1d), "New",
-        FirstSeen < ago(timeframe) and LastSeen >= ago(1d), "Active",
-        LastSeen < ago(timeframe), "Inactive",
-        "Unknown"
-    )
-
-| order by LastSeen desc
-```
 ## 🎯 Key Insights (Updated)
 
 ### Attack Path Grouping
@@ -180,202 +99,13 @@ Node (Storage Account)
 - Each EntryPoint-Target combination = Unique attack path
 - AttackPathId = `hash_sha256(EntryPointNodeId | EdgeLabel | TargetNodeId)`
 
-## 📊 Query 1: Simple 2-Hop Attack Paths
 
-**Purpose**: Find direct attack paths (Source → Target)
-
-```kql
-// Get 2-hop attack paths with node details
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in (
-        'can authenticate as', 'can rdp', 'can admin to', 'has permission to', 'can execute code',
-        'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in',
-        'has role on', 'member of'
-    )
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-    | project SourceNodeId, TargetNodeId, EdgeLabel;
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | project NodeId, NodeName, NodeLabel, Categories, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
-Edges
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename SourceNodeName = NodeName, SourceNodeType = NodeLabel, SourceCategories = Categories, 
-    SourceExposure = exposureScore, SourceDeviceName = deviceName, 
-    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory, SourceCriticalityLevel = criticalityLevel
-| join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
-| project-rename TargetNodeName = NodeName, TargetNodeType = NodeLabel, TargetCategories = Categories,
-    TargetExposure = exposureScore, TargetDeviceName = deviceName,
-    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory, TargetCriticalityLevel = criticalityLevel
-| extend 
-    AttackPathName = strcat(SourceNodeName, ' → ', TargetNodeName),
-    AttackPathDescription = strcat(SourceNodeType, ' can access ', TargetNodeType, ' via ', EdgeLabel),
-    PathLength = 2,
-    // Enhanced risk scoring with CriticalityLevel and exposureScore
-    BaseRiskScore = case(
-        // Critical: Key infrastructure and secrets
-        TargetNodeType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
-        // High: Compute and logic resources
-        TargetNodeType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'), 85,
-        // High: Identity resources
-        TargetNodeType in ('user', 'manageidentity', 'Microsoft Entra OAth App', 'entra-userCookie', 'aws-userCookie'), 80,
-        // Medium: Network and groups
-        TargetNodeType in ('microsoft.network/virtualnetworks', 'group', 'subscriptions', 'resourcegroups'), 65,
-        // Medium: Other Azure resources
-        TargetNodeType has_any ('microsoft.', 'aws-'), 60,
-        40
-    ),
-    ExposureBonus = case(
-        TargetExposure == 'High', 15,
-        TargetExposure == 'Medium', 10,
-        TargetExposure == 'Low', 5,
-        0  // None or empty
-    )
-| extend 
-    RiskScore = BaseRiskScore + ExposureBonus,
-    RiskLevel = case(
-        BaseRiskScore + ExposureBonus >= 95, 'Critical',
-        BaseRiskScore + ExposureBonus >= 80, 'High',
-        BaseRiskScore + ExposureBonus >= 60, 'Medium',
-        'Low'
-    )
-| project 
-    AttackPathName,
-    AttackPathDescription,
-    PathLength,
-    RiskScore,
-    RiskLevel,
-    SourceNodeId,
-    SourceNodeName,
-    SourceNodeType,
-    SourceExposure,
-    SourceCriticalityLevel,
-    SourceDeviceName,
-    EdgeLabel,
-    TargetNodeId,
-    TargetNodeName,
-    TargetNodeType,
-    TargetExposure,
-    TargetCriticalityLevel,
-    TargetDeviceName,
-    SourceCategories,
-    TargetCategories,
-    TargetLastSeen,
-    TargetFirstSeen
-| order by RiskScore desc
-| take 100
-```
-
----
-
-## 📊 Query 2: Multi-Hop Attack Paths (3+ Hops)
-
-**Purpose**: Construct complete attack path chains by recursively following edges
-
-```kql
-// Build 3-hop attack paths
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId)
-    | project SourceNodeId, TargetNodeId, EdgeLabel;
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | project NodeId, NodeName, NodeLabel, Categories;
-// Hop 1: Start → Intermediate1
-let Hop1 = Edges
-    | join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-    | project 
-        StartNodeId = SourceNodeId,
-        StartNodeName = NodeName,
-        StartNodeType = NodeLabel,
-        Edge1 = EdgeLabel,
-        Intermediate1Id = TargetNodeId;
-// Hop 2: Intermediate1 → Intermediate2
-let Hop2 = Hop1
-    | join kind=inner (Edges) on $left.Intermediate1Id == $right.SourceNodeId
-    | join kind=inner (Nodes) on $left.Intermediate1Id == $right.NodeId
-    | project 
-        StartNodeId,
-        StartNodeName,
-        StartNodeType,
-        Edge1,
-        Intermediate1Id,
-        Intermediate1Name = NodeName,
-        Intermediate1Type = NodeLabel,
-        Edge2 = EdgeLabel,
-        Intermediate2Id = TargetNodeId;
-// Hop 3: Intermediate2 → End
-let Hop3 = Hop2
-    | join kind=inner (Edges) on $left.Intermediate2Id == $right.SourceNodeId
-    | join kind=inner (Nodes) on $left.Intermediate2Id == $right.NodeId
-    | project 
-        StartNodeId,
-        StartNodeName,
-        StartNodeType,
-        Edge1,
-        Intermediate1Id,
-        Intermediate1Name,
-        Intermediate1Type,
-        Edge2,
-        Intermediate2Id,
-        Intermediate2Name = NodeName,
-        Intermediate2Type = NodeLabel,
-        Edge3 = EdgeLabel,
-        EndNodeId = TargetNodeId;
-// Final: Get end node details
-Hop3
-| join kind=inner (Nodes) on $left.EndNodeId == $right.NodeId
-| project 
-    AttackPathName = strcat(StartNodeName, ' → ', Intermediate1Name, ' → ', Intermediate2Name, ' → ', NodeName),
-    AttackStory = strcat(
-        'Attacker starts from ', StartNodeType, ' (', StartNodeName, '), ',
-        'uses ', Edge1, ' to access ', Intermediate1Type, ' (', Intermediate1Name, '), ',
-        'then ', Edge2, ' to reach ', Intermediate2Type, ' (', Intermediate2Name, '), ',
-        'and finally ', Edge3, ' to compromise ', NodeLabel, ' (', NodeName, ')'
-    ),
-    PathLength = 4,
-    StartNode = StartNodeName,
-    StartNodeType,
-    Hop1_Edge = Edge1,
-    Hop1_Node = Intermediate1Name,
-    Hop1_NodeType = Intermediate1Type,
-    Hop2_Edge = Edge2,
-    Hop2_Node = Intermediate2Name,
-    Hop2_NodeType = Intermediate2Type,
-    Hop3_Edge = Edge3,
-    EndNode = NodeName,
-    EndNodeType = NodeLabel,
-    RiskScore = case(
-        NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature'), 95,
-        NodeLabel in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'microsoft.hybridcompute/machines'), 85,
-        NodeLabel in ('user', 'manageidentity', 'Microsoft Entra OAuth App', 'entra-userCookie', 'aws-userCookie', 'computer-account'), 80,
-        NodeLabel in ('microsoft.network/virtualnetworks', 'microsoft.network/networksecuritygroups', 'group', 'subscriptions', 'resourcegroups', 'IP address'), 65,
-        NodeLabel startswith 'microsoft.' or NodeLabel startswith 'aws-', 60,
-        50
-    )
-| extend RiskLevel = case(
-    RiskScore >= 90, 'Critical',
-    RiskScore >= 75, 'High',
-    RiskScore >= 60, 'Medium',
-    'Low'
-)
-| order by RiskScore desc
-| take 50
-```
-
----
-
-## 📊 Query 3: Attack Paths to Critical Resources
+## 📊 Query 1: Attack Paths to Critical Resources
 
 **Purpose**: Find all paths leading to high-value targets (storage accounts, key vaults, etc.)
 
 ```kql
-// Find paths ending at critical Azure resources
+// Find paths ending at critical Azure resources using graph-match
 let CriticalResourceTypes = dynamic([
     'microsoft.storage/storageaccounts',
     'microsoft.keyvault/vaults',
@@ -388,25 +118,25 @@ let CriticalResourceTypes = dynamic([
     'manageidentity',
     'azure-logic-app-shared-access-signature'
 ]);
-let CriticalNodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | where NodeLabel has_any (CriticalResourceTypes)
-    | project NodeId, CriticalNodeName = NodeName, CriticalNodeType = NodeLabel, Categories;
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of', 'contains', 'affecting')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | project NodeId, NodeName, NodeLabel;
-// Find edges leading to critical resources
-Edges
-| join kind=inner (CriticalNodes) on $left.TargetNodeId == $right.NodeId
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of', 'contains', 'affecting')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (SourceNode)-[Edge]->(TargetNode)
+    where TargetNode.NodeLabel has_any (CriticalResourceTypes)
+    project 
+        SourceNodeId = SourceNode.NodeId,
+        SourceNodeName = SourceNode.NodeName,
+        SourceNodeType = SourceNode.NodeLabel,
+        EdgeLabel = Edge.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        CriticalNodeName = TargetNode.NodeName,
+        CriticalNodeType = TargetNode.NodeLabel,
+        Categories = TargetNode.Categories
 | summarize 
     IncomingPaths = count(),
     EdgeTypes = make_set(EdgeLabel),
-    SourceNodes = make_set(NodeName),
-    SourceTypes = make_set(NodeLabel)
+    SourceNodes = make_set(SourceNodeName),
+    SourceTypes = make_set(SourceNodeType)
     by TargetNodeId, CriticalNodeName, CriticalNodeType, Categories
 | extend 
     RiskScore = IncomingPaths * 10 + array_length(Categories) * 5,
@@ -435,30 +165,29 @@ Edges
 
 ---
 
-## 📊 Query 4: Attack Path Summary (Matches MSEM Dashboard)
+## 📊 Query 2: Attack Path Summary (Matches MSEM Dashboard)
 
 **Purpose**: Get counts and statistics matching MSEM overview page
 
 ```kql
-// Attack path summary statistics
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId);
-let PathStats = Edges
-    | join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
-    | extend 
-        IsCriticalTarget = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
-        IsHighRiskEdge = EdgeLabel in ('can admin to', 'has permission to', 'can execute code', 'can authenticate as', 'has credentials of')
-    | summarize 
-        TotalAttackPaths = count(),
-        CriticalTargetPaths = countif(IsCriticalTarget),
-        HighRiskPaths = countif(IsHighRiskEdge),
-        UniqueTargets = dcount(TargetNodeId),
-        UniqueEdgeTypes = dcount(EdgeLabel)
-        by EdgeLabel;
-PathStats
+// Attack path summary statistics using graph-match
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (SourceNode)-[Edge]->(TargetNode)
+    project 
+        EdgeLabel = Edge.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        TargetNodeLabel = TargetNode.NodeLabel
+| extend 
+    IsCriticalTarget = TargetNodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
+    IsHighRiskEdge = EdgeLabel in ('can admin to', 'has permission to', 'can execute code', 'can authenticate as', 'has credentials of')
+| summarize 
+    TotalAttackPaths = count(),
+    CriticalTargetPaths = countif(IsCriticalTarget),
+    HighRiskPaths = countif(IsHighRiskEdge),
+    UniqueTargets = dcount(TargetNodeId)
+    by EdgeLabel
 | extend 
     Timestamp = now(),
     PathCategory = case(
@@ -485,41 +214,39 @@ PathStats
 
 ---
 
-## 📊 Query 5: Device-to-Resource Attack Paths (Your Example)
+## 📊 Query 3: Device-to-Resource Attack Paths (Your Example)
 
 **Purpose**: Find paths from devices to cloud resources (like your example)
 
 ```kql
-// Paths starting from devices and ending at cloud resources
-let StartDevices = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
-    | project DeviceNodeId = NodeId, DeviceName = NodeName;
-let EndResources = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | where NodeLabel in ('microsoft.storage/storageaccounts', 'microsoft.keyvault/vaults', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'serviceprincipal', 'manageidentity', 'aws-access-key')
-    | project ResourceNodeId = NodeId, ResourceName = NodeName, ResourceType = NodeLabel;
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-// Build 2-hop paths: Device → Intermediate → Resource
-let Hop1 = Edges
-    | join kind=inner (StartDevices) on $left.SourceNodeId == $right.DeviceNodeId
-    | project DeviceNodeId, DeviceName, Edge1 = EdgeLabel, IntermediateId = TargetNodeId;
-let Hop2 = Hop1
-    | join kind=inner (Edges) on $left.IntermediateId == $right.SourceNodeId
-    | join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | project NodeId, NodeName, NodeLabel) 
-        on $left.IntermediateId == $right.NodeId
-    | project DeviceNodeId, DeviceName, Edge1, IntermediateId, IntermediateName = NodeName, IntermediateType = NodeLabel, 
-        Edge2 = EdgeLabel, ResourceNodeId = TargetNodeId;
-// Match with end resources
-Hop2
-| join kind=inner (EndResources) on $left.ResourceNodeId == $right.ResourceNodeId
+// Multi-hop paths from devices to cloud resources using graph-match
+let DeviceTypes = dynamic(['device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account']);
+let ResourceTypes = dynamic(['microsoft.storage/storageaccounts', 'microsoft.keyvault/vaults', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts', 'serviceprincipal', 'manageidentity', 'aws-access-key']);
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (Device)-[Edge1]->(Intermediate)-[Edge2]->(Resource)
+    where Device.NodeLabel has_any (DeviceTypes) and set_has_element(Device.Categories, "device") and
+          Resource.NodeLabel has_any (ResourceTypes) and
+          Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has role on', 'member of') and
+          Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'has permission to', 'can execute code', 'has role on')
+    project 
+        DeviceNodeId = Device.NodeId,
+        DeviceName = Device.NodeName,
+        DeviceType = Device.NodeLabel,
+        Edge1Label = Edge1.EdgeLabel,
+        IntermediateId = Intermediate.NodeId,
+        IntermediateName = Intermediate.NodeName,
+        IntermediateType = Intermediate.NodeLabel,
+        Edge2Label = Edge2.EdgeLabel,
+        ResourceNodeId = Resource.NodeId,
+        ResourceName = Resource.NodeName,
+        ResourceType = Resource.NodeLabel
 | extend 
     AttackPathName = strcat(DeviceName, ' → ', IntermediateName, ' → ', ResourceName),
     AttackStory = strcat(
-        'Device "', DeviceName, '" ', Edge1, ' ', IntermediateType, ' "', IntermediateName, 
-        '" which ', Edge2, ' ', ResourceType, ' "', ResourceName, '"'
+        'Device "', DeviceName, '" ', Edge1Label, ' ', IntermediateType, ' "', IntermediateName, 
+        '" which ', Edge2Label, ' ', ResourceType, ' "', ResourceName, '"'
     ),
     PathLength = 3,
     RiskScore = case(
@@ -544,50 +271,52 @@ Hop2
     IntermediateType,
     TargetResource = ResourceName,
     ResourceType,
-    Edge1,
-    Edge2
+    Edge1 = Edge1Label,
+    Edge2 = Edge2Label
 | order by RiskScore desc
 | take 100
 ```
 
 ---
 
-## 📊 Query 6: Generate Attack Path Metadata (Name, Description, Risk)
+## 📊 Query 4: Generate Attack Path Metadata (Name, Description, Risk)
 
 **Purpose**: Create enriched attack path metadata similar to MSEM UI
 
 ```kql
-// Generate attack path metadata with risk assessment
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        // Extract from NodeProperties.rawData
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | extend 
-        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
-        IsSensitive = array_length(Categories) >= 3,
-        IsPrivileged = NodeLabel in ('user', 'manageidentity', 'serviceprincipal', 'Microsoft Entra OAuth App', 'group', 'computer-account')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, IsSensitive, IsPrivileged, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
-Edges
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename 
-    SourceName = NodeName, SourceType = NodeLabel, SourceIsHighValue = IsHighValue, 
-    SourceIsSensitive = IsSensitive, SourceCategories = Categories, SourceIsPrivileged = IsPrivileged,
-    SourceExposure = exposureScore, SourceDeviceName = deviceName,
-    SourceLastSeen = lastSeen, SourceFirstSeen = firstSeenByInventory, SourceCriticalityLevel = criticalityLevel
-| join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
-| project-rename 
-    TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue, 
-    TargetIsSensitive = IsSensitive, TargetCategories = Categories, TargetIsPrivileged = IsPrivileged,
-    TargetExposure = exposureScore, TargetDeviceName = deviceName,
-    TargetLastSeen = lastSeen, TargetFirstSeen = firstSeenByInventory, TargetCriticalityLevel = criticalityLevel
+// Generate attack path metadata with risk assessment using graph-match
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (SourceNode)-[Edge]->(TargetNode)
+    project 
+        SourceNodeId = SourceNode.NodeId,
+        SourceName = SourceNode.NodeName,
+        SourceType = SourceNode.NodeLabel,
+        SourceCategories = SourceNode.Categories,
+        SourceProperties = SourceNode.NodeProperties,
+        EdgeLabel = Edge.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        TargetName = TargetNode.NodeName,
+        TargetType = TargetNode.NodeLabel,
+        TargetCategories = TargetNode.Categories,
+        TargetProperties = TargetNode.NodeProperties
+| extend 
+    // Extract from NodeProperties.rawData
+    SourceExposure = tostring(SourceProperties.rawData.exposureScore),
+    SourceDeviceName = tostring(SourceProperties.rawData.deviceName),
+    SourceLastSeen = todatetime(SourceProperties.rawData.lastSeen),
+    SourceFirstSeen = todatetime(SourceProperties.rawData.firstSeenByInventory),
+    SourceCriticalityLevel = tostring(SourceProperties.rawData.criticalityLevel.criticalityLevel),
+    TargetExposure = tostring(TargetProperties.rawData.exposureScore),
+    TargetDeviceName = tostring(TargetProperties.rawData.deviceName),
+    TargetLastSeen = todatetime(TargetProperties.rawData.lastSeen),
+    TargetFirstSeen = todatetime(TargetProperties.rawData.firstSeenByInventory),
+    TargetCriticalityLevel = tostring(TargetProperties.rawData.criticalityLevel.criticalityLevel),
+    // Boolean flags
+    SourceIsHighValue = SourceType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
+    TargetIsHighValue = TargetType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'),
+    TargetIsSensitive = array_length(TargetCategories) >= 3
 | extend 
     // Generate attack path ID (similar to MSEM)
     AttackPathId = strcat(SourceNodeId, '_to_', TargetNodeId),
@@ -687,48 +416,51 @@ Edges
 
 ---
 
-## 📊 Query 7: New Entry Point Devices (Detect Recent Threats)
+## 📊 Query 5: New Entry Point Devices (Detect Recent Threats)
 
 **Purpose**: Find newly discovered entry point devices and their attack paths
 
 ```kql
-// Find entry point devices discovered in last 7 days
+// Find entry point devices discovered in last 7 days using graph-match
+let DeviceTypes = dynamic(['device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account']);
 let RecentDevices = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
-    | extend 
-        // Extract from NodeProperties.rawData
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory)
-    | where isnotempty(firstSeenByInventory)
-    | where firstSeenByInventory >= ago(7d)  // Discovered in last 7 days
-    | project 
-        DeviceNodeId = NodeId, 
-        DeviceName = coalesce(deviceName, NodeName), 
-        DeviceType = NodeLabel, 
-        exposureScore, 
-        firstSeenByInventory, 
-        lastSeen, 
-        Categories;
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | project NodeId, NodeName, NodeLabel, Categories;
-// Find all attack paths FROM these new devices
-Edges
-| join kind=inner (RecentDevices) on $left.SourceNodeId == $right.DeviceNodeId
-| join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
+| where NodeLabel has_any (DeviceTypes) and (Categories has "device" and set_has_element(Categories, "device"))
+| extend 
+    // Extract from NodeProperties.rawData
+    exposureScore = tostring(NodeProperties.rawData.exposureScore),
+    deviceName = tostring(NodeProperties.rawData.deviceName),
+    lastSeen = todatetime(NodeProperties.rawData.lastSeen),
+    firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory)
+| where isnotempty(firstSeenByInventory)
+| where firstSeenByInventory >= ago(7d)  // Discovered in last 7 days
+| project 
+    DeviceNodeId = NodeId, 
+    DeviceName = coalesce(deviceName, NodeName), 
+    DeviceType = NodeLabel, 
+    exposureScore, 
+    firstSeenByInventory, 
+    lastSeen, 
+    Categories;
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (Device)-[Edge]->(Target)
+    where Device.NodeId in ((RecentDevices | project DeviceNodeId))
+    project 
+        DeviceNodeId = Device.NodeId,
+        EdgeLabel = Edge.EdgeLabel,
+        TargetNodeId = Target.NodeId,
+        TargetName = Target.NodeName,
+        TargetType = Target.NodeLabel,
+        TargetCategories = Target.Categories
+| join kind=inner (RecentDevices) on DeviceNodeId
 | extend 
     AttackPathId = strcat(DeviceNodeId, '_to_', TargetNodeId),
-    AttackPathName = strcat(DeviceName, ' [NEW] → ', NodeName),
-    AttackPathDescription = strcat('Newly discovered ', DeviceType, ' can access ', NodeLabel, ' via ', EdgeLabel),
+    AttackPathName = strcat(DeviceName, ' [NEW] → ', TargetName),
+    AttackPathDescription = strcat('Newly discovered ', DeviceType, ' can access ', TargetType, ' via ', EdgeLabel),
     AttackStory = strcat(
         'NEW ENTRY POINT: Device "', DeviceName, '" was first discovered on ', format_datetime(firstSeenByInventory, 'yyyy-MM-dd'), '. ',
-        'This device can ', EdgeLabel, ' ', NodeLabel, ' "', NodeName, '". ',
+        'This device can ', EdgeLabel, ' ', TargetType, ' "', TargetName, '". ',
         case(
             exposureScore == 'High', 'Device has HIGH exposure score. ',
             exposureScore == 'Medium', 'Device has MEDIUM exposure score. ',
@@ -740,10 +472,10 @@ Edges
     DaysSinceDiscovery = datetime_diff('day', now(), firstSeenByInventory),
     // Enhanced risk scoring for NEW devices
     BaseRiskScore = case(
-        NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
-        NodeLabel in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'), 85,
-        NodeLabel in ('user', 'manageidentity', 'Microsoft Entra OAuth App', 'entra-userCookie', 'aws-userCookie'), 80,
-        NodeLabel in ('microsoft.network/virtualnetworks', 'group', 'subscriptions', 'resourcegroups'), 65,
+        TargetType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'), 95,
+        TargetType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts'), 85,
+        TargetType in ('user', 'manageidentity', 'Microsoft Entra OAuth App', 'entra-userCookie', 'aws-userCookie'), 80,
+        TargetType in ('microsoft.network/virtualnetworks', 'group', 'subscriptions', 'resourcegroups'), 65,
         60
     ),
     NewDeviceBonus = 25,  // Additional risk because it's a NEW entry point
@@ -792,12 +524,543 @@ Edges
     lastSeen,
     EdgeType = EdgeLabel,
     TargetNodeId,
-    TargetName = NodeName,
-    TargetType = NodeLabel,
+    TargetName,
+    TargetType,
     RemediationGuidance,
     DeviceCategories = Categories,
-    TargetCategories = Categories1
+    TargetCategories
 | order by TotalRiskScore desc, DaysSinceDiscovery asc
+```
+
+---
+
+## 📊 Query 6: NEW Attack Paths - Comprehensive Detection (All Entry Points)
+
+**Purpose**: Detect ALL newly discovered attack paths (not just from new devices) - this tracks new relationships
+
+```kql
+// Find NEW attack paths discovered in the last 7 days
+// Tracks new relationships between existing or new nodes
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (SourceNode)-[Edge]->(TargetNode)
+    project 
+        SourceNodeId = SourceNode.NodeId,
+        SourceName = SourceNode.NodeName,
+        SourceType = SourceNode.NodeLabel,
+        SourceProperties = SourceNode.NodeProperties,
+        SourceCategories = SourceNode.Categories,
+        EdgeLabel = Edge.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        TargetName = TargetNode.NodeName,
+        TargetType = TargetNode.NodeLabel,
+        TargetProperties = TargetNode.NodeProperties,
+        TargetCategories = TargetNode.Categories
+| extend 
+    // Extract timing information from NodeProperties
+    SourceFirstSeen = todatetime(SourceProperties.rawData.firstSeenByInventory),
+    SourceLastSeen = todatetime(SourceProperties.rawData.lastSeen),
+    SourceExposure = tostring(SourceProperties.rawData.exposureScore),
+    SourceDeviceName = tostring(SourceProperties.rawData.deviceName),
+    TargetFirstSeen = todatetime(TargetProperties.rawData.firstSeenByInventory),
+    TargetLastSeen = todatetime(TargetProperties.rawData.lastSeen),
+    TargetExposure = tostring(TargetProperties.rawData.exposureScore),
+    TargetDeviceName = tostring(TargetProperties.rawData.deviceName),
+    TargetCriticalityLevel = tostring(TargetProperties.rawData.criticalityLevel.criticalityLevel)
+| extend 
+    // Calculate days since discovery for both nodes
+    DaysSinceSourceFirstSeen = datetime_diff('day', now(), SourceFirstSeen),
+    DaysSinceSourceLastSeen = datetime_diff('day', now(), SourceLastSeen),
+    DaysSinceTargetFirstSeen = datetime_diff('day', now(), TargetFirstSeen),
+    DaysSinceTargetLastSeen = datetime_diff('day', now(), TargetLastSeen)
+// Filter for NEW attack paths (either source OR target discovered in last 7 days)
+| where (isnotempty(SourceFirstSeen) and DaysSinceSourceFirstSeen <= 7) or
+        (isnotempty(TargetFirstSeen) and DaysSinceTargetFirstSeen <= 7)
+| extend 
+    // Determine what's new
+    NewEntryPoint = (isnotempty(SourceFirstSeen) and DaysSinceSourceFirstSeen <= 7),
+    NewTarget = (isnotempty(TargetFirstSeen) and DaysSinceTargetFirstSeen <= 7),
+    IsSourceActive = (DaysSinceSourceLastSeen <= 1),
+    IsTargetActive = (DaysSinceTargetLastSeen <= 1),
+    // Calculate risk scoring
+    TargetIsHighValue = TargetType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature'),
+    TargetIsCritical = TargetType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
+| extend 
+    // Generate attack path metadata
+    AttackPathId = hash_sha256(strcat(SourceNodeId, '|', EdgeLabel, '|', TargetNodeId)),
+    AttackPathName = strcat(
+        case(NewEntryPoint, '[NEW ENTRY] ', ''), 
+        coalesce(SourceDeviceName, SourceName), 
+        ' → ', 
+        case(NewTarget, '[NEW TARGET] ', ''), 
+        coalesce(TargetDeviceName, TargetName)
+    ),
+    AttackPathDescription = strcat(
+        case(NewEntryPoint, 'NEW Entry Point: ', 'Existing Entry: '),
+        SourceType, ' can access ',
+        case(NewTarget, 'NEW Target: ', ''),
+        TargetType, ' via "', EdgeLabel, '"'
+    ),
+    AttackStory = strcat(
+        '🆕 NEW ATTACK PATH DISCOVERED\n',
+        case(
+            NewEntryPoint and NewTarget, 
+            strcat('Both entry point "', SourceName, '" and target "', TargetName, '" are newly discovered.\n'),
+            NewEntryPoint, 
+            strcat('New entry point "', SourceName, '" discovered (', format_datetime(SourceFirstSeen, 'yyyy-MM-dd'), ').\n'),
+            NewTarget,
+            strcat('New target "', TargetName, '" discovered (', format_datetime(TargetFirstSeen, 'yyyy-MM-dd'), ').\n'),
+            ''
+        ),
+        'Attack Path: ', SourceType, ' "', SourceName, '" ',
+        EdgeLabel, ' ', TargetType, ' "', TargetName, '"\n',
+        case(
+            TargetIsHighValue, '⚠️ HIGH-VALUE TARGET: This is a critical cloud resource!\n',
+            TargetIsCritical, '⚠️ CRITICAL RESOURCE: Requires immediate attention\n',
+            ''
+        ),
+        case(
+            SourceExposure == 'High', '🔴 Source has HIGH exposure score\n',
+            SourceExposure == 'Medium', '🟡 Source has MEDIUM exposure score\n',
+            ''
+        ),
+        case(
+            TargetExposure == 'High', '🔴 Target has HIGH exposure score\n',
+            TargetExposure == 'Medium', '🟡 Target has MEDIUM exposure score\n',
+            ''
+        )
+    ),
+    // Calculate comprehensive risk score
+    BaseRisk = 30,  // Base risk for NEW path
+    TargetValueRisk = case(
+        TargetIsHighValue, 50,
+        TargetIsCritical, 40,
+        20
+    ),
+    NewnessRisk = case(
+        NewEntryPoint and NewTarget, 30,  // Both new = highest risk
+        NewEntryPoint, 25,
+        NewTarget, 20,
+        10
+    ),
+    ExposureRisk = case(
+        SourceExposure == 'High', 20,
+        SourceExposure == 'Medium', 15,
+        TargetExposure == 'High', 20,
+        TargetExposure == 'Medium', 15,
+        0
+    ),
+    EdgeRisk = case(
+        EdgeLabel in ('can admin to', 'can execute code', 'has credentials of'), 30,
+        EdgeLabel in ('has permission to', 'can rdp', 'can authenticate as', 'can impersonate as'), 25,
+        EdgeLabel in ('can authenticate to', 'has role on'), 20,
+        15
+    )
+| extend 
+    TotalRiskScore = BaseRisk + TargetValueRisk + NewnessRisk + ExposureRisk + EdgeRisk,
+    RiskLevel = case(
+        BaseRisk + TargetValueRisk + NewnessRisk + ExposureRisk + EdgeRisk >= 120, 'Critical',
+        BaseRisk + TargetValueRisk + NewnessRisk + ExposureRisk + EdgeRisk >= 100, 'High',
+        BaseRisk + TargetValueRisk + NewnessRisk + ExposureRisk + EdgeRisk >= 70, 'Medium',
+        'Low'
+    ),
+    Status = 'NEW',
+    RemediationGuidance = case(
+        EdgeLabel == 'can admin to', 'URGENT: Review and restrict administrative access immediately',
+        EdgeLabel == 'can execute code', 'URGENT: Implement code execution controls',
+        EdgeLabel == 'has permission to', 'Review and minimize permissions',
+        EdgeLabel == 'can rdp', 'Secure RDP access with MFA and network controls',
+        EdgeLabel in ('can authenticate as', 'can authenticate to'), 'Review authentication delegation and MFA requirements',
+        EdgeLabel == 'has credentials of', 'Secure credential storage and implement rotation',
+        EdgeLabel == 'can impersonate as', 'Review impersonation permissions',
+        'Review and restrict access as appropriate'
+    )
+| project 
+    Timestamp = now(),
+    Status,
+    AlertSeverity = case(RiskLevel == 'Critical', 'Critical - Immediate Action Required', 'High - Review Within 24 Hours'),
+    AttackPathId,
+    AttackPathName,
+    AttackPathDescription,
+    AttackStory,
+    TotalRiskScore,
+    RiskLevel,
+    NewEntryPoint,
+    NewTarget,
+    IsSourceActive,
+    IsTargetActive,
+    SourceNodeId,
+    SourceName,
+    SourceType,
+    SourceExposure,
+    SourceFirstSeen,
+    DaysSinceSourceFirstSeen,
+    EdgeType = EdgeLabel,
+    TargetNodeId,
+    TargetName,
+    TargetType,
+    TargetExposure,
+    TargetCriticalityLevel,
+    TargetFirstSeen,
+    DaysSinceTargetFirstSeen,
+    SourceCategories,
+    TargetCategories,
+    RemediationGuidance
+| order by TotalRiskScore desc, DaysSinceSourceFirstSeen asc, DaysSinceTargetFirstSeen asc
+```
+
+---
+
+## 📊 Query 7A: Multi-Hop Attack Paths (3-Hop Discovery)
+
+**Purpose**: Discover complete 3-hop attack chains (Entry → Intermediate → Target)
+
+```kql
+// Find 3-hop attack paths using graph-match
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (EntryNode)-[Edge1]->(IntermediateNode)-[Edge2]->(TargetNode)
+    where (EntryNode.Categories has "device" and set_has_element(EntryNode.Categories, "device")) and
+          Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can rdp', 'can admin to', 'frequently logged in', 'member of', 'has role on') and
+          Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'has permission to', 'can execute code', 'can admin to', 'has role on')
+    project 
+        EntryNodeId = EntryNode.NodeId,
+        EntryName = EntryNode.NodeName,
+        EntryType = EntryNode.NodeLabel,
+        EntryProperties = EntryNode.NodeProperties,
+        EntryCategories = EntryNode.Categories,
+        Edge1Label = Edge1.EdgeLabel,
+        IntermediateNodeId = IntermediateNode.NodeId,
+        IntermediateName = IntermediateNode.NodeName,
+        IntermediateType = IntermediateNode.NodeLabel,
+        IntermediateCategories = IntermediateNode.Categories,
+        Edge2Label = Edge2.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        TargetName = TargetNode.NodeName,
+        TargetType = TargetNode.NodeLabel,
+        TargetProperties = TargetNode.NodeProperties,
+        TargetCategories = TargetNode.Categories
+| extend 
+    // Extract metadata
+    EntryFirstSeen = todatetime(EntryProperties.rawData.firstSeenByInventory),
+    EntryLastSeen = todatetime(EntryProperties.rawData.lastSeen),
+    EntryExposure = tostring(EntryProperties.rawData.exposureScore),
+    EntryDeviceName = tostring(EntryProperties.rawData.deviceName),
+    TargetExposure = tostring(TargetProperties.rawData.exposureScore),
+    TargetCriticalityLevel = tostring(TargetProperties.rawData.criticalityLevel.criticalityLevel),
+    // Calculate timing
+    DaysSinceEntryFirstSeen = datetime_diff('day', now(), todatetime(EntryProperties.rawData.firstSeenByInventory)),
+    DaysSinceEntryLastSeen = datetime_diff('day', now(), todatetime(EntryProperties.rawData.lastSeen))
+| extend 
+    // Generate attack path metadata
+    AttackPathId = hash_sha256(strcat(EntryNodeId, '|', Edge1Label, '|', IntermediateNodeId, '|', Edge2Label, '|', TargetNodeId)),
+    AttackPathName = strcat(coalesce(EntryDeviceName, EntryName), ' → ', IntermediateName, ' → ', TargetName),
+    AttackPathDescription = strcat(
+        '3-Hop Attack Chain: ', EntryType, ' → ', IntermediateType, ' → ', TargetType
+    ),
+    AttackStory = strcat(
+        '🎯 MULTI-HOP ATTACK PATH\n',
+        'Entry Point: ', EntryType, ' "', coalesce(EntryDeviceName, EntryName), '"\n',
+        '  ↓ ', Edge1Label, '\n',
+        'Intermediate: ', IntermediateType, ' "', IntermediateName, '"\n',
+        '  ↓ ', Edge2Label, '\n',
+        'Final Target: ', TargetType, ' "', TargetName, '"\n'
+    ),
+    PathLength = 3,
+    // Calculate risk
+    TargetIsHighValue = TargetType in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal'),
+    TargetIsCritical = TargetType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
+| extend 
+    BaseRisk = 20,
+    TargetValueRisk = case(
+        TargetIsHighValue, 50,
+        TargetIsCritical, 40,
+        20
+    ),
+    MultiHopRisk = 25,  // Additional risk for multi-hop complexity
+    ExposureRisk = case(
+        EntryExposure == 'High' or TargetExposure == 'High', 20,
+        EntryExposure == 'Medium' or TargetExposure == 'Medium', 15,
+        0
+    ),
+    TotalRiskScore = 20 + case(TargetIsHighValue, 50, TargetIsCritical, 40, 20) + 25 + 
+                     case(EntryExposure == 'High' or TargetExposure == 'High', 20, 
+                          EntryExposure == 'Medium' or TargetExposure == 'Medium', 15, 0)
+| extend 
+    RiskLevel = case(
+        TotalRiskScore >= 100, 'Critical',
+        TotalRiskScore >= 80, 'High',
+        TotalRiskScore >= 50, 'Medium',
+        'Low'
+    ),
+    Status = case(
+        isnotempty(EntryFirstSeen) and DaysSinceEntryFirstSeen <= 7 and DaysSinceEntryLastSeen <= 1, 'NEW',
+        isnotempty(EntryLastSeen) and DaysSinceEntryLastSeen <= 1, 'ACTIVE',
+        'INACTIVE'
+    )
+| project 
+    Timestamp = now(),
+    Status,
+    AttackPathId,
+    AttackPathName,
+    AttackPathDescription,
+    AttackStory,
+    PathLength,
+    TotalRiskScore,
+    RiskLevel,
+    EntryNodeId,
+    EntryPointName = coalesce(EntryDeviceName, EntryName),
+    EntryPointType = EntryType,
+    EntryExposure,
+    EntryFirstSeen,
+    DaysSinceEntryFirstSeen,
+    Edge1 = Edge1Label,
+    IntermediateNodeId,
+    IntermediateName,
+    IntermediateType,
+    Edge2 = Edge2Label,
+    TargetNodeId,
+    FinalTargetName = TargetName,
+    FinalTargetType = TargetType,
+    TargetExposure,
+    TargetCriticalityLevel
+| order by TotalRiskScore desc
+| take 100
+```
+
+---
+
+## 📊 Query 7B: Multi-Hop Paths to Storage/KeyVault (All Statuses)
+
+**Purpose**: Track all attack paths to high-value cloud resources (storage accounts, key vaults)
+
+```kql
+// Multi-hop paths specifically to storage accounts and key vaults
+let HighValueTargets = dynamic(['microsoft.storage/storageaccounts', 'microsoft.keyvault/vaults']);
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (EntryNode)-[Edge1]->(IntermediateNode)-[Edge2]->(TargetNode)
+    where (EntryNode.Categories has "device" and set_has_element(EntryNode.Categories, "device")) and
+          TargetNode.NodeLabel has_any (HighValueTargets) and
+          Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can rdp', 'can admin to', 'frequently logged in', 'member of', 'has role on') and
+          Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'has permission to', 'can execute code', 'has role on')
+    project 
+        EntryNodeId = EntryNode.NodeId,
+        EntryName = EntryNode.NodeName,
+        EntryType = EntryNode.NodeLabel,
+        EntryProperties = EntryNode.NodeProperties,
+        Edge1Label = Edge1.EdgeLabel,
+        IntermediateNodeId = IntermediateNode.NodeId,
+        IntermediateName = IntermediateNode.NodeName,
+        IntermediateType = IntermediateNode.NodeLabel,
+        Edge2Label = Edge2.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        TargetName = TargetNode.NodeName,
+        TargetType = TargetNode.NodeLabel,
+        TargetProperties = TargetNode.NodeProperties,
+        TargetCategories = TargetNode.Categories
+| extend 
+    // Extract metadata
+    EntryFirstSeen = todatetime(EntryProperties.rawData.firstSeenByInventory),
+    EntryLastSeen = todatetime(EntryProperties.rawData.lastSeen),
+    EntryExposure = tostring(EntryProperties.rawData.exposureScore),
+    EntryDeviceName = tostring(EntryProperties.rawData.deviceName),
+    TargetExposure = tostring(TargetProperties.rawData.exposureScore),
+    // Calculate timing
+    DaysSinceEntryFirstSeen = datetime_diff('day', now(), todatetime(EntryProperties.rawData.firstSeenByInventory)),
+    DaysSinceEntryLastSeen = datetime_diff('day', now(), todatetime(EntryProperties.rawData.lastSeen))
+| extend 
+    // Determine status
+    Status = case(
+        isnotempty(EntryFirstSeen) and DaysSinceEntryFirstSeen <= 7 and DaysSinceEntryLastSeen <= 1, 'NEW',
+        isnotempty(EntryLastSeen) and DaysSinceEntryLastSeen <= 1, 'ACTIVE',
+        DaysSinceEntryLastSeen > 7, 'INACTIVE',
+        'UNKNOWN'
+    ),
+    // Generate attack path metadata
+    AttackPathId = hash_sha256(strcat(EntryNodeId, '|', Edge1Label, '|', IntermediateNodeId, '|', Edge2Label, '|', TargetNodeId)),
+    AttackPathName = strcat(coalesce(EntryDeviceName, EntryName), ' → ', IntermediateName, ' → ', TargetName),
+    AttackPathDescription = strcat(
+        'Attack chain to ', TargetType, ': Device → ', IntermediateType, ' → ', TargetType
+    ),
+    AttackStory = strcat(
+        '🎯 HIGH-VALUE TARGET ATTACK PATH\n',
+        case(
+            DaysSinceEntryFirstSeen <= 7 and DaysSinceEntryLastSeen <= 1, '🆕 NEW PATH ',
+            DaysSinceEntryLastSeen <= 1, '✅ ACTIVE PATH ',
+            '❌ INACTIVE PATH '
+        ),
+        '(', Status, ')\n\n',
+        'Entry Device: "', coalesce(EntryDeviceName, EntryName), '"\n',
+        '  First Seen: ', case(isnotempty(EntryFirstSeen), format_datetime(EntryFirstSeen, 'yyyy-MM-dd'), 'Unknown'), '\n',
+        '  Last Seen: ', case(isnotempty(EntryLastSeen), format_datetime(EntryLastSeen, 'yyyy-MM-dd'), 'Unknown'), '\n',
+        '  Exposure: ', EntryExposure, '\n\n',
+        '↓ ', Edge1Label, '\n\n',
+        'Intermediate: ', IntermediateType, ' "', IntermediateName, '"\n\n',
+        '↓ ', Edge2Label, '\n\n',
+        '🎯 FINAL TARGET: ', TargetType, ' "', TargetName, '"\n',
+        '  Categories: ', array_length(TargetCategories), ' exposure categories\n',
+        '  Exposure: ', TargetExposure, '\n'
+    ),
+    PathLength = 3,
+    TotalRiskScore = 95,  // Maximum risk for paths to storage/keyvault
+    RiskLevel = 'Critical'
+| project 
+    Timestamp = now(),
+    Status,
+    AlertSeverity = case(
+        Status == 'NEW', 'Critical - New Attack Path to High-Value Resource',
+        Status == 'ACTIVE', 'High - Active Attack Path to High-Value Resource',
+        'Info - Inactive Attack Path'
+    ),
+    AttackPathId,
+    AttackPathName,
+    AttackPathDescription,
+    AttackStory,
+    PathLength,
+    TotalRiskScore,
+    RiskLevel,
+    EntryNodeId,
+    EntryPointName = coalesce(EntryDeviceName, EntryName),
+    EntryPointType = EntryType,
+    EntryExposure,
+    EntryFirstSeen,
+    DaysSinceEntryFirstSeen,
+    EntryLastSeen,
+    DaysSinceEntryLastSeen,
+    Edge1 = Edge1Label,
+    IntermediateNodeId,
+    IntermediateName,
+    IntermediateType,
+    Edge2 = Edge2Label,
+    TargetNodeId,
+    FinalTargetName = TargetName,
+    FinalTargetType = TargetType,
+    TargetExposure,
+    TargetCategories
+| order by 
+    case(Status == 'NEW', 1, Status == 'ACTIVE', 2, 3),
+    DaysSinceEntryFirstSeen asc
+```
+
+---
+
+## 📊 Query 7C: NEW Multi-Hop Paths to Storage/KeyVault (For Alerts)
+
+**Purpose**: **RECOMMENDED FOR LOGIC APP** - Detect NEW attack paths to storage/keyvault only
+
+```kql
+// NEW multi-hop paths to storage accounts and key vaults - FOR ALERTING
+let HighValueTargets = dynamic(['microsoft.storage/storageaccounts', 'microsoft.keyvault/vaults']);
+ExposureGraphEdges
+| where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
+| graph-match (EntryNode)-[Edge1]->(IntermediateNode)-[Edge2]->(TargetNode)
+    where (EntryNode.Categories has "device" and set_has_element(EntryNode.Categories, "device")) and
+          TargetNode.NodeLabel has_any (HighValueTargets) and
+          Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can rdp', 'can admin to', 'frequently logged in', 'member of', 'has role on') and
+          Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'has permission to', 'can execute code', 'has role on')
+    project 
+        EntryNodeId = EntryNode.NodeId,
+        EntryName = EntryNode.NodeName,
+        EntryType = EntryNode.NodeLabel,
+        EntryProperties = EntryNode.NodeProperties,
+        Edge1Label = Edge1.EdgeLabel,
+        IntermediateNodeId = IntermediateNode.NodeId,
+        IntermediateName = IntermediateNode.NodeName,
+        IntermediateType = IntermediateNode.NodeLabel,
+        Edge2Label = Edge2.EdgeLabel,
+        TargetNodeId = TargetNode.NodeId,
+        TargetName = TargetNode.NodeName,
+        TargetType = TargetNode.NodeLabel,
+        TargetProperties = TargetNode.NodeProperties,
+        TargetCategories = TargetNode.Categories
+| extend 
+    // Extract metadata
+    EntryFirstSeen = todatetime(EntryProperties.rawData.firstSeenByInventory),
+    EntryLastSeen = todatetime(EntryProperties.rawData.lastSeen),
+    EntryExposure = tostring(EntryProperties.rawData.exposureScore),
+    EntryDeviceName = tostring(EntryProperties.rawData.deviceName),
+    TargetExposure = tostring(TargetProperties.rawData.exposureScore),
+    // Calculate timing
+    DaysSinceEntryFirstSeen = datetime_diff('day', now(), todatetime(EntryProperties.rawData.firstSeenByInventory)),
+    DaysSinceEntryLastSeen = datetime_diff('day', now(), todatetime(EntryProperties.rawData.lastSeen))
+// Filter for NEW paths only (discovered in last 7 days AND currently active)
+| where isnotempty(EntryFirstSeen) and DaysSinceEntryFirstSeen <= 7 and DaysSinceEntryLastSeen <= 1
+| extend 
+    Status = 'NEW',
+    // Generate attack path metadata
+    AttackPathId = hash_sha256(strcat(EntryNodeId, '|', Edge1Label, '|', IntermediateNodeId, '|', Edge2Label, '|', TargetNodeId)),
+    AttackPathName = strcat('[NEW] ', coalesce(EntryDeviceName, EntryName), ' → ', IntermediateName, ' → ', TargetName),
+    AlertMessage = strcat(
+        '🚨 CRITICAL: NEW ATTACK PATH TO ', toupper(TargetType), '\n\n',
+        '═══════════════════════════════════════════\n',
+        '📍 ENTRY POINT\n',
+        '═══════════════════════════════════════════\n',
+        'Device: ', coalesce(EntryDeviceName, EntryName), '\n',
+        'Type: ', EntryType, '\n',
+        'First Discovered: ', format_datetime(EntryFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceEntryFirstSeen, ' days ago)\n',
+        'Last Seen: ', format_datetime(EntryLastSeen, 'yyyy-MM-dd HH:mm'), '\n',
+        'Exposure Level: ', EntryExposure, '\n\n',
+        '═══════════════════════════════════════════\n',
+        '🔗 ATTACK CHAIN\n',
+        '═══════════════════════════════════════════\n',
+        '1️⃣ Entry Device: ', coalesce(EntryDeviceName, EntryName), '\n',
+        '   ↓ ', Edge1Label, '\n',
+        '2️⃣ Via: ', IntermediateType, ' "', IntermediateName, '"\n',
+        '   ↓ ', Edge2Label, '\n',
+        '3️⃣ 🎯 TARGET: ', TargetType, ' "', TargetName, '"\n\n',
+        '═══════════════════════════════════════════\n',
+        '⚠️ TARGET DETAILS\n',
+        '═══════════════════════════════════════════\n',
+        'Resource: ', TargetName, '\n',
+        'Type: ', TargetType, '\n',
+        'Exposure Categories: ', array_length(TargetCategories), '\n',
+        'Exposure Level: ', TargetExposure, '\n\n',
+        '═══════════════════════════════════════════\n',
+        '🛡️ RECOMMENDED ACTIONS\n',
+        '═══════════════════════════════════════════\n',
+        '1. Verify legitimacy of entry device\n',
+        '2. Review ', Edge1Label, ' permissions\n',
+        '3. Audit ', Edge2Label, ' access to ', TargetType, '\n',
+        '4. Enable enhanced monitoring on ', TargetName, '\n',
+        '5. Consider applying conditional access policies\n',
+        '6. Review and restrict network access if applicable\n'
+    ),
+    PathLength = 3,
+    TotalRiskScore = 95,
+    RiskLevel = 'Critical'
+| project 
+    Timestamp = now(),
+    Status,
+    AlertSeverity = 'Critical',
+    AlertPriority = 'P1 - Immediate Action Required',
+    AttackPathId,
+    AttackPathName,
+    AlertMessage,
+    PathLength,
+    TotalRiskScore,
+    RiskLevel,
+    EntryNodeId,
+    EntryPointName = coalesce(EntryDeviceName, EntryName),
+    EntryPointType = EntryType,
+    EntryExposure,
+    EntryFirstSeen,
+    DaysSinceEntryFirstSeen,
+    Edge1 = Edge1Label,
+    IntermediateNodeId,
+    IntermediateName,
+    IntermediateType,
+    Edge2 = Edge2Label,
+    TargetNodeId,
+    FinalTargetName = TargetName,
+    FinalTargetType = TargetType,
+    TargetExposure,
+    TargetCategoriesCount = array_length(TargetCategories)
+| order by DaysSinceEntryFirstSeen asc
 ```
 
 ---
@@ -810,685 +1073,6 @@ Edges
 - **New**: `firstSeenByInventory` within 7 days AND `lastSeen` = today
 - **Active**: `firstSeenByInventory` > 7 days ago AND `lastSeen` = today
 - **Inactive**: Both `firstSeenByInventory` and `lastSeen` > 7 days ago
-
-**Implementation**: Use Query 8 (all statuses) or Query 9A/9B/9C (filtered by status)
-
----
-
-## 📊 Query 7B: Multi-Hop Attack Paths to High-Value Targets (⭐ MATCHING MSEM STRUCTURE)
-
-**Purpose**: Build complete 3-hop attack path chains from devices through intermediate nodes to storage/keyvault
-
-**Structure**: Device → Intermediate1 (userCookie/etc) → Intermediate2 (user/etc) → FinalTarget (storage/keyvault)
-
-**Example from your data**:
-- Device (a3f79) → entra-userCookie (36c56) → user (dbc6c) → storage account (2e17099)
-
-```kql
-// Build multi-hop attack paths: Device -> Intermediates -> High-Value Resource
-// Users/Cookies are intermediate nodes, NOT final targets
-let HighValueTargets = dynamic([
-    'microsoft.storage/storageaccounts',
-    'microsoft.keyvault/vaults'
-]);
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | project NodeId, NodeName, NodeLabel, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
-// EntryPoint: Device nodes only
-let EntryPoints = Nodes
-    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
-    | extend 
-        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
-        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
-        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
-    | project 
-        EntryPointId = NodeId, 
-        EntryPointName = coalesce(deviceName, NodeName),
-        EntryPointType = NodeLabel,
-        EntryPointExposure = exposureScore,
-        EntryPointCriticalityLevel = criticalityLevel,
-        EntryPointFirstSeen = firstSeenByInventory,
-        EntryPointLastSeen = lastSeen,
-        DaysSinceFirstSeen,
-        DaysSinceLastSeen,
-        IsLastSeenToday;
-// FinalTarget: High-Value Resources ONLY
-let FinalTargets = Nodes
-    | where NodeLabel has_any (HighValueTargets)
-    | project 
-        FinalTargetId = NodeId,
-        FinalTargetName = NodeName,
-        FinalTargetType = NodeLabel,
-        FinalTargetCriticalityLevel = criticalityLevel;
-// Hop 1: EntryPoint (device) -> Intermediate1
-let Hop1 = Edges
-    | join kind=inner (EntryPoints) on $left.SourceNodeId == $right.EntryPointId
-    | project 
-        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
-        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen, DaysSinceLastSeen, IsLastSeenToday,
-        Edge1 = EdgeLabel,
-        Intermediate1Id = TargetNodeId;
-// Hop 2: Intermediate1 -> Intermediate2
-let Hop2 = Hop1
-    | join kind=inner (Edges) on $left.Intermediate1Id == $right.SourceNodeId
-    | join kind=inner (Nodes) on $left.Intermediate1Id == $right.NodeId
-    | project 
-        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
-        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen, DaysSinceLastSeen, IsLastSeenToday,
-        Edge1,
-        Intermediate1Id,
-        Intermediate1Name = NodeName,
-        Intermediate1Type = NodeLabel,
-        Edge2 = EdgeLabel,
-        Intermediate2Id = TargetNodeId;
-// Hop 3: Intermediate2 -> FinalTarget
-let Hop3 = Hop2
-    | join kind=inner (Edges) on $left.Intermediate2Id == $right.SourceNodeId
-    | join kind=inner (Nodes) on $left.Intermediate2Id == $right.NodeId
-    | project 
-        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
-        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen, DaysSinceLastSeen, IsLastSeenToday,
-        Edge1, Intermediate1Id, Intermediate1Name, Intermediate1Type,
-        Edge2,
-        Intermediate2Id,
-        Intermediate2Name = NodeName,
-        Intermediate2Type = NodeLabel,
-        Edge3 = EdgeLabel,
-        FinalTargetId = TargetNodeId;
-// Match with high-value targets ONLY
-Hop3
-| join kind=inner (FinalTargets) on FinalTargetId
-| extend 
-    // Generate consistent attack path ID
-    AttackPathId = hash_sha256(strcat(EntryPointId, '|', Intermediate1Id, '|', Intermediate2Id, '|', FinalTargetId)),
-    
-    // Human-readable path name
-    AttackPathName = strcat(EntryPointName, ' → ', Intermediate1Name, ' → ', Intermediate2Name, ' → ', FinalTargetName),
-    
-    // Attack story
-    AttackStory = strcat(
-        'Device "', EntryPointName, '" ', Edge1, ' ', Intermediate1Type, ' "', Intermediate1Name, '" which ',
-        Edge2, ' ', Intermediate2Type, ' "', Intermediate2Name, '" which ',
-        Edge3, ' ', FinalTargetType, ' "', FinalTargetName, '"'
-    ),
-    
-    PathLength = 4,  // 4 nodes total
-    
-    // Calculate Status based on EntryPoint (device)
-    Status = case(
-        DaysSinceFirstSeen <= 7 and IsLastSeenToday, 'New',
-        DaysSinceFirstSeen > 7 and IsLastSeenToday, 'Active',
-        DaysSinceFirstSeen > 7 and DaysSinceLastSeen > 7, 'Inactive',
-        'Unknown'
-    ),
-    
-    // Risk scoring - higher risk for paths to keyvault/storage
-    TargetRisk = case(
-        FinalTargetType == 'microsoft.keyvault/vaults', 100,
-        FinalTargetType == 'microsoft.storage/storageaccounts', 95,
-        80
-    ),
-    ExposureRisk = case(
-        EntryPointExposure == 'High', 20,
-        EntryPointExposure == 'Medium', 15,
-        EntryPointExposure == 'Low', 10,
-        0
-    )
-| extend 
-    TotalRiskScore = TargetRisk + ExposureRisk,
-    RiskLevel = case(
-        TargetRisk + ExposureRisk >= 110, 'Critical',
-        TargetRisk + ExposureRisk >= 90, 'High',
-        TargetRisk + ExposureRisk >= 70, 'Medium',
-        'Low'
-    ),
-    AlertPriority = case(
-        DaysSinceFirstSeen <= 7 and IsLastSeenToday, 'Critical - New Attack Path',
-        DaysSinceFirstSeen > 7 and IsLastSeenToday and (TargetRisk + ExposureRisk) >= 110, 'High - Active Critical Path',
-        DaysSinceLastSeen > 7, 'Info - Inactive Path',
-        'Medium - Active Path'
-    )
-| project 
-    Timestamp = now(),
-    Status,
-    AlertPriority,
-    AttackPathId,
-    AttackPathName,
-    AttackStory,
-    PathLength,
-    TotalRiskScore,
-    RiskLevel,
-    // Entry Point (Device)
-    EntryPointId,
-    EntryPointName,
-    EntryPointType,
-    EntryPointExposure,
-    EntryPointCriticalityLevel,
-    EntryPointFirstSeen,
-    DaysSinceFirstSeen,
-    DaysSinceLastSeen,
-    // Intermediate Nodes
-    Edge1,
-    Intermediate1Id,
-    Intermediate1Name,
-    Intermediate1Type,
-    Edge2,
-    Intermediate2Id,
-    Intermediate2Name,
-    Intermediate2Type,
-    Edge3,
-    // Final Target (Storage/KeyVault)
-    FinalTargetId,
-    FinalTargetName,
-    FinalTargetType,
-    FinalTargetCriticalityLevel
-| order by 
-    case(Status, 'New', 1, 'Active', 2, 'Inactive', 3, 4),
-    TotalRiskScore desc
-| take 100
-```
-
-**Key Differences from Query 8**:
-- ✅ Builds 3-hop paths (4 nodes total): Device → Intermediate1 → Intermediate2 → FinalTarget
-- ✅ FinalTarget filtered to ONLY storage/keyvault (high-value resources)
-- ✅ Users/cookies are intermediate nodes, NOT targets
-- ✅ Status calculated from EntryPoint (device) firstSeen/lastSeen
-- ✅ Matches your example: device (a3f79) → entra-userCookie (36c56) → user (dbc6c) → storage (2e17099)
-
----
-
-## 📊 Query 7C: NEW Multi-Hop Paths to Storage/KeyVault (🆕 RECOMMENDED FOR ALERTS)
-
-**Purpose**: Filter Query 7B to show ONLY NEW attack paths (discovered within 7 days)
-
-**Use Case**: Daily alerts on newly discovered attack paths to storage accounts and key vaults
-
-```kql
-// Get ONLY New multi-hop attack paths to storage/keyvault
-let HighValueTargets = dynamic([
-    'microsoft.storage/storageaccounts',
-    'microsoft.keyvault/vaults'
-]);
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | project NodeId, NodeName, NodeLabel, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
-// EntryPoint: Device nodes with NEW filter (firstSeen ≤ 7 days, lastSeen = today)
-let EntryPoints = Nodes
-    | where NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account')
-    | extend 
-        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
-        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
-        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
-    | where DaysSinceFirstSeen <= 7 and IsLastSeenToday  // NEW filter
-    | project 
-        EntryPointId = NodeId, 
-        EntryPointName = coalesce(deviceName, NodeName),
-        EntryPointType = NodeLabel,
-        EntryPointExposure = exposureScore,
-        EntryPointCriticalityLevel = criticalityLevel,
-        EntryPointFirstSeen = firstSeenByInventory,
-        EntryPointLastSeen = lastSeen,
-        DaysSinceFirstSeen;
-// FinalTarget: Storage/KeyVault ONLY
-let FinalTargets = Nodes
-    | where NodeLabel has_any (HighValueTargets)
-    | project 
-        FinalTargetId = NodeId,
-        FinalTargetName = NodeName,
-        FinalTargetType = NodeLabel,
-        FinalTargetCriticalityLevel = criticalityLevel;
-// Hop 1: EntryPoint -> Intermediate1
-let Hop1 = Edges
-    | join kind=inner (EntryPoints) on $left.SourceNodeId == $right.EntryPointId
-    | project 
-        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
-        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen,
-        Edge1 = EdgeLabel,
-        Intermediate1Id = TargetNodeId;
-// Hop 2: Intermediate1 -> Intermediate2
-let Hop2 = Hop1
-    | join kind=inner (Edges) on $left.Intermediate1Id == $right.SourceNodeId
-    | join kind=inner (Nodes) on $left.Intermediate1Id == $right.NodeId
-    | project 
-        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
-        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen,
-        Edge1,
-        Intermediate1Id,
-        Intermediate1Name = NodeName,
-        Intermediate1Type = NodeLabel,
-        Edge2 = EdgeLabel,
-        Intermediate2Id = TargetNodeId;
-// Hop 3: Intermediate2 -> FinalTarget
-let Hop3 = Hop2
-    | join kind=inner (Edges) on $left.Intermediate2Id == $right.SourceNodeId
-    | join kind=inner (Nodes) on $left.Intermediate2Id == $right.NodeId
-    | project 
-        EntryPointId, EntryPointName, EntryPointType, EntryPointExposure, EntryPointCriticalityLevel,
-        EntryPointFirstSeen, EntryPointLastSeen, DaysSinceFirstSeen,
-        Edge1, Intermediate1Id, Intermediate1Name, Intermediate1Type,
-        Edge2,
-        Intermediate2Id,
-        Intermediate2Name = NodeName,
-        Intermediate2Type = NodeLabel,
-        Edge3 = EdgeLabel,
-        FinalTargetId = TargetNodeId;
-// Match with storage/keyvault ONLY
-Hop3
-| join kind=inner (FinalTargets) on FinalTargetId
-| extend 
-    AttackPathId = hash_sha256(strcat(EntryPointId, '|', Intermediate1Id, '|', Intermediate2Id, '|', FinalTargetId)),
-    AttackPathName = strcat(EntryPointName, ' → ', Intermediate1Name, ' → ', Intermediate2Name, ' → ', FinalTargetName),
-    Status = 'New',
-    AlertMessage = strcat(
-        '🆕 NEW ATTACK PATH TO ', toupper(FinalTargetType), '\n',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
-        'Entry Point: ', EntryPointName, ' (', EntryPointType, ')\n',
-        'Entry Point Criticality: ', EntryPointCriticalityLevel, '\n',
-        'Entry Point Exposure: ', EntryPointExposure, '\n',
-        'First Discovered: ', format_datetime(EntryPointFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceFirstSeen, ' days ago)\n',
-        '\nATTACK CHAIN:\n',
-        '1️⃣ ', EntryPointName, ' (', EntryPointType, ')\n',
-        '   ↓ ', Edge1, '\n',
-        '2️⃣ ', Intermediate1Name, ' (', Intermediate1Type, ')\n',
-        '   ↓ ', Edge2, '\n',
-        '3️⃣ ', Intermediate2Name, ' (', Intermediate2Type, ')\n',
-        '   ↓ ', Edge3, '\n',
-        '4️⃣ ', FinalTargetName, ' (', FinalTargetType, ') ⚠️\n',
-        'Target Criticality: ', FinalTargetCriticalityLevel, '\n',
-        '\n⚠️ CRITICAL: New path to high-value resource!\n',
-        '🔍 ACTION REQUIRED: Immediate investigation!'
-    ),
-    TargetRisk = case(
-        FinalTargetType == 'microsoft.keyvault/vaults', 100,
-        FinalTargetType == 'microsoft.storage/storageaccounts', 95,
-        80
-    )
-| project 
-    Timestamp = now(),
-    Status,
-    AlertMessage,
-    AttackPathId,
-    AttackPathName,
-    TargetRisk,
-    // Entry Point
-    EntryPointId,
-    EntryPointName,
-    EntryPointType,
-    EntryPointCriticalityLevel,
-    EntryPointExposure,
-    EntryPointFirstSeen,
-    DaysSinceFirstSeen,
-    // Attack Chain
-    Edge1,
-    Intermediate1Name,
-    Intermediate1Type,
-    Edge2,
-    Intermediate2Name,
-    Intermediate2Type,
-    Edge3,
-    // Final Target
-    FinalTargetName,
-    FinalTargetType,
-    FinalTargetCriticalityLevel
-| order by TargetRisk desc, DaysSinceFirstSeen asc
-```
-
-**Alert Priority**: CRITICAL - These are newly discovered paths to your most sensitive resources!
-
----
-
-## 📊 Query 8: Attack Path Snapshot with Status Calculation (Based on MSEM Logic)
-
-**Purpose**: Generate attack paths with **Status** calculated from firstSeenByInventory and lastSeen fields
-
-**MSEM Status Logic (Discovered):**
-- **New**: firstSeenByInventory within 7 days AND lastSeen = today
-- **Active**: firstSeenByInventory > 7 days ago AND lastSeen = today  
-- **Inactive**: Both firstSeenByInventory and lastSeen > 7 days ago
-
-```kql
-// Generate attack paths with Status based on MSEM actual logic
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | extend 
-        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, criticalityLevel;
-Edges
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename 
-    EntryPointNodeId = SourceNodeId,
-    EntryPointName = NodeName, 
-    EntryPointType = NodeLabel, 
-    EntryPointCategories = Categories,
-    EntryPointIsHighValue = IsHighValue, 
-    EntryPointExposure = exposureScore, 
-    EntryPointDeviceName = deviceName,
-    EntryPointLastSeen = lastSeen, 
-    EntryPointFirstSeen = firstSeenByInventory,
-    EntryPointCriticalityLevel = criticalityLevel
-| join kind=inner (Nodes) on $left.TargetNodeId == $right.NodeId
-| project-rename 
-    TargetName = NodeName, 
-    TargetType = NodeLabel, 
-    TargetCategories = Categories,
-    TargetIsHighValue = IsHighValue, 
-    TargetExposure = exposureScore, 
-    TargetDeviceName = deviceName,
-    TargetLastSeen = lastSeen, 
-    TargetFirstSeen = firstSeenByInventory,
-    TargetCriticalityLevel = criticalityLevel
-| extend 
-    // Generate unique attack path ID based on EntryPoint → Target
-    AttackPathId = hash_sha256(strcat(EntryPointNodeId, '|', EdgeLabel, '|', TargetNodeId)),
-    
-    // Metadata
-    AttackPathName = strcat(coalesce(EntryPointDeviceName, EntryPointName), ' → ', TargetName),
-    AttackPathDescription = strcat(EntryPointType, ' ', EdgeLabel, ' ', TargetType),
-    
-    // Calculate Status based on MSEM actual logic
-    DaysSinceEntryPointFirstSeen = datetime_diff('day', now(), EntryPointFirstSeen),
-    DaysSinceEntryPointLastSeen = datetime_diff('day', now(), EntryPointLastSeen),
-    IsLastSeenToday = datetime_diff('day', now(), EntryPointLastSeen) == 0,
-    
-    // Risk calculation
-    BaseRisk = 20,
-    TargetValueRisk = case(TargetIsHighValue, 40, 0),
-    SensitivityRisk = array_length(TargetCategories) * 10,
-    ExposureRisk = case(
-        TargetExposure == 'High', 20,
-        TargetExposure == 'Medium', 15,
-        TargetExposure == 'Low', 10,
-        0
-    ),
-    EdgeRisk = case(
-        EdgeLabel in ('can admin to', 'can execute code', 'has credentials of'), 30,
-        EdgeLabel in ('has permission to', 'can rdp', 'can authenticate as', 'can impersonate as'), 20,
-        EdgeLabel in ('can authenticate to', 'has role on', 'frequently logged in'), 15,
-        EdgeLabel == 'member of', 10,
-        5
-    )
-| extend 
-    TotalRiskScore = BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk,
-    RiskLevel = case(
-        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 100, 'Critical',
-        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 80, 'High',
-        BaseRisk + TargetValueRisk + SensitivityRisk + ExposureRisk + EdgeRisk >= 50, 'Medium',
-        'Low'
-    )
-| extend 
-    // Calculate Status based on MSEM actual logic
-    Status = case(
-        // New: firstSeen within 7 days AND lastSeen = today
-        DaysSinceEntryPointFirstSeen <= 7 and IsLastSeenToday, 'New',
-        // Active: firstSeen > 7 days ago AND lastSeen = today
-        DaysSinceEntryPointFirstSeen > 7 and IsLastSeenToday, 'Active',
-        // Inactive: both firstSeen and lastSeen > 7 days ago
-        DaysSinceEntryPointFirstSeen > 7 and DaysSinceEntryPointLastSeen > 7, 'Inactive',
-        'Unknown'
-    ),
-    AlertPriority = case(
-        DaysSinceEntryPointFirstSeen <= 7 and IsLastSeenToday, 'Critical - New Attack Path',
-        DaysSinceEntryPointFirstSeen > 7 and IsLastSeenToday and TotalRiskScore >= 100, 'High - Active Critical Path',
-        DaysSinceEntryPointLastSeen > 7, 'Info - Inactive Path',
-        'Medium - Active Path'
-    )
-| project 
-    Timestamp = now(),
-    Status,
-    AlertPriority,
-    AttackPathId,
-    AttackPathName,
-    AttackPathDescription,
-    EntryPointNodeId,
-    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
-    EntryPointType,
-    EntryPointExposure,
-    EntryPointCriticalityLevel,
-    EntryPointFirstSeen,
-    EntryPointLastSeen,
-    DaysSinceEntryPointFirstSeen,
-    DaysSinceEntryPointLastSeen,
-    EdgeLabel,
-    TargetNodeId,
-    TargetName,
-    TargetType,
-    TargetExposure,
-    TargetCriticalityLevel,
-    TotalRiskScore,
-    RiskLevel,
-    EntryPointCategories,
-    TargetCategories
-| order by 
-    case(Status, 'New', 1, 'Active', 2, 'Inactive', 3, 4),  // Status priority
-    TotalRiskScore desc
-```
-
----
-
-## 🎯 Query 9: Filter Attack Paths by Status (Alert-Ready Queries)
-
-### Query 9A: NEW Attack Paths Only (🆕 ALERT ON THESE)
-
-**Shows**: Same EntryPoint (device) → Multiple unique Targets
-
-```kql
-// Get ONLY New attack paths (firstSeen within 7 days, lastSeen today)
-// Groups by EntryPoint and shows all unique Targets accessible from that EntryPoint
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | extend 
-        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
-        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
-        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
-    // Filter: NEW status only (firstSeen ≤ 7 days AND lastSeen = today)
-    | where DaysSinceFirstSeen <= 7 and IsLastSeenToday
-    | extend 
-        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen, criticalityLevel;
-Edges
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename 
-    EntryPointNodeId = SourceNodeId,
-    EntryPointName = NodeName, 
-    EntryPointType = NodeLabel,
-    EntryPointExposure = exposureScore, 
-    EntryPointDeviceName = deviceName,
-    EntryPointCriticalityLevel = criticalityLevel,
-    EntryPointFirstSeen = firstSeenByInventory,
-    EntryPointLastSeen = lastSeen,
-    DaysSinceEntryPointFirstSeen = DaysSinceFirstSeen
-| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend TargetCriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel) | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetCriticalityLevel) 
-    on $left.TargetNodeId == $right.NodeId
-| extend 
-    AttackPathId = hash_sha256(strcat(EntryPointNodeId, '|', EdgeLabel, '|', TargetNodeId)),
-    AttackPathName = strcat(coalesce(EntryPointDeviceName, EntryPointName), ' → ', TargetName),
-    Status = 'New',
-    AlertMessage = strcat(
-        '🆕 NEW ATTACK PATH DETECTED\n',
-        'Entry Point: ', coalesce(EntryPointDeviceName, EntryPointName), ' (', EntryPointType, ')\n',
-        'Entry Point Criticality: ', EntryPointCriticalityLevel, '\n',
-        'Target: ', TargetName, ' (', TargetType, ')\n',
-        'Target Criticality: ', TargetCriticalityLevel, '\n',
-        'Method: ', EdgeLabel, '\n',
-        'First Discovered: ', format_datetime(EntryPointFirstSeen, 'yyyy-MM-dd HH:mm'), ' (', DaysSinceEntryPointFirstSeen, ' days ago)\n',
-        'Exposure Score: ', EntryPointExposure, '\n',
-        '⚠️ ACTION REQUIRED: Immediate investigation needed!'
-    )
-| project 
-    Timestamp = now(),
-    Status,
-    AlertMessage,
-    AttackPathId,
-    AttackPathName,
-    EntryPointNodeId,
-    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
-    EntryPointType,
-    EntryPointCriticalityLevel,
-    EntryPointExposure,
-    EntryPointFirstSeen,
-    DaysSinceEntryPointFirstSeen,
-    EdgeLabel,
-    TargetNodeId,
-    TargetName,
-    TargetType,
-    TargetCriticalityLevel
-| order by EntryPointNodeId, DaysSinceEntryPointFirstSeen asc  // Groups by EntryPoint, shows all targets
-```
-
-### Query 9B: ACTIVE Attack Paths Only (Monitor High-Risk)
-
-**Shows**: Same EntryPoint (device) → Multiple unique Targets (Active for >7 days)
-
-```kql
-// Get ONLY Active attack paths (firstSeen > 7 days, lastSeen today)
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        exposureScore = tostring(NodeProperties.rawData.exposureScore),
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | extend 
-        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
-        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen),
-        IsLastSeenToday = datetime_diff('day', now(), lastSeen) == 0
-    // Filter: ACTIVE status only (firstSeen > 7 days AND lastSeen = today)
-    | where DaysSinceFirstSeen > 7 and IsLastSeenToday
-    | extend 
-        IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal', 'azure-logic-app-shared-access-signature', 'microsoft.compute/virtualmachines', 'ec2.instance', 'microsoft.logic/workflows', 'microsoft.automation/automationaccounts')
-    | project NodeId, NodeName, NodeLabel, Categories, IsHighValue, exposureScore, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, criticalityLevel;
-Edges
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename 
-    EntryPointNodeId = SourceNodeId,
-    EntryPointName = NodeName, 
-    EntryPointType = NodeLabel,
-    EntryPointIsHighValue = IsHighValue,
-    EntryPointCriticalityLevel = criticalityLevel,
-    EntryPointExposure = exposureScore, 
-    EntryPointDeviceName = deviceName,
-    EntryPointFirstSeen = firstSeenByInventory,
-    DaysSinceEntryPointFirstSeen = DaysSinceFirstSeen
-| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend IsHighValue = NodeLabel in ('microsoft.keyvault/vaults', 'microsoft.storage/storageaccounts', 'aws-access-key', 'serviceprincipal') | extend TargetCriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel) | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetIsHighValue = IsHighValue, TargetCriticalityLevel) 
-    on $left.TargetNodeId == $right.NodeId
-| extend 
-    RiskScore = case(
-        TargetIsHighValue, 95,
-        TargetType in ('microsoft.compute/virtualmachines', 'ec2.instance', 'user', 'manageidentity'), 80,
-        60
-    ) + case(EntryPointExposure == 'High', 15, EntryPointExposure == 'Medium', 10, 0),
-    Status = 'Active',
-    DaysActive = DaysSinceEntryPointFirstSeen
-| where RiskScore >= 80  // Only high-risk active paths
-| project 
-    Timestamp = now(),
-    Status,
-    DaysActive,
-    RiskScore,
-    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
-    EntryPointType,
-    EntryPointCriticalityLevel,
-    EntryPointExposure,
-    EdgeLabel,
-    TargetName,
-    TargetType,
-    TargetCriticalityLevel,
-    EntryPointFirstSeen
-| order by EntryPointNodeId, RiskScore desc, DaysActive desc  // Groups by EntryPoint
-```
-
-### Query 9C: INACTIVE Attack Paths (Remediation Report)
-
-**Shows**: Same EntryPoint (device) → Multiple unique Targets (All inactive >7 days)
-
-```kql
-// Get ONLY Inactive attack paths (both firstSeen and lastSeen > 7 days ago)
-let Edges = ExposureGraphEdges
-    | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
-    | extend SourceNodeId = tostring(SourceNodeId), TargetNodeId = tostring(TargetNodeId);
-let Nodes = ExposureGraphNodes
-    | extend NodeId = tostring(NodeId)
-    | extend 
-        deviceName = tostring(NodeProperties.rawData.deviceName),
-        lastSeen = todatetime(NodeProperties.rawData.lastSeen),
-        firstSeenByInventory = todatetime(NodeProperties.rawData.firstSeenByInventory),
-        criticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-    | extend 
-        DaysSinceFirstSeen = datetime_diff('day', now(), firstSeenByInventory),
-        DaysSinceLastSeen = datetime_diff('day', now(), lastSeen)
-    // Filter: INACTIVE status only (both > 7 days ago)
-    | where DaysSinceFirstSeen > 7 and DaysSinceLastSeen > 7
-    | project NodeId, NodeName, NodeLabel, deviceName, lastSeen, firstSeenByInventory, DaysSinceFirstSeen, DaysSinceLastSeen, criticalityLevel;
-Edges
-| join kind=inner (Nodes) on $left.SourceNodeId == $right.NodeId
-| project-rename 
-    EntryPointNodeId = SourceNodeId,
-    EntryPointName = NodeName, 
-    EntryPointType = NodeLabel,
-    EntryPointCriticalityLevel = criticalityLevel,
-    EntryPointDeviceName = deviceName,
-    EntryPointFirstSeen = firstSeenByInventory,
-    EntryPointLastSeen = lastSeen,
-    DaysSinceEntryPointLastSeen = DaysSinceLastSeen
-| join kind=inner (ExposureGraphNodes | extend NodeId = tostring(NodeId) | extend TargetCriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel) | project NodeId, TargetName = NodeName, TargetType = NodeLabel, TargetCriticalityLevel) 
-    on $left.TargetNodeId == $right.NodeId
-| extend 
-    Status = 'Inactive',
-    InactiveDuration = DaysSinceEntryPointLastSeen
-| project 
-    Timestamp = now(),
-    Status,
-    InactiveDuration,
-    EntryPointName = coalesce(EntryPointDeviceName, EntryPointName),
-    EntryPointType,
-    EntryPointCriticalityLevel,
-    EdgeLabel,
-    TargetName,
-    TargetType,
-    TargetCriticalityLevel,
-    EntryPointLastSeen
-| order by EntryPointNodeId, InactiveDuration asc  // Groups by EntryPoint, recently inactive first
-```
 
 ---
 
@@ -1704,22 +1288,6 @@ Status = case(
 
 ---
 
-## 📋 Recommended Implementation Path
-
-**Start Here** → **Option A** (Query 7C - NEW multi-hop to storage/keyvault)
-- Matches MSEM portal exactly
-- Focuses on highest-value targets
-- Clear actionable alerts
-- **Solves your issue**: Only shows storage/keyvault as targets, users are intermediate
-
-**Then Add** → **Option B** for full lifecycle tracking
-- Active path monitoring
-- Inactive path reports (remediation validation)
-
-**Alternative** → **Option C** if you need broader coverage beyond storage/keyvault
-
----
-
 ## 📝 Important Notes
 
 ### ✅ Status CAN Be Calculated!
@@ -1758,32 +1326,3 @@ These are still **calculated by MSEM backend**:
 ✅ **Query 9A/9B/9C** for filtered status queries (NEW/ACTIVE/INACTIVE)
 
 ---
-
-## 🚀 Ready to Implement?
-
-I can create complete Logic App ARM templates for:
-
-### ⭐ Option A: NEW Attack Path Alerts (RECOMMENDED - Simplest)
-**Perfect for immediate threat detection!**
-- Uses Query 9A (NEW paths only)
-- Daily scheduled trigger
-- Alerts on paths discovered within 7 days
-- **No storage needed** - Status calculated from MSEM fields
-- Matches MSEM portal behavior exactly
-- Quick to deploy and validate
-
-### Option B: Multi-Status Monitoring (Comprehensive)
-- Uses Query 9A + 9B + 9C (NEW, ACTIVE, INACTIVE)
-- Multiple alert levels based on Status
-- NEW → Critical alert, ACTIVE → High alert, INACTIVE → Weekly report
-- **No storage needed** - All status calculated from fields
-- Full lifecycle visibility
-
-### Option C: All-in-One with Conditional Logic (Most Efficient)
-- Uses Query 8 (all statuses in one query)
-- Logic App filters and routes alerts based on Status
-- Single API call, multiple alert types
-- **No storage needed** - Status calculated in query
-- Most efficient for large environments
-
-**Which option would you like me to create?** Option A (NEW Attack Path Alerts) is recommended to start - it's simple, effective, and matches exactly what you observed in MSEM.
