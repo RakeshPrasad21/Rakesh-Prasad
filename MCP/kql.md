@@ -226,7 +226,7 @@ ExposureGraphEdges
 | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
 | make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
 | graph-match (Device)-[Edge1]->(Intermediate)-[Edge2]->(Resource)
-    where Device.NodeLabel has_any (DeviceTypes) and set_has_element(Device.Categories, "device") and
+    where Device.NodeLabel has_any (DeviceTypes) and
           Resource.NodeLabel has_any (ResourceTypes) and
           Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has role on', 'member of') and
           Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'has permission to', 'can execute code', 'has role on')
@@ -424,7 +424,7 @@ ExposureGraphEdges
 // Find entry point devices discovered in last 7 days using graph-match
 let DeviceTypes = dynamic(['device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account']);
 let RecentDevices = ExposureGraphNodes
-| where NodeLabel has_any (DeviceTypes) and (Categories has "device" and set_has_element(Categories, "device"))
+| where NodeLabel has_any (DeviceTypes)
 | extend 
     // Extract from NodeProperties.rawData
     exposureScore = tostring(NodeProperties.rawData.exposureScore),
@@ -706,7 +706,7 @@ ExposureGraphEdges
 | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
 | make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
 | graph-match (EntryNode)-[Edge1]->(IntermediateNode)-[Edge2]->(TargetNode)
-    where (EntryNode.Categories has "device" and set_has_element(EntryNode.Categories, "device")) and
+    where EntryNode.NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account') and
           Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can rdp', 'can admin to', 'frequently logged in', 'member of', 'has role on') and
           Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'has permission to', 'can execute code', 'can admin to', 'has role on')
     project 
@@ -826,7 +826,7 @@ ExposureGraphEdges
 | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
 | make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
 | graph-match (EntryNode)-[Edge1]->(IntermediateNode)-[Edge2]->(TargetNode)
-    where (EntryNode.Categories has "device" and set_has_element(EntryNode.Categories, "device")) and
+    where EntryNode.NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account') and
           TargetNode.NodeLabel has_any (HighValueTargets) and
           Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can rdp', 'can admin to', 'frequently logged in', 'member of', 'has role on') and
           Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'has permission to', 'can execute code', 'has role on')
@@ -932,7 +932,7 @@ ExposureGraphEdges
 | where EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can impersonate as', 'frequently logged in', 'can rdp', 'can admin to', 'has permission to', 'can execute code', 'has role on', 'member of')
 | make-graph SourceNodeId --> TargetNodeId with ExposureGraphNodes on NodeId
 | graph-match (EntryNode)-[Edge1]->(IntermediateNode)-[Edge2]->(TargetNode)
-    where (EntryNode.Categories has "device" and set_has_element(EntryNode.Categories, "device")) and
+    where EntryNode.NodeLabel in ('device', 'microsoft.compute/virtualmachines', 'microsoft.hybridcompute/machines', 'ec2.instance', 'computer-account') and
           TargetNode.NodeLabel has_any (HighValueTargets) and
           Edge1.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'can rdp', 'can admin to', 'frequently logged in', 'member of', 'has role on') and
           Edge2.EdgeLabel in ('can authenticate as', 'can authenticate to', 'has credentials of', 'has permission to', 'can execute code', 'has role on')
