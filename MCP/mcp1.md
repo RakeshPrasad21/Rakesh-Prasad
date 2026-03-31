@@ -252,6 +252,9 @@ Related Documentation:
       "url": "https://sentinel.microsoft.com/mcp/graph"
     },
 ```
+<img width="607" height="410" alt="image" src="https://github.com/user-attachments/assets/2709f509-a062-404b-8997-dce7dad7214b" />
+<img width="610" height="406" alt="image" src="https://github.com/user-attachments/assets/328e1ae7-dcaa-4c7c-ace7-339312b0fb0e" />
+
 
 **🎉 BREAKING NEWS - Native MCP Support Added**:
 
