@@ -224,6 +224,35 @@ Related Documentation:
 - Troubleshooting: https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-troubleshooting
 ```
 
+```
+// 1. Sentinel Data Lake — KQL queries against Log Analytics workspace
+    //    Permissions: Log Analytics Reader (minimum), Sentinel Reader (recommended)
+    //    Docs: https://learn.microsoft.com/en-us/copilot/security/developer/mcp-get-started
+    "sentinel-data-mcp": {
+      "type": "http",
+      "url": "https://sentinel.microsoft.com/mcp/data-exploration"
+    },
+// 2. Sentinel Triage — Advanced Hunting, Defender XDR incidents/alerts/entities
+    //    Permissions: SecurityReader role in Defender for Endpoint
+    //    Docs: https://learn.microsoft.com/en-us/azure/sentinel/datalake/sentinel-mcp-triage-tool
+    "sentinel-triage-mcp": {
+      "type": "http",
+      "url": "https://sentinel.microsoft.com/mcp/triage"
+    },
+   // 3. Microsoft Graph — Entra ID identity, devices, risk detections
+    //    Permissions: User.Read.All, Device.Read.All, IdentityRiskEvent.Read.All
+    //    Docs: https://learn.microsoft.com/en-us/graph/mcp-server/get-started
+    "Graph-mcp-server": {
+      "type": "http",
+      "url": "https://mcp.svc.cloud.microsoft/enterprise"
+    },
+// Sentinel Graph — Entity graph exploration and relationship queries
+    "sentinel-graph-mcp": {
+      "type": "http",
+      "url": "https://sentinel.microsoft.com/mcp/graph"
+    },
+```
+
 **🎉 BREAKING NEWS - Native MCP Support Added**:
 
 Microsoft Copilot Studio now has **TRUE MCP protocol support** available in the agent builder:
