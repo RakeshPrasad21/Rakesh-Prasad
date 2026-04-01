@@ -37,3 +37,6 @@ New-AzureAdServiceAppRoleAssignment -ObjectId $MI.ObjectId -PrincipalId $MI.Obje
     -ResourceId $GraphServicePrincipal.ObjectId -Id $AppRole2.Id
 
 Write-Host "Graph permissions assigned successfully!" -ForegroundColor Green
+
+<img width="176" height="356" alt="image" src="https://github.com/user-attachments/assets/17aae445-d5b3-46fa-a57b-04885a243704" />
+
