@@ -44,7 +44,7 @@ Write-Host "Graph permissions assigned successfully!" -ForegroundColor Green
 
 HTTP Advanced Hunting Vulnerabilities
 {
-  "Query": "DeviceTvmSoftwareVulnerabilities | summarize arg_max(Timestamp, *) by DeviceId, CveId | summarize TotalVulnerabilities = dcount(CveId), ExploitableVulnerabilities = dcountif(CveId, IsExploitable == 1), CriticalVulnerabilities = dcountif(CveId, VulnerabilitySeverityLevel == 'Critical')"
+  "Query": "DeviceTvmSoftwareVulnerabilities | summarize TotalVulnerabilities = dcount(CveId), HighVulnerabilities = dcountif(CveId, VulnerabilitySeverityLevel == 'High'), CriticalVulnerabilities = dcountif(CveId, VulnerabilitySeverityLevel == 'Critical')"
 }
 
 Parse Vulnerabilities Response
@@ -64,7 +64,7 @@ Parse Vulnerabilities Response
 HTTP Advanced Hunting TopExposedDevices
 
 {
-  "Query": "DeviceTvmSoftwareVulnerabilities | summarize arg_max(Timestamp, *) by DeviceId, CveId | summarize VulnerabilityCount = dcount(CveId), CriticalCount = dcountif(CveId, VulnerabilitySeverityLevel == 'Critical'), ExploitableCount = dcountif(CveId, IsExploitable == 1) by DeviceName, DeviceId | top 5 by VulnerabilityCount desc"
+  "Query": "DeviceTvmSoftwareVulnerabilities | summarize VulnerabilityCount = dcount(CveId), CriticalCount = dcountif(CveId, VulnerabilitySeverityLevel == 'Critical'), HighCount = dcountif(CveId, VulnerabilitySeverityLevel == 'High') by DeviceName, DeviceId | top 5 by VulnerabilityCount desc"
 }
 
 Parse TopExposedDevices Response
