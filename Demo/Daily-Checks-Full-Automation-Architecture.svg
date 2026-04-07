@@ -1,0 +1,348 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1200">
+  <!-- Define styles -->
+  <defs>
+    <style>
+      .title { font-family: 'Segoe UI', Arial, sans-serif; font-size: 28px; font-weight: bold; fill: #2c3e50; }
+      .phase-title { font-family: 'Segoe UI', Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #34495e; }
+      .component-title { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 600; fill: #2c3e50; }
+      .component-text { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; fill: #34495e; }
+      .small-text { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; fill: #555; }
+      .legend-text { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; fill: #2c3e50; }
+      .box { fill: white; stroke: #2c3e50; stroke-width: 2; }
+      .sentinel-box { fill: #0078d4; stroke: #005a9e; stroke-width: 2; }
+      .logic-app-box { fill: #00bcf2; stroke: #0099cc; stroke-width: 2; }
+      .function-box { fill: #ffb900; stroke: #cc9300; stroke-width: 2; }
+      .storage-box { fill: #7fba00; stroke: #5c8500; stroke-width: 2; }
+      .automation-box { fill: #e74856; stroke: #c13b44; stroke-width: 2; }
+      .report-box { fill: #8764b8; stroke: #6b4f96; stroke-width: 2; }
+      .api-box { fill: #00b294; stroke: #008f76; stroke-width: 2; }
+      .white-text { fill: white; font-weight: 600; }
+      .arrow { stroke: #0078d4; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead); }
+      .arrow-auto { stroke: #00b294; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead-green); }
+      .arrow-data { stroke: #7fba00; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead-green2); }
+      .arrow-output { stroke: #8764b8; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead-purple); }
+      .highlight-box { fill: #fff3cd; stroke: #ffc107; stroke-width: 2; stroke-dasharray: 5,5; }
+    </style>
+    
+    <!-- Arrow markers -->
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#0078d4" />
+    </marker>
+    <marker id="arrowhead-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#00b294" />
+    </marker>
+    <marker id="arrowhead-green2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#7fba00" />
+    </marker>
+    <marker id="arrowhead-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#8764b8" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#f8f9fa"/>
+  
+  <!-- Title -->
+  <text x="700" y="40" text-anchor="middle" class="title">Fully Automated Daily Checks Architecture - Zero Manual Intervention</text>
+  
+  <!-- Phase 1: Data Collection -->
+  <text x="70" y="90" class="phase-title">PHASE 1: Data Collection &amp; Scheduling</text>
+  <rect x="50" y="100" width="350" height="280" rx="8" class="box" fill="#e3f2fd"/>
+  
+  <!-- Sentinel with KQL Functions -->
+  <rect x="70" y="120" width="150" height="110" rx="5" class="sentinel-box"/>
+  <text x="145" y="145" text-anchor="middle" class="component-title white-text">Microsoft Sentinel</text>
+  <text x="145" y="165" text-anchor="middle" class="small-text white-text">20-25 Daily KQL Functions</text>
+  <text x="145" y="180" text-anchor="middle" class="small-text white-text">+ Weekly Check Functions</text>
+  <text x="145" y="200" text-anchor="middle" class="small-text white-text">🔍 Security Analytics</text>
+  <text x="145" y="215" text-anchor="middle" class="small-text white-text">📊 Compliance Checks</text>
+
+  <!-- Watchlist -->
+  <rect x="240" y="120" width="140" height="80" rx="5" class="box" fill="#fff9e6"/>
+  <text x="310" y="145" text-anchor="middle" class="component-title">Watchlist</text>
+  <text x="310" y="165" text-anchor="middle" class="small-text">Check Names</text>
+  <text x="310" y="180" text-anchor="middle" class="small-text">Parameters</text>
+  <text x="310" y="195" text-anchor="middle" class="small-text">Schedules</text>
+
+  <!-- Daily Scheduler -->
+  <rect x="70" y="250" width="150" height="110" rx="5" class="automation-box"/>
+  <text x="145" y="275" text-anchor="middle" class="component-title white-text">Azure Automation</text>
+  <text x="145" y="295" text-anchor="middle" class="small-text white-text">⏰ Daily Trigger: 6:00 AM</text>
+  <text x="145" y="310" text-anchor="middle" class="small-text white-text">⏰ Weekly Trigger: Sunday</text>
+  <text x="145" y="330" text-anchor="middle" class="small-text white-text">Orchestrates all workflows</text>
+  <text x="145" y="345" text-anchor="middle" class="small-text white-text">Error Handling &amp; Retry</text>
+
+  <!-- CyberArk API Integration -->
+  <rect x="240" y="230" width="140" height="130" rx="5" class="api-box"/>
+  <text x="310" y="255" text-anchor="middle" class="component-title white-text">CyberArk API</text>
+  <text x="310" y="275" text-anchor="middle" class="small-text white-text">🔐 Auto Authentication</text>
+  <text x="310" y="290" text-anchor="middle" class="small-text white-text">📥 Daily Data Pull</text>
+  <text x="310" y="305" text-anchor="middle" class="small-text white-text">REST API Integration</text>
+  <text x="310" y="325" text-anchor="middle" class="small-text white-text">✅ AUTOMATED</text>
+  <text x="310" y="345" text-anchor="middle" class="small-text white-text">(No manual download)</text>
+
+  <!-- Phase 2: Orchestration -->
+  <text x="470" y="90" class="phase-title">PHASE 2: Execution &amp; Processing</text>
+  <rect x="450" y="100" width="450" height="280" rx="8" class="box" fill="#f3e5f5"/>
+  
+  <!-- Logic App Daily Checks -->
+  <rect x="470" y="120" width="180" height="110" rx="5" class="logic-app-box"/>
+  <text x="560" y="145" text-anchor="middle" class="component-title white-text">Logic App 1</text>
+  <text x="560" y="165" text-anchor="middle" class="component-title white-text">Sentinel Checks Runner</text>
+  <text x="560" y="185" text-anchor="middle" class="small-text white-text">1️⃣ Read Watchlist</text>
+  <text x="560" y="200" text-anchor="middle" class="small-text white-text">2️⃣ Execute KQL Functions</text>
+  <text x="560" y="215" text-anchor="middle" class="small-text white-text">3️⃣ Generate CSV Outputs</text>
+
+  <!-- Azure Function for Analysis -->
+  <rect x="680" y="120" width="200" height="110" rx="5" class="function-box"/>
+  <text x="780" y="145" text-anchor="middle" class="component-title white-text">Azure Function</text>
+  <text x="780" y="165" text-anchor="middle" class="component-title white-text">PowerShell Processor</text>
+  <text x="780" y="185" text-anchor="middle" class="small-text white-text">📊 Compare Sentinel vs CyberArk</text>
+  <text x="780" y="200" text-anchor="middle" class="small-text white-text">🔍 Gap Analysis</text>
+  <text x="780" y="215" text-anchor="middle" class="small-text white-text">📈 Generate Excel Report</text>
+
+  <!-- Storage Account -->
+  <rect x="470" y="250" width="180" height="110" rx="5" class="storage-box"/>
+  <text x="560" y="275" text-anchor="middle" class="component-title white-text">Azure Storage</text>
+  <text x="560" y="295" text-anchor="middle" class="small-text white-text">📁 Folder Structure:</text>
+  <text x="560" y="310" text-anchor="middle" class="small-text white-text">/YYYY/MM/DD/</text>
+  <text x="560" y="325" text-anchor="middle" class="small-text white-text">Daily CSVs</text>
+  <text x="560" y="340" text-anchor="middle" class="small-text white-text">CyberArk Reports</text>
+  <text x="560" y="355" text-anchor="middle" class="small-text white-text">Excel Outputs</text>
+
+  <!-- Logic App 2 for Email -->
+  <rect x="680" y="250" width="200" height="110" rx="5" class="logic-app-box"/>
+  <text x="780" y="275" text-anchor="middle" class="component-title white-text">Logic App 2</text>
+  <text x="780" y="295" text-anchor="middle" class="component-title white-text">Email Distribution</text>
+  <text x="780" y="315" text-anchor="middle" class="small-text white-text">📧 Send Daily Report</text>
+  <text x="780" y="330" text-anchor="middle" class="small-text white-text">📎 Attach Excel + CSVs</text>
+  <text x="780" y="345" text-anchor="middle" class="small-text white-text">👥 Distribution List</text>
+
+  <!-- Phase 3: Reporting & Monitoring -->
+  <text x="970" y="90" class="phase-title">PHASE 3: Reporting &amp; Intelligence</text>
+  <rect x="950" y="100" width="400" height="280" rx="8" class="box" fill="#e8f5e9"/>
+  
+  <!-- Power BI Dashboard -->
+  <rect x="970" y="120" width="170" height="110" rx="5" class="report-box"/>
+  <text x="1055" y="145" text-anchor="middle" class="component-title white-text">Power BI Dashboard</text>
+  <text x="1055" y="165" text-anchor="middle" class="small-text white-text">📊 Real-time Metrics</text>
+  <text x="1055" y="180" text-anchor="middle" class="small-text white-text">📈 Trend Analysis</text>
+  <text x="1055" y="195" text-anchor="middle" class="small-text white-text">🎯 Compliance Score</text>
+  <text x="1055" y="210" text-anchor="middle" class="small-text white-text">⚠️ Alert Visualization</text>
+
+  <!-- Teams Notifications -->
+  <rect x="1160" y="120" width="170" height="110" rx="5" class="automation-box"/>
+  <text x="1245" y="145" text-anchor="middle" class="component-title white-text">Teams Integration</text>
+  <text x="1245" y="165" text-anchor="middle" class="small-text white-text">💬 Adaptive Cards</text>
+  <text x="1245" y="180" text-anchor="middle" class="small-text white-text">🚨 Critical Alerts</text>
+  <text x="1245" y="195" text-anchor="middle" class="small-text white-text">📊 Daily Summary</text>
+  <text x="1245" y="210" text-anchor="middle" class="small-text white-text">✅ Interactive Actions</text>
+
+  <!-- Sentinel Workbook -->
+  <rect x="970" y="250" width="170" height="110" rx="5" class="sentinel-box"/>
+  <text x="1055" y="275" text-anchor="middle" class="component-title white-text">Sentinel Workbook</text>
+  <text x="1055" y="295" text-anchor="middle" class="small-text white-text">📋 Check Results History</text>
+  <text x="1055" y="310" text-anchor="middle" class="small-text white-text">📊 Pass/Fail Trends</text>
+  <text x="1055" y="325" text-anchor="middle" class="small-text white-text">🔍 Drill-down Analysis</text>
+  <text x="1055" y="340" text-anchor="middle" class="small-text white-text">📅 Historical Comparison</text>
+
+  <!-- Auto-remediation -->
+  <rect x="1160" y="250" width="170" height="110" rx="5" class="api-box"/>
+  <text x="1245" y="275" text-anchor="middle" class="component-title white-text">Auto-Remediation</text>
+  <text x="1245" y="290" text-anchor="middle" class="component-title white-text">(Future Phase)</text>
+  <text x="1245" y="310" text-anchor="middle" class="small-text white-text">🤖 Auto-fix Known Issues</text>
+  <text x="1245" y="325" text-anchor="middle" class="small-text white-text">🎫 Auto-create Tickets</text>
+  <text x="1245" y="340" text-anchor="middle" class="small-text white-text">🔄 Workflow Automation</text>
+
+  <!-- Flow Arrows -->
+  <!-- Sentinel to Logic App -->
+  <path d="M 220 175 L 470 175" class="arrow"/>
+  
+  <!-- Watchlist to Logic App -->
+  <path d="M 310 200 L 310 220 L 470 220" class="arrow"/>
+  
+  <!-- Scheduler to Logic App -->
+  <path d="M 220 305 L 350 305 L 350 190 L 470 190" class="arrow-auto"/>
+  
+  <!-- CyberArk to Function -->
+  <path d="M 380 295 L 420 295 L 420 175 L 680 175" class="arrow-auto"/>
+  
+  <!-- Logic App 1 to Function -->
+  <path d="M 650 175 L 680 175" class="arrow"/>
+  
+  <!-- Logic App 1 to Storage -->
+  <path d="M 560 230 L 560 250" class="arrow-data"/>
+  
+  <!-- Function to Storage -->
+  <path d="M 780 230 L 780 240 L 650 240 L 650 270" class="arrow-data"/>
+  
+  <!-- Storage to Logic App 2 -->
+  <path d="M 650 305 L 680 305" class="arrow"/>
+  
+  <!-- Function to Logic App 2 -->
+  <path d="M 780 230 L 780 305" class="arrow"/>
+  
+  <!-- Logic App 2 to Power BI -->
+  <path d="M 880 305 L 920 305 L 920 175 L 970 175" class="arrow-output"/>
+  
+  <!-- Logic App 2 to Teams -->
+  <path d="M 880 305 L 920 305 L 920 160 L 1160 160" class="arrow-output"/>
+  
+  <!-- Storage to Sentinel Workbook -->
+  <path d="M 560 360 L 560 400 L 1055 400 L 1055 360" class="arrow-data"/>
+  
+  <!-- Logic App 2 to Auto-remediation -->
+  <path d="M 880 305 L 920 305 L 920 305 L 1160 305" class="arrow-output" stroke-dasharray="5,5"/>
+
+  <!-- Bottom: Key Benefits & Automation Flow -->
+  <rect x="50" y="420" width="1300" height="210" rx="8" class="highlight-box"/>
+  
+  <text x="700" y="450" text-anchor="middle" class="phase-title">🎯 AUTOMATION BENEFITS - ZERO MANUAL STEPS</text>
+  
+  <!-- Column 1: Automated Steps -->
+  <text x="80" y="480" class="component-title">✅ Fully Automated Steps:</text>
+  <text x="80" y="500" class="component-text">1️⃣ Daily trigger at 6:00 AM (configurable)</text>
+  <text x="80" y="515" class="component-text">2️⃣ CyberArk data automatically pulled via API</text>
+  <text x="80" y="530" class="component-text">3️⃣ All Sentinel KQL checks executed automatically</text>
+  <text x="80" y="545" class="component-text">4️⃣ PowerShell comparison runs in Azure Function</text>
+  <text x="80" y="560" class="component-text">5️⃣ Excel report auto-generated with formatting</text>
+  <text x="80" y="575" class="component-text">6️⃣ Email sent to distribution list with attachments</text>
+  <text x="80" y="590" class="component-text">7️⃣ All CSVs stored in organized folder structure</text>
+  <text x="80" y="605" class="component-text">8️⃣ Power BI dashboard auto-refreshed</text>
+
+  <!-- Column 2: Technical Stack -->
+  <text x="550" y="480" class="component-title">🔧 Technical Components:</text>
+  <text x="550" y="500" class="component-text">• Azure Logic Apps (Orchestration)</text>
+  <text x="550" y="515" class="component-text">• Azure Functions (PowerShell Processing)</text>
+  <text x="550" y="530" class="component-text">• Azure Storage (CSV/Excel Storage)</text>
+  <text x="550" y="545" class="component-text">• Microsoft Sentinel (KQL Functions)</text>
+  <text x="550" y="560" class="component-text">• CyberArk REST API (Data Integration)</text>
+  <text x="550" y="575" class="component-text">• Power BI (Dashboards &amp; Analytics)</text>
+  <text x="550" y="590" class="component-text">• Microsoft Teams (Notifications)</text>
+  <text x="550" y="605" class="component-text">• Azure Automation (Scheduling)</text>
+
+  <!-- Column 3: Business Value -->
+  <text x="950" y="480" class="component-title">💼 Business Value:</text>
+  <text x="950" y="500" class="component-text">⏱️ Time Saved: ~2 hours/day manual work eliminated</text>
+  <text x="950" y="515" class="component-text">🎯 Consistency: 100% reliable daily execution</text>
+  <text x="950" y="530" class="component-text">⚡ Speed: Results delivered by 6:30 AM daily</text>
+  <text x="950" y="545" class="component-text">📊 Accuracy: No human error in data processing</text>
+  <text x="950" y="560" class="component-text">🔍 Visibility: Real-time dashboards &amp; alerts</text>
+  <text x="950" y="575" class="component-text">📈 Scalability: Easy to add more checks</text>
+  <text x="950" y="590" class="component-text">💰 Cost: Minimal Azure consumption costs</text>
+  <text x="950" y="605" class="component-text">🔐 Security: Managed identities, no credentials stored</text>
+
+  <!-- Legend -->
+  <rect x="50" y="660" width="1300" height="90" rx="5" class="box" fill="white"/>
+  <text x="700" y="685" text-anchor="middle" class="phase-title">Legend - Data Flow</text>
+  
+  <!-- Legend items -->
+  <line x1="100" y1="705" x2="170" y2="705" class="arrow"/>
+  <text x="180" y="710" class="legend-text">Sentinel Execution Flow</text>
+  
+  <line x1="350" y1="705" x2="420" y2="705" class="arrow-auto"/>
+  <text x="430" y="710" class="legend-text">Automated Triggers</text>
+  
+  <line x1="600" y1="705" x2="670" y2="705" class="arrow-data"/>
+  <text x="680" y="710" class="legend-text">Data Storage</text>
+  
+  <line x1="820" y1="705" x2="890" y2="705" class="arrow-output"/>
+  <text x="900" y="710" class="legend-text">Report Output</text>
+
+  <line x1="1050" y1="705" x2="1120" y2="705" class="arrow-output" stroke-dasharray="5,5"/>
+  <text x="1130" y="710" class="legend-text">Future Enhancement</text>
+
+  <!-- Schedule Info -->
+  <text x="100" y="735" class="legend-text">⏰ Daily Schedule: 6:00 AM trigger → 6:30 AM email delivery</text>
+  <text x="650" y="735" class="legend-text">⏰ Weekly Schedule: Sunday 7:00 AM for weekly checks</text>
+
+  <!-- ===== ALTERNATIVE APPROACHES SECTION ===== -->
+  <rect x="50" y="770" width="1300" height="360" rx="8" fill="#fafafa" stroke="#2c3e50" stroke-width="2"/>
+  <text x="700" y="798" text-anchor="middle" class="phase-title" fill="#2c3e50">⚙️ PHASE 2 ALTERNATIVE APPROACHES — Choose Your Processing Engine</text>
+  <text x="700" y="816" text-anchor="middle" class="small-text" fill="#7f8c8d">Each option can replace or complement the Azure Function processing step</text>
+
+  <!-- Option 1: KQL Scheduled Analytics -->
+  <rect x="68" y="828" width="230" height="270" rx="8" fill="#0078d4" stroke="#005a9e" stroke-width="2"/>
+  <rect x="68" y="828" width="230" height="32" rx="8" fill="#005a9e"/>
+  <text x="183" y="849" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="bold" fill="white">KQL Scheduled Analytics</text>
+  <text x="183" y="878" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">🔍 Native Sentinel KQL</text>
+  <text x="183" y="896" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Scheduled Query Rules</text>
+  <text x="183" y="916" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Direct log analytics</text>
+  <text x="183" y="934" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">No extra services needed</text>
+  <text x="183" y="956" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ Simplest Setup</text>
+  <text x="183" y="974" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ Native Sentinel SIEM</text>
+  <text x="183" y="992" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ Limited Excel output</text>
+  <text x="183" y="1010" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ No CyberArk compare</text>
+  <rect x="88" y="1050" width="190" height="28" rx="5" fill="#005a9e"/>
+  <text x="183" y="1069" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="bold" fill="white">Best for: Pure detection checks</text>
+  <text x="183" y="1090" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="10" fill="#e0e0e0">Complexity: Low</text>
+
+  <!-- Option 2: Logic App Workflows -->
+  <rect x="318" y="828" width="230" height="270" rx="8" fill="#00bcf2" stroke="#0099cc" stroke-width="2"/>
+  <rect x="318" y="828" width="230" height="32" rx="8" fill="#0099cc"/>
+  <text x="433" y="849" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="bold" fill="white">Logic App Workflows</text>
+  <text x="433" y="878" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">🔗 Low-code orchestration</text>
+  <text x="433" y="896" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Native Sentinel connector</text>
+  <text x="433" y="916" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Built-in retry logic</text>
+  <text x="433" y="934" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Visual designer</text>
+  <text x="433" y="956" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ 400+ connectors</text>
+  <text x="433" y="974" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ No-code friendly</text>
+  <text x="433" y="992" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ Limited scripting</text>
+  <text x="433" y="1010" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ Higher run cost</text>
+  <rect x="338" y="1050" width="190" height="28" rx="5" fill="#0099cc"/>
+  <text x="433" y="1069" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="bold" fill="white">Best for: Complex routing logic</text>
+  <text x="433" y="1090" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="10" fill="#2c3e50">Complexity: Low-Medium</text>
+
+  <!-- Option 3: Azure Function PowerShell - RECOMMENDED -->
+  <rect x="568" y="820" width="240" height="285" rx="8" fill="#ffb900" stroke="#cc9300" stroke-width="3"/>
+  <rect x="568" y="820" width="240" height="32" rx="8" fill="#cc9300"/>
+  <text x="688" y="841" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="bold" fill="white">Azure Function - PowerShell</text>
+  <rect x="618" y="856" width="140" height="20" rx="4" fill="#00b050"/>
+  <text x="688" y="870" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="bold" fill="white">★ RECOMMENDED ★</text>
+  <text x="688" y="896" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#2c3e50">Full PowerShell support</text>
+  <text x="688" y="914" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#2c3e50">Excel/CSV generation</text>
+  <text x="688" y="932" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#2c3e50">Custom CyberArk API calls</text>
+  <text x="688" y="950" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#2c3e50">Serverless, scalable</text>
+  <text x="688" y="970" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#006600">✅ Existing PS scripts reuse</text>
+  <text x="688" y="988" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#006600">✅ Full scripting power</text>
+  <text x="688" y="1006" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#006600">✅ Excel ImportExcel module</text>
+  <text x="688" y="1024" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#cc6600">⚠️ Requires dev skills</text>
+  <rect x="598" y="1050" width="180" height="28" rx="5" fill="#cc9300"/>
+  <text x="688" y="1069" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="bold" fill="white">Best for: Complex processing</text>
+  <text x="688" y="1092" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="10" fill="#2c3e50">Complexity: Medium</text>
+
+  <!-- Option 4: Azure Automation Runbook -->
+  <rect x="828" y="828" width="230" height="270" rx="8" fill="#e74856" stroke="#c13b44" stroke-width="2"/>
+  <rect x="828" y="828" width="230" height="32" rx="8" fill="#c13b44"/>
+  <text x="943" y="849" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="bold" fill="white">Azure Automation Runbook</text>
+  <text x="943" y="878" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">⚙️ Schedule-based runner</text>
+  <text x="943" y="896" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Shared runbook library</text>
+  <text x="943" y="916" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Hybrid worker support</text>
+  <text x="943" y="934" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Job history &amp; logs</text>
+  <text x="943" y="956" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ On-prem connectivity</text>
+  <text x="943" y="974" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ Reuse PS runbooks</text>
+  <text x="943" y="992" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ Slower cold start</text>
+  <text x="943" y="1010" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ Legacy service path</text>
+  <rect x="848" y="1050" width="190" height="28" rx="5" fill="#c13b44"/>
+  <text x="943" y="1069" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="bold" fill="white">Best for: Existing PS scripts</text>
+  <text x="943" y="1090" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="10" fill="#e0e0e0">Complexity: Low-Medium</text>
+
+  <!-- Option 5: Sentinel SOAR Playbooks -->
+  <rect x="1078" y="828" width="230" height="270" rx="8" fill="#00b294" stroke="#008f76" stroke-width="2"/>
+  <rect x="1078" y="828" width="230" height="32" rx="8" fill="#008f76"/>
+  <text x="1193" y="849" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="bold" fill="white">Sentinel SOAR Playbooks</text>
+  <text x="1193" y="878" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">🤖 Built-in SOAR engine</text>
+  <text x="1193" y="896" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Incident-triggered runs</text>
+  <text x="1193" y="916" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Adaptive Cards alerts</text>
+  <text x="1193" y="934" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="white">Native Sentinel actions</text>
+  <text x="1193" y="956" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ Deep Sentinel integration</text>
+  <text x="1193" y="974" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffe066">✅ Auto-incident response</text>
+  <text x="1193" y="992" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ccffee">✅ Teams / email built-in</text>
+  <text x="1193" y="1010" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#ffcccc">⚠️ Alert-driven only</text>
+  <rect x="1098" y="1050" width="190" height="28" rx="5" fill="#008f76"/>
+  <text x="1193" y="1069" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="bold" fill="white">Best for: Incident automation</text>
+  <text x="1193" y="1090" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="10" fill="#e0e0e0">Complexity: Low</text>
+
+  <!-- Footer -->
+  <text x="700" y="1170" text-anchor="middle" class="small-text" fill="#7f8c8d">🚀 Full Automation - Zero Manual Intervention Required | Version 2.0 - April 2026</text>
+</svg>
