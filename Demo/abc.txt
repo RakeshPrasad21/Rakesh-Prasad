@@ -1,25 +1,24 @@
-
-// Step 1: Join vulnerability table with KB table to get exploit intelligence
 DeviceTvmSoftwareVulnerabilities
-| join kind=leftouter (
+| join kind=inner (
     DeviceTvmSoftwareVulnerabilitiesKB
-    | project CveId, ExploitInTheWild, PublicExploit, ActiveAlert, RansomwareCampaign
+    | project CveId, IsExploitAvailable
 ) on CveId
-| extend
-    ExploitAvailable = iif(IsExploitAvailable == true or PublicExploit == true or ExploitInTheWild == true, true, false),
-    AffectsMyOrg = iif(IsVulnerable == true, true, false)
-| summarize
-    TotalVulnerabilities = dcount(CveId),
+| summarize 
+    CriticalWithExploit = dcountif(CveId, VulnerabilitySeverityLevel == "Critical" and IsExploitAvailable == true),
+    HighWithExploit     = dcountif(CveId, VulnerabilitySeverityLevel == "High" and IsExploitAvailable == true),
+    TotalExploit        = dcountif(CveId, IsExploitAvailable == true)
+    by DeviceId, DeviceName
+
+
+DeviceTvmSoftwareVulnerabilities
+| join kind=inner (
+    DeviceTvmSoftwareVulnerabilitiesKB
+    | project CveId, IsExploitAvailable
+) on CveId
+| summarize 
+    TotalVuln = dcount(CveId),
     Critical = dcountif(CveId, VulnerabilitySeverityLevel == "Critical"),
-    High = dcountif(CveId, VulnerabilitySeverityLevel == "High"),    
-    // Threat: Exploit is Available
-    ExploitAvailableCount = dcountif(CveId, ExploitAvailable == true),
-    // Exposed Device: Affects my Organization
-    AffectsOrgCount = dcountif(CveId, AffectsMyOrg == true),
-    // Optional richer threat intel
-    ExploitInTheWild = dcountif(CveId, ExploitInTheWild == true),
-    PublicExploit = dcountif(CveId, PublicExploit == true),
-    ActiveAlert = dcountif(CveId, ActiveAlert == true),
-    RansomwareCampaign = dcountif(CveId, RansomwareCampaign == true)
-by DeviceName, DeviceId
-| top 5 by TotalVulnerabilities desc
+    High = dcountif(CveId, VulnerabilitySeverityLevel == "High"),
+    ExploitAvailable = dcountif(CveId, IsExploitAvailable == true)
+    by DeviceId, DeviceName
+| top 5 by TotalVuln desc
