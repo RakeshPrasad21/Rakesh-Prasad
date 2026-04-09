@@ -18,16 +18,19 @@
 ## Table of Contents
 
 1. [Executive Summary](#1-executive-summary)
-2. [Current State – As-Is Architecture](#2-current-state--as-is-architecture)
-3. [Gap Analysis](#3-gap-analysis)
-4. [Component Inventory](#4-component-inventory)
-5. [Implementation Options](#5-implementation-options)
-6. [Prerequisites & Dependencies](#6-prerequisites--dependencies)
-7. [Implementation Roadmap](#7-implementation-roadmap)
-8. [Risk Register](#8-risk-register)
-9. [Estimated Azure Cost](#9-estimated-azure-cost)
-10. [Success Metrics & Acceptance Criteria](#10-success-metrics--acceptance-criteria)
-11. [Recommended Next Steps](#11-recommended-next-steps)
+2. [Scope & Assumptions](#2-scope--assumptions)
+3. [Current State – As-Is Architecture](#3-current-state--as-is-architecture)
+4. [Gap Analysis](#4-gap-analysis)
+5. [Component Inventory](#5-component-inventory)
+6. [Implementation Options](#6-implementation-options)
+7. [Prerequisites & Dependencies](#7-prerequisites--dependencies)
+8. [Implementation Roadmap](#8-implementation-roadmap)
+9. [Risk Register](#9-risk-register)
+10. [Estimated Azure Cost](#10-estimated-azure-cost)
+11. [Security & Compliance Considerations](#11-security--compliance-considerations)
+12. [Success Metrics & Acceptance Criteria](#12-success-metrics--acceptance-criteria)
+13. [Recommended Next Steps](#13-recommended-next-steps)
+14. [Conclusion](#14-conclusion)
 
 ---
 
@@ -47,7 +50,47 @@ Results would be delivered automatically by **6:30 AM each day** with no human i
 
 ---
 
-## 2. Current State – As-Is Architecture
+## 2. Scope & Assumptions
+
+### In Scope
+
+| # | Item |
+|---|---|
+| 1 | Automation of the existing 20–25 daily Sentinel KQL check functions |
+| 2 | Automation of weekly Sentinel KQL check functions |
+| 3 | Automated CyberArk data retrieval via REST API |
+| 4 | Automated PowerShell-based comparison of Sentinel results vs CyberArk data |
+| 5 | Automated generation and email distribution of formatted Excel report |
+| 6 | Structured CSV and Excel storage in Azure Blob with lifecycle management |
+| 7 | Error alerting via Microsoft Teams and email on any step failure |
+| 8 | Power BI dashboard for historical trending and compliance visibility |
+| 9 | Sentinel Workbook for check history and pass/fail analysis |
+
+### Out of Scope
+
+| # | Item | Reason |
+|---|---|---|
+| 1 | Modifying the existing KQL check logic / function content | Separate SOC review process |
+| 2 | Auto-remediation of failed checks | Future phase – requires CAB approval |
+| 3 | Integration with ITSM ticketing systems (ServiceNow, etc.) | Future phase |
+| 4 | CyberArk PAM configuration changes | Managed by CyberArk admin team |
+| 5 | Power BI report design / branding | Handled by BI team post go-live |
+| 6 | Migration of historical check data | Data migration is a separate workstream |
+
+### Assumptions
+
+- The existing Sentinel KQL functions are stable, tested, and return consistent output schemas.
+- The CyberArk platform exposes a REST API that can be accessed from Azure using a service account or managed identity.
+- The existing Logic App has a valid Sentinel connection using a service principal or managed identity (not a personal user token).
+- SecOps team will be available for a 5-day parallel run validation in Phase 5 before manual steps are disabled.
+- The existing PowerShell comparison script is functional, documented, and owned by the SecOps engineering team.
+- Azure subscription exists and appropriate RBAC roles can be granted within the project timeline.
+- Microsoft 365 / Office 365 mailbox is available for automated email sending.
+- The organisation uses Microsoft Teams as the primary collaboration and alerting channel.
+
+---
+
+## 3. Current State – As-Is Architecture
 
 ### Process Flow
 
@@ -74,7 +117,7 @@ Results would be delivered automatically by **6:30 AM each day** with no human i
 
 ---
 
-## 3. Gap Analysis
+## 4. Gap Analysis
 
 > **3 Critical gaps** must be resolved to achieve full automation.
 
@@ -91,7 +134,7 @@ Results would be delivered automatically by **6:30 AM each day** with no human i
 
 ---
 
-## 4. Component Inventory
+## 5. Component Inventory
 
 | Component | Exists Today? | Current Role | Target Role | Action Required |
 |---|---|---|---|---|
@@ -108,7 +151,7 @@ Results would be delivered automatically by **6:30 AM each day** with no human i
 
 ---
 
-## 5. Implementation Options
+## 6. Implementation Options
 
 The key decision is which technology handles the **comparison and report generation** step (GAP-01, 02, 03).
 
@@ -184,7 +227,7 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-## 6. Prerequisites & Dependencies
+## 7. Prerequisites & Dependencies
 
 | Category | Requirement | Owner | Status |
 |---|---|---|---|
@@ -203,7 +246,7 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-## 7. Implementation Roadmap
+## 8. Implementation Roadmap
 
 ### Phase 1 – Foundations & CyberArk API Integration `Week 1–2`
 
@@ -274,7 +317,7 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-## 8. Risk Register
+## 9. Risk Register
 
 | Risk ID | Risk Description | Likelihood | Impact | Severity | Mitigation |
 |---|---|---|---|---|---|
@@ -288,7 +331,7 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-## 9. Estimated Azure Cost
+## 10. Estimated Azure Cost
 
 > Based on Consumption (pay-per-use) tier. Actual costs depend on check count and data volume.
 
@@ -304,7 +347,51 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-## 10. Success Metrics & Acceptance Criteria
+## 11. Security & Compliance Considerations
+
+Security is a first-class concern in this automation. The following controls must be implemented:
+
+### Identity & Access Management
+
+| Control | Implementation | Standard |
+|---|---|---|
+| No hardcoded credentials | All secrets stored in Azure Key Vault; never in code or config files | OWASP / CIS |
+| Managed Identity | Logic Apps and Azure Functions use system-assigned managed identities | Zero Trust |
+| Least privilege | Each component granted minimum RBAC roles required (e.g., Sentinel Reader for Logic App) | CIS Azure |
+| Service Principal rotation | CyberArk API service account password rotated every 90 days | ISO 27001 |
+| MFA on admin accounts | All Azure admin accounts require MFA | NIST 800-53 |
+
+### Data Security
+
+| Control | Implementation |
+|---|---|
+| Encryption at rest | Azure Storage uses AES-256 encryption by default |
+| Encryption in transit | All API calls use HTTPS / TLS 1.2+ |
+| Data classification | CSVs and Excel reports classified as **Internal – Confidential** |
+| Access control on storage | Storage containers use private access; SAS tokens with expiry for Logic App |
+| Email attachment security | Reports sent only to approved distribution list; no external recipients |
+
+### Audit & Logging
+
+| Control | Implementation |
+|---|---|
+| Function App logging | Application Insights captures all execution logs, exceptions, and durations |
+| Logic App run history | 90-day run history retained in Azure portal |
+| Storage access logs | Azure Storage analytics logs all read/write operations |
+| Key Vault audit logs | All secret access events logged to Azure Monitor / Log Analytics |
+| Sentinel audit trail | All KQL query executions logged in Sentinel audit logs |
+
+### Compliance Considerations
+
+- All Azure resources deployed in the organisation's approved region to comply with **data residency** requirements.
+- CyberArk integration must be reviewed and approved by the **CyberArk owner** and **Information Security** team before go-live.
+- Automated email distribution must comply with the organisation's **data handling policy** — verify recipients are authorised to receive security reports.
+- Azure Function code must be stored in a **source-controlled repository** (Git) with peer review before deployment.
+- Change management process (**CAB / change ticket**) required before disabling manual steps in Phase 5.
+
+---
+
+## 12. Success Metrics & Acceptance Criteria
 
 | Metric | Current Baseline | Target | Measurement Method |
 |---|---|---|---|
@@ -318,7 +405,7 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-## 11. Recommended Next Steps
+## 13. Recommended Next Steps
 
 | # | Action | Owner | Due | Priority |
 |---|---|---|---|---|
@@ -332,4 +419,47 @@ The key decision is which technology handles the **comparison and report generat
 
 ---
 
-*Daily Checks Automation – Discovery Report | Version 1.0 | April 7, 2026 | Internal – Confidential*
+---
+
+## 14. Conclusion
+
+This discovery report confirms that the Daily Checks automation workflow is **well-positioned for full end-to-end automation** with a focused 6-week implementation effort. The foundational work — Sentinel KQL functions, watchlist configuration, and the initial Logic App — is already in place and functioning. The remaining gaps are well-defined, technically solvable, and low in risk.
+
+### Key Findings
+
+| Finding | Detail |
+|---|---|
+| **60% already automated** | Steps 1–5 of the 8-step workflow are automated; only the CyberArk, comparison, and distribution steps remain manual |
+| **Low implementation risk** | Existing PowerShell scripts can be directly migrated to Azure Functions with minimal rewrite |
+| **Minimal cost** | Full automation costs approximately $25–$55/month in Azure consumption — a strong ROI against ~2 hours/day of manual SecOps effort |
+| **Quick win available** | CyberArk API integration (GAP-01) is the highest-impact single change and can be delivered in Week 1–2 independently |
+| **Security-first design** | Managed identities, Key Vault, and least-privilege RBAC ensure the automated pipeline meets enterprise security standards |
+
+### Recommended Approach
+
+The **Hybrid Logic App + Azure Function** architecture (Option 6) is the recommended path forward. This approach:
+
+- Preserves the existing Logic App investment and extends it
+- Moves the PowerShell comparison logic to a managed, serverless Azure Function
+- Introduces CyberArk REST API automation to eliminate the most critical manual dependency
+- Delivers real-time visibility via Power BI and Sentinel Workbook
+- Achieves full zero-touch automation by end of Week 6
+
+### Business Impact
+
+Upon completion, the Security Operations team will benefit from:
+
+- ⏱️ **~2 hours/day** of manual effort eliminated — equivalent to ~40 hours/month returned to the team
+- 📊 **Daily reports delivered by 6:30 AM** regardless of staff availability, leave, or incidents
+- 🎯 **99.9% execution reliability** backed by Azure SLA vs. ~80% manual consistency today
+- 🔍 **Full audit trail** across all check executions, data pulls, and report distributions
+- 📈 **Historical trending** enabling compliance reporting and pattern analysis over time
+- 🚨 **Proactive alerting** when checks fail — issues caught within minutes, not the next morning
+
+### Final Recommendation
+
+Approve this discovery report and proceed to **Phase 1 – Foundations** immediately. The two critical pre-work items (CyberArk API access confirmation and Azure RBAC request) should be initiated in **Week 0** to avoid blocking the technical delivery phases.
+
+---
+
+*Daily Checks Automation – Discovery Report | Version 1.0 | April 9, 2026 | Internal – Confidential*
