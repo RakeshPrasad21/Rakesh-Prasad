@@ -310,7 +310,7 @@ graph TB
     
     subgraph "Security Copilot Core"
         NLP[Natural Language<br/>Processing Engine]
-        AI[AI/ML Models<br/>GPT-4 Based]
+        AI[AI/ML Models]
         ORCHESTRATOR[Agent Orchestrator]
     end
     
@@ -404,7 +404,7 @@ graph TB
 - Test Sentinel Data Federation connector functionality
 - Verify cross-product data correlation (Defender + Entra + Intune + Purview)
 - Assess compatibility with existing SIEM/SOAR tools
-
+g
 **5. Calculate Business Value and ROI**
 - Document cost savings from reduced investigation time
 - Quantify threat detection improvements
