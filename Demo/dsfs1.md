@@ -260,7 +260,7 @@ graph LR
     end
     
     subgraph "Security Copilot Core"
-        AI[AI Engine<br/>GPT-4 Based]
+        AI[Security Copilit<br/>SCUs]
     end
     
     D1 --> AI
