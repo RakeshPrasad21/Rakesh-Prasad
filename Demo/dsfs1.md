@@ -260,7 +260,7 @@ graph LR
     end
     
     subgraph "Security Copilot Core"
-        AI[Security Copilit<br/>SCUs]
+        AI[AI Engine<br/>GPT-4 Based]
     end
     
     D1 --> AI
@@ -310,7 +310,7 @@ graph TB
     
     subgraph "Security Copilot Core"
         NLP[Natural Language<br/>Processing Engine]
-        AI[AI/ML Models]
+        AI[AI/ML Models<br/>GPT-4 Based]
         ORCHESTRATOR[Agent Orchestrator]
     end
     
@@ -404,7 +404,7 @@ graph TB
 - Test Sentinel Data Federation connector functionality
 - Verify cross-product data correlation (Defender + Entra + Intune + Purview)
 - Assess compatibility with existing SIEM/SOAR tools
-g
+
 **5. Calculate Business Value and ROI**
 - Document cost savings from reduced investigation time
 - Quantify threat detection improvements
@@ -951,10 +951,43 @@ Historical Pattern Match → Update Threat Intelligence Feed
 
 #### **Prerequisites**
 
-**Required Licenses:**
-- Microsoft Defender for Endpoint Plan 2
-- Microsoft Defender XDR
-- Security Copilot license
+**Required Products:**
+- Microsoft Security Copilot (with provisioned SCUs)
+
+**Note:** Agent runs automatically in background - no specific Defender for Endpoint version required
+
+#### **Permissions Required**
+
+**To View Agent Alerts:**
+- Standard access to Incidents and alerts queue in Microsoft Defender portal
+- Permissions to view and investigate incidents
+
+**No Setup Required - Agent is Always ON**
+
+#### **How It Works (Auto-Enabled)**
+
+**Step 1: Automatic Background Operation**
+- Agent runs continuously in Defender backend
+- No manual trigger or configuration needed
+- Correlates alerts, events, anomalies, threat intelligence
+
+**Step 2: Detection & Alert Generation**
+- When agent identifies threat gap/false negative
+- Automatically generates dynamic alert with full context
+- Alert appears in Incidents & alerts queues with "Security Copilot" as Detection source
+
+**Step 3: View Alert Details**
+- Select alert  title to view details
+- Agent provides:
+  - Natural language summary
+  - Recommended actions
+  - Mapped MITRE ATT&CK techniques
+  - Tailored remediation steps
+
+**Important Notes:**
+- During public preview: FREE (no SCU consumption)
+- General availability: Consumes Security Compute Units (SCUs)
+- Summary/recommendations are AI-generated - review for accuracy
 
 **Required Deployments:**
 - Defender for Endpoint agents on minimum 80% of devices
@@ -1023,10 +1056,31 @@ Security Signals (Identity, Endpoint, Network, Email)
 
 #### **Prerequisites**
 
-**Required Licenses:**
-- Microsoft Defender Threat Intelligence (MDTI) subscription
-- Microsoft Defender XDR
-- Security Copilot license
+**Required Products:**
+- Microsoft Security Copilot (with provisioned SCUs)
+
+**Required Plugins:**
+- Microsoft Threat Intelligence (required)
+- Microsoft Threat Intelligence agents (required)
+- Microsoft Defender External Attack Surface Management (optional - adds more context)
+
+**Permissions Required (User Account or Agent Identity):**
+
+**Required Permissions:**
+- Microsoft Defender for Endpoint: Access to Defender Vulnerability Management data
+- Security Reader: Access to Threat Analytics and agent results
+- Security Admin: Access to agent onboarding and configuration
+
+**Optional Permissions:**
+- Exposure Management (read): Access to Microsoft Security Exposure Management insights including EASM data
+
+**Role-Based Access:**
+- Owners and contributors can see agent-generated reports in Security Copilot agent library
+
+**Identity Requirements:**
+- User account or agent identity with appropriate permissions
+- Activate Microsoft Defender unified role-based access control (RBAC) model for role to take effect
+- Consider using dedicated service account for agents (separation of duties + security monitoring)
 
 **Data Sources Configuration:**
 - Microsoft Defender Threat Intelligence feed enabled
@@ -1035,14 +1089,57 @@ Security Signals (Identity, Endpoint, Network, Email)
   - MISP (Malware Information Sharing Platform)
   - Industry ISACs (Financial Services, Healthcare, etc.)
 
-**Organizational Context Setup:**
+#### **Setup Steps**
+
+**Step 1: Create Agent Identity (Recommended - Least Privilege)**
 ```powershell
-# Configure organizational profile for relevant intelligence
-Set-DefenderThreatIntelProfile -Industry "Financial Services" `
-    -Geography "North America" `
-    -AssetCriticality "High" `
-    -ComplianceFrameworks @("PCI-DSS", "NIST", "SOC2")
+# Set tenant admin rights
+$tenantId = "your-tenant-id"
+
+# Get access token
+$TOKEN = az account get-access-token --tenant $tenantId --resource-type ms-graph --query accessToken -o tsv
+
+# Register agent service principal  
+curl -X POST https://graph.microsoft.com/v1.0/servicePrincipals `
+  -H "Authorization: Bearer $TOKEN" `
+  -H "Content-Type: application/json" `
+  -d '{ "appId": "43d7b169-1d9e-4d32-8cd8-06c5974ed90c" }'
 ```
+
+**Step 2: Assign Least-Privileged Role in Defender Portal**
+- Navigate to Settings > Roles and permissions (Unified RBAC) > Assignments > Add assignment
+- **Principal:** Select service principal created in Step 1
+- **Role:** Custom role with:
+  - Security data basics (read)
+  - Posture management > Vulnerability management (read)
+- **Scope:** Minimal scope required (specific assets/subscriptions)
+
+**Step 3: Launch Agent Setup Wizard**
+- Navigate to Threat intelligence > Threat analytics in Microsoft Defender portal
+- Select "Set up agent" on Threat Intelligence Briefing Agent banner
+
+**Step 4: Review Agent Details**
+- Review agent capabilities and requirements
+- Select "Next"
+
+**Step 5: Connect Identity**
+- Select "Connect a user account or agent identity"
+- Authenticate with account/identity configured in Steps 1-2
+- Select "Continue"
+
+**Step 6: Customize Agent Parameters**
+- **Insights:** Number of vulnerabilities to research for active threats
+- **Look back days:** Days to research threats against vulnerabilities  
+- **Region:** Geographical area for relevant threats
+- **Industry:** Sector/industry vertical for relevant threats
+- **Scheduled runs:** Manual or automatic (default: every 7 days)
+- **Generated brief recipient:** Email address for briefing delivery
+
+**Step 7: Deploy Agent**
+- Select "Deploy agent"
+- Agent activates and begins scheduled/manual runs
+
+#### **Organizational Context Setup**
 
 **Asset Inventory:**
 - Complete asset inventory in Defender for Endpoint
@@ -1114,40 +1211,93 @@ Intelligence Sources → AI Aggregation Engine → Relevance Filtering
 
 #### **Prerequisites**
 
-**Required Licenses:**
+**Required Products:**
 - Microsoft Defender XDR
-- Microsoft Sentinel (recommended for extended hunting)
-- Security Copilot license
+- Microsoft Security Copilot (with access to Copilot features)
+- Microsoft Sentinel in Microsoft Defender portal (supported)
+
+**Required Access:**
+- Access to Advanced hunting page in Microsoft Defender portal
+- Security Copilot access enabled for the user
 
 **Data Retention:**
 - Minimum 30 days of advanced hunting data
 - Recommended 90 days for comprehensive historical analysis
-- Log Analytics workspace with sufficient retention configured
 
-**Required Skills/Training:**
-- SOC analysts familiar with KQL (Kusto Query Language)
-- Basic understanding of threat hunting methodology
-- MITRE ATT&CK framework knowledge recommended
+#### **Permissions Required**
 
-**Hunting Infrastructure:**
-```powershell
-# Verify advanced hunting availability
-Get-DefenderXDRHuntingQuota
+**To Use Threat Hunting Agent:**
+- Standard access to Advanced hunting in Microsoft Defender portal
+- Security Copilot user access (no special SOC analyst roles required)
+- Permissions vary based on data sources being queried (Defender XDR, Sentinel, etc.)
 
-# Expected: 10,000+ records per query, 30-day lookback minimum
+#### **Setup Steps**
 
-# Enable advanced hunting schema
-Enable-DefenderAdvancedHunting -Tables @(
-    "DeviceProcessEvents",
-    "DeviceNetworkEvents",
-    "DeviceFileEvents",
-    "DeviceRegistryEvents",
-    "DeviceLogonEvents",
-    "IdentityLogonEvents",
-    "EmailEvents",
-    "CloudAppEvents"
-)
+**Step 1: Activate Threat Hunting Agent Mode**
+- Navigate to Microsoft Defender portal > Hunting > Advanced hunting
+- Ensure "Threat Hunting Agent mode" is active (auto-activates with Security Copilot access)
+- Security Copilot side pane appears on right side of Advanced hunting page
+
+**Step 2: Start Hunting Session (No Configuration Required)**
+- Select Copilot button at top of query editor (if pane closed)
+- Choose suggested prompt OR type natural language question in prompt bar
+- Press Enter or select submit button
+
+**Example Queries (Natural Language):**
 ```
+"Give me the list of users who sent more than 100 emails in the last 30 days"
+"Show me all failed sign-in attempts for admin accounts this week"
+"Which devices communicated with suspicious domains today?"
+```
+
+**Step 3: Understand Agent Response Components**
+- **Direct Answer:** Natural language response in Copilot pane
+- **KQL Query:** Auto-generated and executed query in editor
+- **Query Logic:** Explanation of how query was built (select "See the logic behind the query")
+- **Results:** Displayed in advanced hunting results pane
+- **Observations:** Data highlights + chart above results (customizable chart type/grouping)
+- **Contextual Insights:** Additional insights from various resources
+- **Smart Suggestions:** Follow-up questions + remediation actions at bottom of pane
+
+**Step 4: Continue Investigation**
+- Ask follow-up questions (agent maintains context from session history)
+- Request query modifications
+- Select suggested actions  
+- Use advanced hunting features (save query, export results, create detection rule)
+
+**Step 5: Provide Feedback**
+- Select feedback icon (thumbs up/down)
+- Detailed feedback improves agent capabilities
+
+**Note:** No setup wizard required. Agent is available immediately upon accessing Advanced hunting with Security Copilot enabled.
+
+**Supported Hunt Scenarios:**
+```
+"Give me the list of users who sent more than 100 emails in the last 30 days"
+"Show me all failed sign-in attempts for admin accounts this week"
+"Which devices communicated with suspicious domains today?"
+```
+
+**Step 3: Understand Agent Response Components**
+- **Direct Answer:** Natural language response in Copilot pane
+- **KQL Query:** Auto-generated and executed query in editor
+- **Query Logic:** Explanation of how query was built (select "See the logic behind the query")
+- **Results:** Displayed in advanced hunting results pane
+- **Observations:** Data highlights + chart above results (customizable chart type/grouping)
+- **Contextual Insights:** Additional insights from various resources
+- **Smart Suggestions:** Follow-up questions + remediation actions at bottom of pane
+
+**Step 4: Continue Investigation**
+- Ask follow-up questions (agent maintains context from session history)
+- Request query modifications
+- Select suggested actions
+- Use advanced hunting features (save query, export results, create detection rule)
+
+**Step 5: Provide Feedback**
+- Select feedback icon (thumbs up/down)
+- Detailed feedback improves agent capabilities
+
+**Note:** No setup wizard required. Agent is available immediately upon accessing Advanced hunting with Security Copilot enabled.
 
 **Integration Setup:**
 - Custom detection rules capability enabled
@@ -1222,30 +1372,73 @@ Microsoft Entra (formerly Azure AD) provides **two autonomous agents** focused o
 
 #### **Prerequisites**
 
-**Required Licenses:**
+**Required Products:**
 - Microsoft Entra ID P2 (mandatory)
-- Security Copilot license
+- Security Copilot with available SCUs (on average <1 SCU per agent run)
 
-**Required Features Enabled:**
-- Entra ID Protection
-- Risk-based Conditional Access policies
-- Multi-Factor Authentication (MFA) for all users
-- Self-service password reset (SSPR)
+**Required Entra Roles:**
+- **For Setup & Action:** Security Administrator
+- **For Viewing Only:** Security Reader or Global Reader
+- **For Copilot Access:** Assign Security Copilot access role
 
-**Integration Requirements:**
+**Required Features:**
+- Microsoft 365 Copilot license
+- Frontier program enabled in Microsoft 365 admin center (Copilot > Settings > User access > Copilot Frontier)
+  - Note: Microsoft Entra Agent ID is part of Microsoft Agent 365, available through Frontier program
+
+**Privacy & Security Review:**
+- Review Privacy and data security in Microsoft Security Copilot documentation
+
+#### **Permissions Required**
+
+**To Set Up Agent:**
+- Security Administrator role (mandatory)
+
+**To View Agent & Suggestions:**
+- Security Reader OR Global Reader (read-only access)
+
+**To Act on Suggestions:**
+- Security Administrator role
+
+#### **Known Limitations**
+
+- Each agent run investigates up to 100 risky users (customizable via Agent Scope Setting)
+- Once agent starts: Cannot stop or pause (10-15 minutes duration for 100 users)
+- User identity only (workload identities not supported)
+- Manual admin approval required (no automatic remediation)
+- Agent analyzes: Entra sign-in logs, risk detections, risky users, audit logs
+- AI-generated summaries may be incomplete - human review required
+
+#### **Setup Steps**
+
+**Step 1: Verify Frontier Program Enabled**
 ```powershell
-# Enable Identity Protection
-Set-MsolDirSyncEnabled -EnableDirSync $true
-
-# Configure risk policies
-New-AzureADMSConditionalAccessPolicy -DisplayName "Risk-Based Policy" `
-    -State "Enabled" `
-    -Conditions @{SignInRiskLevels=@("medium","high")}
+# Check Microsoft 365 Admin Center
+# Navigate to: Copilot > Settings > User access > Copilot Frontier
+# Ensure enabled for users
 ```
 
-**Minimum User Base:**
-- 500+ active users recommended for meaningful analytics
-- 30 days of sign-in history for baseline establishment
+**Step 2: Navigate to Agent Setup**
+- Sign in to Microsoft Entra admin center as Security Administrator
+- Browse to ID Protection > Risky users
+- Select "Start agent" from banner message at top of report
+  - Avoid using account with PIM-activated roles
+
+**Step 3: Agent Activation**
+- Message displays: "The agent is starting its first run"
+- First run may take a few minutes to complete
+- Agent automatically investigates risky users (risk state = "At risk")
+
+**Step 4: Agent Workflow (Automatic)**
+1. Agent checks for new risky users with risk state "At risk"
+2. Identifies risky users within defined scope settings
+3. Investigates risky sign-ins and risk detections
+4. Generates findings and risk summary
+5. Recommends remediation action
+6. Enables chat for admin questions
+7. Stores custom instructions in agent memory
+
+**No Additional Configuration Required - Agent Runs Automatically**
 
 #### **Key Capabilities**
 
@@ -1300,26 +1493,103 @@ Low Risk → Allow | Medium Risk → Require MFA | High Risk → Block + Alert
 
 #### **Prerequisites**
 
-**Required Licenses:**
-- Microsoft Entra ID P1 (minimum for Conditional Access)
-- Microsoft Entra ID P2 (recommended for full optimization features)
-- Security Copilot license
+**Required Products:**
+- Microsoft Entra ID P1 license (minimum)
+- Security Copilot with available SCUs (on average <1 SCU per agent run)
 
-**Existing CA Policy Base:**
-- Minimum 5 Conditional Access policies deployed
-- At least one MFA enforcement policy active
-- Device compliance or hybrid join policy configured
+**Required Entra Roles:**
+- **For Activation (First Time):** Security Administrator
+- **For Viewing:** Security Reader OR Global Reader
+- **For Managing/Actions:** Conditional Access Administrator OR Security Administrator
+- **Assign CA Admins Copilot Access:** Give Conditional Access Administrators Security Copilot access role
 
-**Required Data:**
-```powershell
-# Enable sign-in log collection
-Set-AzureADDiagnosticSetting -Enabled $true `
-    -Category "SignInLogs" `
-    -RetentionInDays 90
+**Optional (Device Controls):**
+- Microsoft Intune licenses (for device-based controls recommendations)
 
-# Enable Conditional Access insights and reporting
-Enable-AzureADConditionalAccessInsights
-```
+**Privacy & Security Review:**
+- Review Privacy and data security in Microsoft Security Copilot documentation
+
+#### **Permissions Required**
+
+**View Agent Results & Suggestions:**
+- Security Copilot (read)
+- Security data basics (read) under Security operations permissions group in Defender portal
+  OR
+- Security Administrator in Microsoft Entra ID
+
+**View Feedback Page:**
+- Security Copilot (read) + Security data basics (read) + Email & collaboration metadata (read)
+  OR  
+- Security Administrator in Microsoft Entra ID
+
+**Manage Agent (Setup, Pause, Remove, Identity):**
+- Security Administrator in Microsoft Entra ID
+
+**Reject Feedback:**
+- Security Administrator in Microsoft Entra ID
+
+#### **Agent Limitations**
+
+- Once started: Cannot stop or pause (may take few minutes)
+- Policy consolidation: Evaluates max 4 similar policy pairs per run
+- Run from Microsoft Entra admin center (recommended)
+- Scanning limited to 24-hour period
+- Suggestions cannot be customized/overridden
+- Agent reviews up to 300 users and 150 applications per run
+
+#### **Setup Steps**
+
+**Step 1: Navigate to Agent Page**
+- Sign in to Microsoft Entra admin center as Security Administrator
+- From new home page: Select "Go to agents" from agent notification card
+  OR  
+- Select "Agents" from left navigation menu
+
+**Step 2: Access Conditional Access Optimization Agent**
+- Select "View details" on Conditional Access Optimization Agent tile
+
+**Step 3: Start Agent**
+- Select "Start agent" to begin first run
+
+**Step 4: Agent Workflow (Automatic)**
+
+**Initial Scanning Steps (No SCU Consumption):**
+1. Agent scans all Conditional Access policies in tenant
+2. Checks for policy gaps and consolidation opportunities
+3. Reviews previous suggestions (avoids duplicates)
+
+**Agent Action Steps (Consumes SCUs):**
+1. Identifies policy gap OR pair of policies to consolidate
+2. Evaluates custom instructions (if provided)
+3. Creates new policy in report-only mode OR suggests modification with custom logic
+
+**Step 5: Review Suggestions**
+- When agent completes: Suggestions appear in "Recent suggestions" box
+- Review policy recommendations:
+  - Require MFA
+  - Require device-based controls  
+  - Block legacy authentication
+  - Block device code flow
+  - Risky users/sign-ins/agents policies
+  - Policy consolidation
+  - Deep analysis (outlier policies)
+  - Deep analysis MFA gap analysis (Preview)
+  - Least-privileged access for agent identities (Preview)
+
+**Important:** Agent doesn't change existing policies without explicit admin approval. New policies created in report-only mode.
+
+#### **Optional: Configure Settings**
+
+Navigate to Settings tab for:
+- Automatic runs every 24 hours
+- Activity-based runs on tenant changes (Preview)
+- Enable policy creation in report-only mode
+- Microsoft Teams notifications
+- Phased rollout plans
+- Passkey adoption campaigns
+- ServiceNow integration (Preview)
+- Knowledge sources upload
+- Insights dashboard (Preview)
 
 **User Experience Baseline:**
 - 30 days of sign-in logs for user experience metrics
@@ -1395,35 +1665,65 @@ Microsoft Intune provides **four autonomous agents** focused on endpoint securit
 
 ### **1. Change Review Agent**
 
-**Purpose:** Automatically review and approve/reject configuration changes to Intune policies with risk assessment.
+**Purpose:** Automatically review Multi Admin Approval requests for PowerShell scripts with AI-powered risk assessment.
 
 #### **Prerequisites**
 
+**Cloud:**
+- Public cloud only (government clouds not supported)
+
 **Required Licenses:**
-- Microsoft Intune Plan 1 (minimum)
-- Security Copilot license
+- Microsoft Intune Plan 1 subscription
+- Microsoft Entra ID P2
+- Microsoft Defender Vulnerability Management
+- Microsoft Security Copilot with sufficient SCUs
 
-**Required Configurations:**
-- Intune tenant fully configured
-- Minimum 100 enrolled devices
-- Baseline configuration policies deployed
-- Compliance policies established
+**Required Plugins (Auto-Enabled):**
+- Microsoft Intune
+- Microsoft Entra
+- Microsoft Defender XDR
+- Microsoft Threat Intelligence
 
-**RBAC Requirements:**
-- Intune Administrator role for policy management
-- Policy and Profile Manager role for change approvals
-- Read-only Administrator for audit access
+**Platform Support:**
+- Windows
+- PowerShell scripts in Intune
 
-**Audit Configuration:**
-```powershell
-# Enable Intune audit logging
-Set-IntuneAuditLog -Enabled $true -RetentionDays 90
+#### **Permissions Required**
 
-# Configure change notification alerts
-New-IntuneNotificationRule -Name "Policy Changes" `
-    -EventType "PolicyModification" `
-    -NotifyAdmins $true
-```
+**To Enable/Configure:**
+- **Entra roles:** Intune Administrator + Security Reader + Entra/Identity risky user (read)
+- **Defender roles:** 
+  - Unified RBAC: Security Reader (Microsoft Entra ID)
+  - Granular RBAC: Custom RBAC with Security Reader equivalent permissions
+- **Security Copilot roles:** Copilot owner
+
+**To Use Agent:**
+- **Intune roles:** Read Only Operator OR custom role with equivalent permissions
+- **Entra roles:** Security Reader
+- **Defender roles:** Same access as enabling/configuring
+- **Security Copilot roles:** Copilot contributor
+
+#### **Setup Steps**
+
+**Step 1: Navigate to Agent**
+- Sign in to Microsoft Intune admin center
+- Go to Agents > Change Review Agent
+
+**Step 2: Start Setup**
+- In Overview, select "Set up Agent"
+- Review requirements in setup pane
+
+**Step 3: Activate Agent**  
+- Select "Start agent"
+- Agent operates until completion, displays results in Overview tab
+
+**Agent Auto-Workflow:**
+1. Signal aggregation (Defender Vulnerability Management, Entra ID, Intune MAA requests)
+2. Evaluates Windows PowerShell scripts for MAA requests
+3. Provides recommendations for max 10 requests per run
+4. Displays: Suggested Next Steps (Approve/Reject/Needs more info) with rationale
+
+**Note:** Agent identity runs under Intune admin account from setup. If not used for 90 days, auth expires - renew via "Renew authentication" button.
 
 #### **Key Capabilities**
 
@@ -1473,41 +1773,61 @@ Issue Detected → Automatic Rollback | Success → Full Deployment
 
 ### **2. Policy Configuration Agent**
 
-**Purpose:** Generate and optimize Intune policies based on security frameworks (NIST, CIS, Zero Trust) and organizational requirements.
+**Purpose:** Translate complex requirements and industry standards into actionable Intune settings catalog policies.
 
 #### **Prerequisites**
 
+**Cloud:**
+- Public cloud only (government clouds not supported)
+
 **Required Licenses:**
-- Microsoft Intune Plan 1 or Microsoft Intune Suite
-- Security Copilot license
+- Microsoft Intune Plan 1 subscription
+- Microsoft Security Copilot with sufficient SCUs
 
-**Framework Knowledge:**
-- Understanding of selected security framework (NIST 800-171, CIS Controls, etc.)
-- Organizational compliance requirements documented
-- Industry-specific regulations identified (HIPAA, PCI-DSS, CMMC)
+**Required Plugins:**
+- Microsoft Intune
 
-**Intune Foundation:**
-```powershell
-# Verify Intune setup completeness
-Get-IntuneDeviceCompliancePolicy | Measure-Object
-Get-IntuneDeviceConfigurationPolicy | Measure-Object
+**Platform Support:**
+- Windows
 
-# Minimum recommended: 5 compliance policies, 10 configuration policies
-```
+#### **Permissions Required**
 
-**Device Enrollment:**
-- Minimum 100 devices enrolled for testing
-- Mix of platforms (Windows, iOS, Android, macOS)
-- Device groups configured for targeted deployments
+**To Enable/Configure:**
+- **Security Copilot roles:** Copilot owner
+- **Intune roles:** Read only operator OR custom role with Device configurations/Read
 
-**Baseline Policies:**
-- At least one baseline configuration policy deployed
-- Security baseline for Windows 10/11 imported
-- Update rings configured for patch management
+**To Use & Generate Suggestions:**
+- **Security Copilot roles:** Copilot Contributor
+- **Intune roles:** Read only operator OR custom role with Device configurations/Read
 
-**RBAC Configuration:**
-- Intune roles defined (operators, helpdesk, read-only)
-- Scope tags configured for multi-tenant or multi-geo deployments
+**To Create Policies:**
+- **Security Copilot roles:** Copilot Contributor
+- **Intune roles:** Policy and Profile manager OR custom role with Device configurations/Create + Update
+
+#### **Setup Steps**
+
+**Step 1: Navigate to Agent**
+- Sign in to Microsoft Intune admin center
+- Select Agents > Policy Configuration Agent
+
+**Step 2: Begin Setup**
+- In Overview, select "Set up agent"
+- Review required permissions and setup requirements
+
+**Step 3: Activate Agent**
+- Select "Set up agent"
+- Agent completes activation and is ready
+
+**Agent Workflow:**
+1. **Input ingestion:** Upload document OR direct text (e.g., "All laptops must have BitLocker enabled with AES-256")
+2. **NLP parsing:** Agent parses language, identifies settings
+3. **Maps to Intune settings:** Finds corresponding settings catalog settings
+4. **Generates suggestions:** Compiles draft configuration profile
+5. **Admin review:** Review/remove/acknowledge unsupported items
+6. **Policy creation:** Create settings catalog policy (not enforced until assigned)
+7. **Deploy & monitor:** Assign to groups, devices report with new settings
+
+**Note:** Agent identity runs under account from setup. If not used for 90 days, auth expires - renew via "Renew authentication" button.
 
 #### **Key Capabilities**
 
@@ -1563,90 +1883,92 @@ Admin Prompt: "Create iOS device policy compliant with NIST 800-171"
 
 ### **3. Device Offboarding Agent**
 
-**Purpose:** Automate secure device decommissioning when employees leave the organization or devices reach end-of-life.
+> **⚠️ CRITICAL NOTICE: This agent is being sunsetted June 1, 2026**
+> - **April 30, 2026:** Cannot set up new instances
+> - **June 1, 2026:** Complete removal from Intune
+> - **Recommendation:** Plan alternative offboarding workflows
+
+**Purpose:** Identify devices that were retired, wiped, or deleted from Intune within the last 30 days, then disable their Entra ID objects.
 
 #### **Prerequisites**
 
+**Cloud:**
+- Public cloud only (government clouds not supported)
+
 **Required Licenses:**
-- Microsoft Intune Plan 1 (minimum)
-- Security Copilot license
-- Entra ID P1 or P2 (for automated workflows)
+- Microsoft Intune Plan 1 subscription
+- Microsoft Security Copilot with sufficient SCUs
 
-**HR System Integration:**
-- HR connector configured (Workday, SAP SuccessFactors, or custom API)
-- Termination event webhook or automation trigger
-- User lifecycle management process documented
+**Required Plugins:**
+- Microsoft Intune
 
-**Data Backup Infrastructure:**
-```powershell
-# Verify OneDrive backup capability
-Get-SPOSite -IncludePersonalSite $true | Where-Object {$_.StorageQuota -gt 0}
+**Platform Support:**
+- Supported: Windows, iOS/iPadOS, macOS, Android, Linux
+- **NOT Supported:**
+  - Hybrid Microsoft Entra-joined devices
+  - Autopilot devices
+  - Shared devices
+  - Microsoft Teams phones/devices
 
-# Configure automated backup before wipe
-Set-IntuneDeviceAction -Action "BackupBeforeWipe" -Enabled $true -Destination "OneDrive"
-```
+**Device Limitations:**
+- Max 10,000 devices can be identified per run
+- Only devices retired/wiped/deleted in last 30 days
 
-**Device Management Setup:**
-- Full device inventory maintained in Intune
-- Device ownership tagged (Corporate, BYOD, Shared)
-- Conditional Access enforcing device compliance
+#### **Permissions Required**
 
-**Wipe Policies Configured:**
-- Selective wipe templates for BYOD devices
-- Full wipe templates for corporate devices
-- BitLocker recovery keys escrowed
-- Certificate revocation lists updated
+**To Enable/Configure:**
+- **Security Copilot roles:** Copilot owner
+- **Intune roles:** Read Only Operator OR custom role with Device configurations/Read
 
-**Notification System:**
-- Email templates for offboarding notifications
-- ServiceNow or IT ticketing system integration
-- Audit trail for compliance reporting
+**To Use & View Results:**
+- **Security Copilot roles:** Copilot contributor
+- **Intune roles:** Read Only Operator OR custom role with Device configurations/Read
 
-**BYOD Considerations:**
-- Work profile or MAM (Mobile Application Management) policies
-- Clear separation of corporate vs. personal data
-- User consent for data removal
+**To Take Actions (Disable Devices):**
+- **Entra permissions:** Ability to disable Entra ID device objects
 
-#### **Key Capabilities**
+#### **Agent Identity**
 
-| Capability | Description |
-|------------|-------------|
-| **Automated Workflow Triggering** | Initiates offboarding from HR system termination event |
-| **Data Preservation** | Backups user data before device wipe |
-| **Selective Wipe** | Removes corporate data while preserving personal data (BYOD) |
-| **Certificate Revocation** | Invalidates device certificates and VPN profiles |
-| **Compliance Validation** | Ensures device no longer accesses corporate resources |
+- Runs under Intune admin account identity from setup
+- Identity refreshes with each run
+- If not used for 90 days: Auth expires, runs fail until renewal
+- Renew before 90-day limit
 
-#### **Offboarding Scenarios**
+#### **Setup Steps**
 
-- **Employee Termination:** Full device wipe, account disabled, data archived
-- **Device Theft/Loss:** Remote lock and wipe, location tracking
-- **BYOD Unenrollment:** Corporate app/data removal, personal data intact
-- **Device Replacement:** Data migration to new device, old device retired
-- **Contractor End-of-Engagement:** Guest account removal, app access revoked
+**Step 1: Navigate to Agent**
+- Sign in to Microsoft Intune admin center
+- Go to Agents > Device Offboarding Agent
 
-#### **Workflow**
+**Step 2: Begin Setup**
+- In Overview, select "Set up Agent"
+- Review requirements in setup pane
 
-```
-Termination Event (HR System: Workday, ServiceNow)
-            ↓
-    Automated Trigger → Intune Offboarding Agent
-            ↓
-User Data Backup → OneDrive/SharePoint Archive
-            ↓
-    Device Lock → Prevent New Data Access
-            ↓
-Selective/Full Wipe Execution → Certificate Revocation
-            ↓
-    Compliance Verification → Audit Log Entry
-```
+**Step 3: Activate Agent**
+- Select "Start agent"
+- Agent completes activation
+
+**Agent Workflow:**
+1. Identifies devices retired/wiped/deleted from Intune in last 30 days
+2. Lists Entra ID device objects for admin review
+3. Admin approves action
+4. Agent disables corresponding Entra ID objects
+5. **Important:** All other offboarding steps (account disable, data backup, etc.) must be handled through manual instructions or separate automation
+
+#### **Custom Instructions Support**
+
+Supported custom instructions:
+- Exclude devices by ID
+- Exclude devices by last activity date
+- Include devices by ID
+- Include devices by last activity date
 
 #### **Business Value**
 
-- **Prevents data leakage** from departing employees
-- **Compliance with GDPR** right-to-erasure (Article 17)
-- **Reduces offboarding time** from 8 hours to 15 minutes
-- **Audit trail** for security investigations
+- Identifies orphaned Entra ID device objects after Intune cleanup
+- Reduces security risk from inactive device accounts
+- Helps maintain clean Entra ID device inventory
+- **SCU Consumption:** Under 1 SCU per run
 
 #### **Reference Documentation**
 
@@ -1656,107 +1978,92 @@ Selective/Full Wipe Execution → Certificate Revocation
 
 ### **4. Vulnerability Remediation Agent**
 
-**Purpose:** Automatically detect, prioritize, and remediate endpoint vulnerabilities through patch management and configuration fixes.
+> **📋 STATUS: Limited Public Preview** (select customers only)
+
+**Purpose:** Automatically identify, prioritize, and provide remediation guidance for Windows client OS vulnerabilities using data from Microsoft Defender Vulnerability Management.
 
 #### **Prerequisites**
 
+**Cloud:**
+- Public cloud only (government clouds not supported)
+
 **Required Licenses:**
-- Microsoft Defender for Endpoint Plan 2 (includes Defender Vulnerability Management)
-- Microsoft Intune Plan 1
-- Security Copilot license
+- Microsoft Intune Plan 1 subscription
+- Microsoft Security Copilot with sufficient SCUs
+- **Microsoft Defender Vulnerability Management:**
+  - Option 1: Microsoft Defender for Endpoint Plan 2
+  - Option 2: Defender Vulnerability Management Standalone
 
-**Vulnerability Scanning Setup:**
-```powershell
-# Enable Defender Vulnerability Management
-Set-MpPreference -EnableDeviceControl $true
+**Required Plugins (Auto-Enabled):**
+- Microsoft Intune
+- Microsoft Defender XDR (for Vulnerability Management data)
 
-# Configure vulnerability assessment
-Enable-DefenderVulnerabilityManagement -ScanFrequency "Daily" `
-    -IncludeThirdPartyApps $true `
-    -SoftwareInventory $true
-```
+**Platform & CVE Support:**
+- **Supported:** Windows client OS
+- **NOT Supported:** Windows Server CVEs
+- **CVE Classification:** Low, Medium, High, Critical (based on CVSS score)
 
-**Integration with Vulnerability Scanners (Optional):**
-- Qualys VMDR connector
-- Rapid7 InsightVM integration
-- Tenable.io API connection
+#### **Permissions Required**
 
-**Patch Management Infrastructure:**
-- Windows Update for Business configured in Intune
-- Update rings defined for pilot/production deployments
-- Maintenance windows scheduled
-- Patch deployment testing group (pilot devices)
+**To Enable/Configure/Delete:**
+- **Intune roles:** Read Only Operator OR custom role with equivalent permissions
+- **Defender roles:** Security Reader OR equivalent custom RBAC role
+- **Security Copilot roles:** Copilot owner
 
-**Asset Criticality Classification:**
-```powershell
-# Tag critical assets for priority patching
-Set-IntuneDeviceTag -DeviceId "DC01" -Tags @("CriticalInfrastructure", "DomainController")
-Set-IntuneDeviceTag -DeviceId "SQL01" -Tags @("BusinessCritical", "Database")
-```
+**To Use Agent:**
+- **Intune roles:** Read Only Operator OR custom role with equivalent permissions
+- **Security Copilot roles:** Copilot contributor
 
-**Patch Compliance Baselines:**
-- SLA defined for critical (24 hours), high (7 days), medium (30 days) vulnerabilities
-- Automated patching approved for low-risk updates
-- Change approval workflow for mission-critical systems
+**Important Data Visibility Note:**
+- Admins may see data outside their Intune role assignment or scope tag assignments
+- Review data carefully before proceeding with agent permissions
 
-**Third-Party Application Patching:**
-- Supported apps: Adobe, Java, Chrome, Firefox, 7-Zip, etc.
-- Package deployment configured via Intune Win32 apps
-- SCCM integration (if hybrid management)
+#### **Agent Identity**
 
-**Monitoring & Reporting:**
-- Vulnerability dashboard configured
-- Email alerts for critical CVEs with active exploitation
-- Compliance reporting to security/compliance teams
+- Runs under Intune admin account identity from setup
+- Actions limited to account permissions
+- Identity refreshes with each run
+- If not used for 90 days: Auth expires, runs fail until renewal
+- Renew before 90-day limit
 
-#### **Key Capabilities**
+#### **Operational Considerations**
 
-| Capability | Description |
-|------------|-------------|
-| **Vulnerability Scanning** | Integrates with Defender for Endpoint, Qualys, Rapid7 |
-| **Risk-Based Prioritization** | Scores CVEs by exploitability, asset criticality, threat intelligence |
-| **Automatic Patch Deployment** | Deploys OS and 3rd-party app patches on schedule |
-| **Configuration Remediation** | Fixes insecure settings (weak ciphers, exposed ports) |
-| **Compliance Tracking** | Measures patching SLA performance |
+- Admin must manually start (no stop/pause once started)
+- Launch only from Microsoft Intune admin center
+- Session details visible only to user who set up agent
+- Only one agent instance per tenant/user context
+- Agent doesn't persist suggestions across runs
+- **Preview Status:** Available to select customers only
 
-#### **Vulnerability Sources**
+#### **Setup Steps**
 
-- **Microsoft Defender Vulnerability Management**
-- **CVE Databases (NVD, MITRE)**
-- **Threat Intelligence Feeds (Active Exploitation)**
-- **3rd-Party Scanners (Qualys, Tenable, Rapid7)**
+**Step 1: Navigate to Agent**
+- Sign in to Microsoft Intune admin center
+- Go to Agents > Vulnerability Remediation Agent
 
-#### **Workflow**
+**Step 2: Begin Setup**
+- In Overview, select "Set up Agent"
+- Review requirements in setup pane
 
-```
-Continuous Vulnerability Scan → CVE Detection
-            ↓
-    CVSS Score + Exploit Availability + Asset Criticality
-            ↓
-    Risk Score Calculation (1-10)
-            ↓
-Critical (9-10) → Emergency Patch | High (7-8) → 7-Day SLA | Medium (4-6) → 30-Day SLA
-            ↓
-    Automated Patch Testing (Pilot Group)
-            ↓
-Success → Production Rollout | Failure → Alert Admin
-            ↓
-    Compliance Dashboard (% Patched, SLA Performance)
-```
+**Step 3: Activate Agent**
+- Select "Start agent"
+- Agent completes activation
 
-#### **Prioritization Example**
-
-| CVE | CVSS | Exploited in Wild? | Asset Criticality | Risk Score | Action |
-|-----|------|-------------------|-------------------|------------|--------|
-| CVE-2026-1234 | 9.8 | Yes | Domain Controller | 10 | Emergency Patch (24h) |
-| CVE-2026-5678 | 7.5 | No | Developer Laptop | 6 | Standard Patch (30d) |
+**Agent Workflow:**
+1. **Data Collection:** Gathers vulnerability data from Defender Vulnerability Management
+2. **Analysis:** Evaluates each CVE from highest to lowest CVSS score
+3. **Prioritization:** Considers CVSS score, business impact, device count
+4. **Remediation Guidance:** Provides Intune-specific remediation actions
+5. **Tracking:** Recommends how to monitor remediation progress through Intune
 
 #### **Business Value**
 
-- **Reduces vulnerability window** from 90 days to 7 days average
-- **Prevents ransomware** exploiting unpatched systems (85% of incidents)
-- **Compliance with PCI-DSS** requirement 6.2 (patch within 30 days)
-- **Reduces manual patching effort** by 90%
+- Automatically prioritizes critical Windows client OS vulnerabilities
+- Provides actionable Intune-specific remediation guidance
+- Reduces manual vulnerability assessment time
+- Integrates Defender Vulnerability Management with Intune workflows
+- **SCU Consumption:** Under 1 SCU per run
+
 
 #### **Reference Documentation**
 
@@ -1779,73 +2086,76 @@ Microsoft Purview provides **two core autonomous agents** focused on data securi
 #### **Prerequisites**
 
 **Required Licenses:**
-- Microsoft Purview Insider Risk Management
-- Microsoft 365 E5 Compliance or E5 (includes Insider Risk)
-- Security Copilot license
+- Microsoft Purview Insider Risk Management with M365 E3/E5/A5/F5/G5
+- Standard per-seat licensing model OR pay-as-you-go billing model
+- Security Copilot license (for Microsoft 365 E5, see specific Security Copilot in M365 E5 documentation)
 
-**Required Data Connectors:**
-- HR data connector (for employment status, termination events)
-- Microsoft 365 audit logs (90+ day retention)
-- Entra ID sign-in logs
-- Defender for Endpoint signals (optional but recommended)
+**Required Plugins:**
+- Microsoft Purview
 
-**Configuration Requirements:**
-```powershell
-# Enable Insider Risk Management
-Enable-InsiderRiskManagement -TenantId "contoso.onmicrosoft.com"
+**Required Products:**
+- Security Copilot
+- Insider Risk Management
 
-# Configure HR connector
-New-InformationBarrierPolicy -Name "HR-Connector" `
-    -AssignedSegment "Employees" `
-    -SegmentsAllowed "HR-System"
-```
+#### **Permissions Required**
 
-**Policy Setup:**
-- Minimum 1 Insider Risk policy configured (data theft, departing employees, or risky browser usage)
-- Sensitivity labels deployed and applied to documents
-- Minimum 100 users in scope for policies
+**To View Activity:**
+- Insider Risk Management Analysts OR
+- Insider Risk Management Investigators OR
+- Insider Risk Management role group
 
-**Baseline Period:**
-- 30 days of user activity data for accurate risk scoring
+**To Manage Agent:**
+- All roles needed for view activity, PLUS
+- Purview Content Analyst role (in Purview Agent Management role group)
 
-#### **Key Capabilities**
+#### **Agent Identity**
 
-| Capability | Description |
-|------------|-------------|
-| **Automated Alert Evaluation** | Evaluates alerts based on user risk, file risk, and activity risk |
-| **Risk-Based Categorization** | Sorts alerts into four priority categories for efficient triage |
-| **User Behavior Analysis** | Analyzes user activity patterns and risk indicators |
-| **File Risk Assessment** | Evaluates sensitivity and access patterns of files involved |
-| **Activity Risk Scoring** | Scores activities based on insider risk indicators |
+- Runs as administrator who turned on the agent
+- Agent authentication expires after 90 days of non-use
+- **Action Required:** Renew agent authentication before 90-day expiration
 
-#### **Alert Categories**
+#### **Agent Permissions (What Agent Can Access)**
 
-The agent classifies Insider Risk Management alerts into four categories:
-- **Critical Priority:** High-risk alerts requiring immediate investigation
-- **High Priority:** Significant risk indicators requiring prompt attention
-- **Medium Priority:** Notable risk patterns requiring review
-- **Low Priority:** Minor anomalies for awareness and monitoring
+- Access policy configurations and settings in Insider Risk Management
+- Read activities and events in Microsoft Purview
+- Read file content and metadata involved in Insider Risk Management alerts
+- Store user feedback and apply feedback when evaluating alerts
 
-#### **Workflow**
+#### **Trigger Options**
 
-```
-Insider Risk Alert Generated → AI Risk Evaluation
-            ↓
-User Risk + File Risk + Activity Risk Assessment
-            ↓
-    Alert Categorization (Critical/High/Medium/Low)
-            ↓
-    Presented in Alerts Tab → Analyst Review
-            ↓
-    Investigation Workflow → Resolution Actions
-```
+- Runs on **selected schedule** OR
+- Runs on **one alert at a time**
+
+#### **Alert Categorization**
+
+The agent sorts triaged alerts into **4 priority categories** presented in Alerts tab:
+1. **High Priority:** Most critical alerts requiring immediate investigation
+2. **Medium Priority:** Notable risk patterns requiring review
+3. **Low Priority:** Minor anomalies for awareness and monitoring
+4. **Informational:** Alerts for context and awareness
+
+#### **Setup Steps**
+
+**Step 1: Navigate to Insider Risk Management**
+- Sign in to Microsoft Purview compliance portal
+- Go to Insider Risk Management > Agents
+
+**Step 2: Configure Agent**
+- Select Triage Agent
+- Review prerequisites
+- Choose trigger method (scheduled or on-demand)
+
+**Step 3: Activate Agent**
+- Turn on agent
+- Agent begins triaging alerts based on configured trigger
 
 #### **Business Value**
 
-- **Reduces alert triage time** from 2 hours to 10 minutes per alert
+- **Reduces alert triage time** through intelligent categorization
 - **Prioritizes high-risk insider threats** for immediate attention
-- **Reduces alert fatigue** through intelligent categorization
+- **Reduces alert fatigue** for security teams
 - **Improves investigation efficiency** with contextualized risk scoring
+- **SCU Consumption:** Under 1 SCU per triage run
 
 #### **Reference Documentation**
 
@@ -1855,98 +2165,91 @@ User Risk + File Risk + Activity Risk Assessment
 
 ### **2. Alert Triage Agent in Data Loss Prevention (DLP)**
 
+> **📋 STATUS: Preview**
+
 **Purpose:** Automatically evaluate and triage Data Loss Prevention (DLP) alerts based on sensitivity risk, exfiltration risk, and policy risk to reduce alert fatigue.
 
 #### **Prerequisites**
 
 **Required Licenses:**
-- Microsoft Purview Data Loss Prevention
-- Microsoft 365 E5 Compliance or E5
+- Microsoft Purview Data Loss Prevention with M365 E3/E5/A5/F5/G5
+- Standard per-seat licensing model OR pay-as-you-go billing model
 - Security Copilot license
 
-**Required DLP Policies:**
-- Minimum 1 active DLP policy configured
-- Policies must include **evidence collection** in rule configuration
-- For device-based DLP: [Evidence collection for file activities must be enabled](https://learn.microsoft.com/en-us/purview/dlp-copy-matched-items-learn#learn-about-evidence-collection-for-file-activities-on-devices)
+**Required Product Setup:**
+- **For device-based DLP:** Evidence collection for file activities must be enabled
+- **For DLP policies:** Evidence collection must be enabled in rule configuration ([Learn about evidence collection](https://learn.microsoft.com/en-us/purview/dlp-copy-matched-items-learn#learn-about-evidence-collection-for-file-activities-on-devices))
 
-**Workload Coverage:**
-```powershell
-# Enable DLP across required workloads
-Enable-DlpCompliancePolicy -Workloads @(
-    "Exchange",        # Email DLP
-    "SharePoint",      # SharePoint Online
-    "OneDrive",        # OneDrive for Business
-    "Teams",           # Teams messages and files
-    "Devices",         # Endpoint DLP
-    "ThirdPartyApps"   # Defender for Cloud Apps
-)
+**Required Plugins:**
+- Microsoft Purview
 
-# Enable evidence collection (required for Alert Triage Agent)
-Set-PolicyConfig -EnableDeviceFileActivityCollection $true
-```
+**Required Products:**
+- Security Copilot
+- Data Loss Prevention
 
-**Data Classification:**
-- Sensitivity labels deployed and published
-- Minimum 500 documents classified
-- Sensitive information types (SITs) configured for:
-  - Credit card numbers
-  - Social Security numbers
-  - Health records (HIPAA)
-  - Financial data (PCI)
-  - Custom organizational data types
+#### **Permissions Required**
 
-**Audit Logging:**
-- Unified audit log enabled with 90+ day retention
-- DLP alerts configured to generate events
-- Alert notification emails configured for compliance team
+**To View Activity:**
+- Insider Risk Management Analysts OR
+- Insider Risk Management Investigators OR
+- Insider Risk Management role group
 
-**Minimum Baseline Period:**
-- 30 days of DLP policy operation for accurate risk assessment
-- Recommended: 90 days for mature risk modeling
+**To Manage Agent:**
+- All roles needed for view activity, PLUS
+- Purview Content Analyst role (in Purview Agent Management role group)
 
-#### **Key Capabilities**
+#### **Agent Identity**
 
-| Capability | Description |
-|------------|-------------|
-| **DLP Alert Evaluation** | Evaluates alerts based on sensitivity risk, exfiltration risk, and policy risk |
-| **Risk-Based Categorization** | Sorts DLP alerts into four priority categories for efficient triage |
-| **Sensitivity Analysis** | Assesses data classification and sensitivity labels |
-| **Exfiltration Risk Scoring** | Evaluates likelihood and impact of data exfiltration |
-| **Policy Compliance Check** | Analyzes alerts against DLP policy configurations |
+- Runs as administrator who turned on the agent
+- Agent authentication expires after 90 days of non-use
+- **Action Required:** Renew agent authentication before 90-day expiration
 
-#### **Alert Categories**
+#### **Agent Permissions (What Agent Can Access)**
 
-The agent classifies DLP alerts into four categories:
-- **Critical Priority:** High-risk data exfiltration requiring immediate action
-- **High Priority:** Significant policy violations requiring prompt investigation
-- **Medium Priority:** Notable compliance issues requiring review
-- **Low Priority:** Minor policy triggers for awareness
+- Access policy configurations and settings in Data Loss Prevention
+- Read activities and events in Microsoft Purview
+- Read file content and metadata involved in DLP alerts
+- Store user feedback and apply feedback when evaluating DLP alerts
 
-#### **Prerequisites**
+#### **Trigger Options**
 
-- For device-based DLP: [Evidence collection for file activities must be enabled](https://learn.microsoft.com/en-us/purview/dlp-copy-matched-items-learn#learn-about-evidence-collection-for-file-activities-on-devices)
-- DLP policies must include evidence collection in rule configuration
+- Runs on **selected schedule** OR
+- Runs on **one alert at a time**
 
-#### **Workflow**
+#### **Alert Categorization**
 
-```
-DLP Alert Triggered (Email, SharePoint, Endpoint, Cloud Apps)
-            ↓
-Sensitivity Risk + Exfiltration Risk + Policy Risk Assessment
-            ↓
-    Alert Categorization (Critical/High/Medium/Low)
-            ↓
-    Presented in DLP Alerts Page → Analyst Review
-            ↓
-    Investigation & Remediation → Policy Tuning
-```
+The agent sorts triaged alerts into **4 priority categories** presented in DLP Alerts page:
+1. **High Priority:** Most critical data loss risks requiring immediate investigation
+2. **Medium Priority:** Notable policy violations requiring review
+3. **Low Priority:** Minor policy triggers for awareness
+4. **Informational:** Alerts for context and awareness
+
+#### **Setup Steps**
+
+**Step 1: Enable Evidence Collection**
+- For device-based DLP: Enable evidence collection for file activities on devices
+- Configure DLP policy rules to include evidence collection
+
+**Step 2: Navigate to DLP Agents**
+- Sign in to Microsoft Purview compliance portal
+- Go to Data Loss Prevention > Agents
+
+**Step 3: Configure Agent**
+- Select Alert Triage Agent
+- Review prerequisites
+- Choose trigger method (scheduled or on-demand)
+
+**Step 4: Activate Agent**
+- Turn on agent
+- Agent begins triaging alerts based on configured trigger
 
 #### **Business Value**
 
-- **Reduces DLP alert triage time** from 2 hours to 15 minutes per alert
+- **Reduces DLP alert triage time** through intelligent categorization
 - **Prioritizes critical data exfiltration** for immediate response
 - **Reduces false positives** through intelligent risk analysis
 - **Improves DLP policy effectiveness** with feedback-driven learning
+- **SCU Consumption:** Under 1 SCU per triage run
 
 #### **Reference Documentation**
 
@@ -1956,173 +2259,133 @@ Sensitivity Risk + Exfiltration Risk + Policy Risk Assessment
 
 ## 🔗 Microsoft Sentinel Data Federation Connector
 
-### **Current Status: Not Visible**
+### **Overview**
 
-#### **Issue Description**
+**Data Federation** enables Security Copilot to query external data sources from the Microsoft Sentinel data lake without moving data, providing unified security analytics across multiple platforms.
 
-The Sentinel Data Federation connector is currently **not visible or configured** in the environment. This connector is critical for enabling Security Copilot to ingest and analyze security data from Microsoft Sentinel for AI-powered threat hunting, investigation, and response.
+#### **Prerequisites**
 
----
+**Required Setup:**
+- **Sentinel Data Lake Onboarding:** Tenant must have Sentinel data lake onboarded
+- **Public Accessibility:** External data source must be publicly accessible (private endpoints not supported)
+- **Service Principal (for Azure Databricks/ADLS Gen2):**
+  - Service principal with appropriate permissions in data source
+  - Azure Key Vault configured with service principal client secret
+  - Microsoft Sentinel application identity needs permissions assigned to Key Vault
+- **File Format:** Data files must be in **delta parquet format**
 
-### **What is Data Federation?**
+**Required Permissions:**
+- Data (manage) permissions on System tables to configure data federation connector
 
-**Data Federation** enables Security Copilot to query multiple data sources (Sentinel, Defender XDR, Threat Intelligence) simultaneously without data movement. This provides:
+#### **Supported Data Sources**
 
-- **Unified security data access** across all Microsoft security products
-- **Real-time threat correlation** across identity, endpoint, network, cloud
-- **Natural language queries** that translate to KQL across federated sources
-- **Reduced data duplication** and storage costs
-
----
-
-### **Root Cause Analysis**
-
-**Potential Reasons for Connector Not Visible:**
-
-1. **Licensing Issue:**
-   - Security Copilot license not assigned to Sentinel subscription
-   - Sentinel not upgraded to required tier (Pro or greater)
-
-2. **Authentication/Permissions:**
-   - Service principal not granted Sentinel Reader role
-   - Microsoft Entra ID app registration missing API permissions
-
-3. **Configuration Not Completed:**
-   - Connector deployment initiated but not finalized
-   - Sentinel workspace not linked to Security Copilot tenant
-
-4. **Regional Availability:**
-   - Sentinel workspace in region where Data Federation not yet available
-   - Verify against [Microsoft regional rollout schedule](https://learn.microsoft.com/azure/sentinel/)
-
-5. **Preview Feature Flag:**
-   - Data Federation requires preview feature enablement
-   - Admin must opt-in via Azure Portal settings
+- **Microsoft Fabric:** Lakehouse tables
+- **Azure Data Lake Storage Gen2 (ADLS Gen2):** Storage accounts
+- **Azure Databricks:** Delta tables
 
 ---
 
-### **Remediation Steps**
+### **Setup Steps for Microsoft Fabric Federation**
 
-#### **Step 1: Verify Licensing**
+#### **Step 1: Configure Fabric Admin Settings**
 
-```powershell
-# Check Security Copilot license assignment
-Get-MsolAccountSku | Where-Object {$_.AccountSkuId -like "*COPILOT*"}
+- Sign in to Microsoft Fabric admin portal
+- Enable setting: **"External data sharing"**
+- Enable setting: **"Service principals can call Fabric public APIs"**
 
-# Check Sentinel tier
-Get-AzOperationalInsightsWorkspace -ResourceGroupName "RG-Sentinel" `
-    -Name "Sentinel-Workspace" | Select-Object Sku
-```
+#### **Step 2: Add Sentinel Platform Identity**
 
-**Expected Output:** `Sku = PerGB2018` (Pay-as-you-go) or higher
+- Identify the `msg-resources-` prefixed identity (Sentinel platform identity)
+- Add this identity as **Workspace Member** on your Lakehouse
 
----
+#### **Step 3: Create Fabric Connector Instance**
 
-#### **Step 2: Configure Service Principal**
+- Navigate to **Microsoft Sentinel** on Defender portal
+- Go to **Data federation** > **Catalog**
+- Select **Microsoft Fabric** row
+- Select **"Connect a connector"** in side panel
 
-```powershell
-# Create app registration for Security Copilot
-$app = New-AzADApplication -DisplayName "SecurityCopilot-Sentinel-Connector"
+#### **Step 4: Enter Connection Details**
 
-# Grant Sentinel Reader permissions
-New-AzRoleAssignment -ObjectId $app.ObjectId `
-    -RoleDefinitionName "Microsoft Sentinel Reader" `
-    -Scope "/subscriptions/{subscription-id}/resourceGroups/{rg-name}/providers/Microsoft.OperationalInsights/workspaces/{workspace-name}"
-```
+Configure the following:
+- **Instance name:** Friendly name for the connector (this will be appended to federated table names)
+- **Fabric workspace ID:** Copy from URL after `/groups/` in Fabric workspace
+- **Lakehouse table ID:** Copy from URL after `/lakehouses/` in Lakehouse
+- Select **"Next"**
 
----
+#### **Step 5: Select Tables**
 
-#### **Step 3: Enable Data Federation Connector**
+- Select the tables you want to federate
+- Select **"Next"**
 
-**Via Azure Portal:**
+#### **Step 6: Review & Connect**
 
-1. Navigate to **Microsoft Sentinel** > **Settings** > **Data connectors**
-2. Search for **"Security Copilot Data Federation"**
-3. Click **"Open connector page"**
-4. Click **"Connect"**
-5. Authenticate with Global Admin or Security Admin credentials
-6. Select Sentinel workspace(s) to federate
-7. Verify connection status: **"Connected"**
-
-**Via PowerShell:**
-
-```powershell
-# Enable Data Federation connector
-$workspaceId = "/subscriptions/{sub-id}/resourceGroups/{rg}/providers/Microsoft.OperationalInsights/workspaces/{workspace}"
-
-New-AzSentinelDataConnector -ResourceGroupName "RG-Sentinel" `
-    -WorkspaceName "Sentinel-Workspace" `
-    -Kind "SecurityCopilotDataFederation" `
-    -DataTypes @("SecurityAlert", "SecurityIncident", "ThreatIntelligenceIndicator")
-```
+- Review the federation target configuration
+- Select **"Connect"** to create the connection instance
 
 ---
 
-#### **Step 4: Validate Connectivity**
+### **Verify Federated Tables**
 
-**Test Query in Security Copilot:**
+#### **Navigate to Tables**
 
-```
-Prompt: "Show me all high-severity incidents from Sentinel in the last 7 days"
+- Go to **Microsoft Sentinel** > **Configuration** > **Tables**
+- **Filter by Type:** Federated
 
-Expected Response:
-- Query executes successfully
-- Results displayed from federated Sentinel workspace
-- Include incident ID, title, severity, status, creation time
-```
+#### **Find Tables by Name**
 
-**Check Logs:**
+- Search by connector instance name
+- Federated tables are listed as: `tablename_instancename`
+- Example: `hrlogs_GlobalHRData`
 
-```kql
-// In Sentinel Log Analytics
-SentinelHealth
-| where OperationName == "DataFederationConnectivity"
-| where Status == "Success"
-| summarize Count = count() by bin(TimeGenerated, 1h)
-```
+#### **View Table Details**
+
+Select a table to open the details panel:
+- **Overview tab:** Table type, federation provider
+- **Data source tab:** Connector instance data provider, source product
+- **Schema tab:** Table schema (select "Refresh" to refresh schema)
 
 ---
 
-#### **Step 5: Troubleshooting**
+### **Troubleshooting**
 
-**If connector still not visible:**
+#### **Connection Fails**
 
-```powershell
-# Check diagnostic logs
-Get-AzDiagnosticSetting -ResourceId $workspaceId
+**Check the following:**
+- ✅ Verify `msg-resources-` prefixed identity has correct Key Vault permissions
+- ✅ For Databricks/ADLS Gen2: Ensure Key Vault secret contains correct client secret
+- ✅ **Key Vault networking:** Must be set to **"Allow public access from all networks"** during configuration
+- ✅ Confirm external data source is publicly accessible (no private endpoints)
+- ✅ Check service principal permissions on target data source (Databricks, ADLS Gen2)
+- ✅ For Fabric: Check `msg-resources-` identity is granted Workspace Member permission
+- ✅ **Connection limit:** Max 100 connection instances (ADLS/Databricks = 1 instance each; Fabric may use more per connection)
 
-# Enable comprehensive logging
-Set-AzDiagnosticSetting -ResourceId $workspaceId `
-    -WorkspaceId $workspaceId `
-    -Enabled $true `
-    -Category @("DataFederationErrors", "ConnectorHealth")
+#### **Tables Don't Appear**
 
-# Review error logs
-AzureDiagnostics
-| where Category == "DataFederationErrors"
-| order by TimeGenerated desc
-| take 50
-```
+**Check the following:**
+- ✅ Verify service principal has read access to target tables (ADLS Gen2, Databricks, same tenant)
+- ✅ For Databricks: Grant **Data Reader** privilege preset + **External Use Schema** permission to service principal
+- ✅ For ADLS Gen2: Assign **Storage Blob Data Reader** role to service principal
 
-**Common Error Resolutions:**
+#### **Query Performance Issues**
 
-| Error | Resolution |
-|-------|------------|
-| `Insufficient permissions` | Grant "Microsoft Sentinel Contributor" to service principal |
-| `Workspace not found` | Verify workspace ID and subscription access |
-| `Feature not enabled` | Enable preview feature: `az feature register --namespace Microsoft.SecurityInsights --name DataFederation` |
-| `Regional limitation` | Migrate Sentinel workspace to supported region (East US, West Europe) |
+**Optimize as follows:**
+- Consider data size being queried (large datasets may be slow)
+- Optimize queries to filter data early in the query logic
+- Check network connectivity between Sentinel and external data source
 
 ---
 
-### **Expected Outcome**
+### **Business Value**
 
-Once configured correctly:
+- **Unified Analytics:** Query external data sources directly from Sentinel without data movement
+- **Cost Savings:** Eliminate data duplication and storage costs
+- **Real-Time Insights:** Access current data without ingestion delays
+- **Flexible Integration:** Supports Fabric, ADLS Gen2, and Databricks data sources
 
-- **Connector Status:** ✅ Connected
-- **Data Flow:** Security Copilot can query Sentinel logs in real-time
-- **Unified Investigations:** Correlate Sentinel alerts with Defender XDR incidents
-- **Natural Language Queries:** "Are there any Sentinel alerts related to anomalous sign-ins from Russia?" → Automatic KQL execution
+#### **Reference Documentation**
+
+- [Microsoft Sentinel Data Federation](https://learn.microsoft.com/en-us/azure/sentinel/data-federation)
 
 ---
 
