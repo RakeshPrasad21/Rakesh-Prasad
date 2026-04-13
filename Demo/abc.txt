@@ -22,3 +22,72 @@ DeviceTvmSoftwareVulnerabilities
     CriticalVulnerabilities = dcountif(CveId, VulnerabilitySeverityLevel == "Critical"),
     ExploitAvailable = dcountif(CveId, IsExploitAvailable == true)
     by DeviceName, DeviceId
+
+
+
+// Get last 24 hours of CrowdStrike alerts
+CrowdstrikeAlerts
+| where TimeGenerated > ago(24h)
+| summarize 
+    TotalAlerts = count(),
+    Critical = countif(Severity == "Critical"),
+    High = countif(Severity == "High"),
+    Medium = countif(Severity == "Medium"),
+    Low = countif(Severity == "Low"),
+    NewAlerts = countif(Status == "New"),
+    InProgress = countif(Status == "In Progress"),
+    Resolved = countif(Status == "Resolved")
+
+
+// Top 5 devices with most CrowdStrike alerts
+CrowdstrikeAlerts
+| where TimeGenerated > ago(24h)
+| where Severity in ("Critical", "High")
+| summarize 
+    AlertCount = count(),
+    CriticalCount = countif(Severity == "Critical"),
+    HighCount = countif(Severity == "High"),
+    LatestAlert = max(TimeGenerated)
+    by DeviceName, DeviceId
+| top 5 by AlertCount desc
+
+// New CrowdStrike detections (malware, suspicious activity)
+CrowdStrikeDetections
+| where TimeGenerated > ago(24h)
+| where DetectionStatus != "Resolved"
+| summarize 
+    TotalDetections = count(),
+    MalwareDetections = countif(DetectionType contains "Malware"),
+    SuspiciousActivity = countif(DetectionType contains "Suspicious"),
+    UniqueDevices = dcount(DeviceName),
+    UniqueThreatNames = dcount(ThreatName)
+| extend ChangeFromYesterday = TotalDetections // Calculate delta if needed
+
+// Open CrowdStrike cases requiring action
+CrowdStrikeCases
+| where Status in ("Open", "In Progress", "Assigned")
+| summarize 
+    TotalOpenCases = count(),
+    UnassignedCases = countif(AssignedTo == "" or isempty(AssignedTo)),
+    HighPriority = countif(Priority == "High"),
+    CriticalPriority = countif(Priority == "Critical"),
+    OldestCase = min(CreatedTime),
+    AverageAge = datetime_diff('hour', now(), avg(CreatedTime))
+    by CaseType
+
+
+// Top detected threat behaviors/tactics
+CrowdStrikeDetections
+| where TimeGenerated > ago(24h)
+| where isnotempty(ThreatBehavior) or isnotempty(MitreTactic)
+| summarize 
+    Count = count(),
+    AffectedDevices = dcount(DeviceName)
+    by ThreatBehavior, MitreTactic
+| top 10 by Count desc
+
+// Hourly trend for alert detection
+CrowdstrikeAlerts
+| where TimeGenerated > ago(24h)
+| summarize AlertCount = count() by bin(TimeGenerated, 1h)
+| order by TimeGenerated asc
