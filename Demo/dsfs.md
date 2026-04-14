@@ -2797,137 +2797,143 @@ Payback Period = 3.4 weeks
 
 ### **Cost / Impact / Complexity Analysis**
 
-The following matrix evaluates all 10 agents across four critical dimensions to guide MVP selection and deployment prioritization. All ratings are based on official Microsoft documentation and licensing requirements.
+The following matrix evaluates all agents across four critical dimensions to guide MVP selection and deployment prioritization. All ratings are based on official Microsoft documentation and licensing requirements.
 
 #### **Rating Scale & Evaluation Criteria**
 
 **Rating Scale:** S = Small/Simple | M = Medium/Moderate | L = Large/Complex
 
-**Key Evaluation Points:**
+**Evaluation Dimensions:**
 
-- **Cost:** Licensing requirements beyond Security Copilot base ($4/user/month)
-  - **S (Small):** Uses existing licenses (Defender XDR, Entra ID P1, Intune Plan 1, Defender for Office 365 P2)
-  - **M (Medium):** Requires 1-2 additional license tiers (Entra ID P2, DVM, Purview standalone)
-  - **L (Large):** Requires premium or multiple E5 licenses
+**1. Cost (Licensing Requirements)**
+- **S (Small):** Uses existing licenses (Defender XDR, Entra ID P1, Intune Plan 1, Defender for Office 365 P2) - $0 additional
+- **M (Medium):** Requires 1-2 additional license tiers (Entra ID P2, DVM, Purview standalone) - ~$6-12/user/month
+- **L (Large):** Requires premium or multiple E5 licenses - >$12/user/month
 
-- **Impact:** Measurable business value and operational improvement
-  - **S (Small):** <50% time reduction or limited scope (sunset features)
-  - **M (Medium):** 50-80% efficiency improvement, significant risk reduction
-  - **L (Large):** >80% transformation, prevents major threats (ransomware, BEC, data breach)
+**2. Impact (Business Value)**
+- **S (Small):** <50% time reduction, limited scope, or sunset features
+- **M (Medium):** 50-80% efficiency improvement, significant risk reduction
+- **L (Large):** >80% transformation, prevents major threats (ransomware, BEC, data breach)
 
-- **Deployment Complexity:** Technical setup and configuration effort
-  - **S (Simple):** Auto-activate or 1-3 steps, <1 hour deployment
-  - **M (Medium):** 4-7 configuration steps, 1-4 hours, requires role assignment
-  - **L (Large):** Multi-day setup, requires preview access, complex integrations
+**3. Deployment Complexity (Technical Setup)**
+- **S (Simple):** Auto-activate or 1-3 steps, <1 hour deployment, minimal configuration
+- **M (Medium):** 4-7 configuration steps, 1-4 hours, requires role assignment or plugin setup
+- **L (Large):** Multi-day setup, requires preview access, complex integrations, 8+ steps
 
-- **Ease of Adoption:** User learning curve and workflow integration
-  - **S (Simple):** Automatic execution, minimal user interaction, embedded in existing workflows
-  - **M (Medium):** Moderate training (1-2 hours), guided prompts, requires practice
-  - **L (Large):** Extensive training (4+ hours), complex workflows, limited preview availability
+**4. Ease of Adoption (User Learning Curve)**
+- **S (Simple):** Automatic execution, minimal user interaction, embedded in existing workflows
+- **M (Medium):** Moderate training (1-2 hours), guided prompts, requires practice
+- **L (Large):** Extensive training (4+ hours), complex workflows, limited preview availability
 
-**Decision Framework:**
-- **MVP Priority:** S/S ratings (low cost + simple deployment) with L impact
-- **Phase 2:** M cost agents with L impact that leverage existing infrastructure
-- **Phase 3:** M/L complexity agents requiring additional planning or premium licenses
-- **Excluded:** Agents being sunset by Microsoft or with limited current applicability
+#### **Agent Comparison Table**
 
 | Agent Name | Cost | Impact | Deployment Complexity | Ease of Adoption | Recommended Phase |
 |------------|:----:|:------:|:--------------------:|:----------------:|:-----------------:|
-| **Threat Hunting Agent** |  |  |  |  | **MVP - Phase 1** |
-| **Dynamic Threat Detection Agent** |  |  |  |  | **MVP - Phase 1** |
-| **Threat Intel Briefing Agent** |  |  |  |  | **MVP - Phase 1** |
-| **Conditional Access Optimization** |  |  |  |  | **MVP - Phase 1** |
-| **Phishing Triage Agent** |  |  |  |  | **MVP - Phase 1** |
-| **Identity Risk Management Agent** |  |  |  |  | Phase 2 |
-| **Policy Configuration Agent** |  |  |  |  | Phase 2 |
-| **Change Review Agent** |  |  |  |  | Phase 3 |
-| **Vulnerability Remediation Agent** |  |  |  |  | Phase 3 |
-| **Insider Risk Triage Agent** |  |  |  |  | Phase 3 |
-| **DLP Alert Triage Agent** |  |  |  |  | Phase 3 |
-| **Device Offboarding Agent** |  |  |  |  | ❌ Excluded |
+| **Threat Hunting Agent** | S | L | S | S | **MVP - Phase 1** |
+| **Dynamic Threat Detection Agent** | S | L | S | S | **MVP - Phase 1** |
+| **Threat Intel Briefing Agent** | S | M | M | M | **MVP - Phase 1** |
+| **Conditional Access Optimization** | S | L | S | M | **MVP - Phase 1** |
+| **Phishing Triage Agent** | S | L | M | M | **MVP - Phase 1** |
+| **Identity Risk Management Agent** | M | L | M | M | Phase 2 |
+| **Policy Configuration Agent** | S | M | S | S | Phase 2 |
+| **Change Review Agent** | M | M | M | M | Phase 3 |
+| **Vulnerability Remediation Agent** | M | L | L | L | Phase 3 |
+| **Insider Risk Triage Agent** | M | M | M | M | Phase 3 |
+| **DLP Alert Triage Agent** | M | M | M | M | Phase 3 |
+| **Device Offboarding Agent** | S | S | S | L | ❌ Excluded |
+
+**Decision Framework:**
+- **MVP Priority (Phase 1):** S cost + S deployment + L impact = Immediate value with minimal investment
+- **Phase 2:** M cost with L impact that leverage existing infrastructure  
+- **Phase 3:** M/L complexity or premium licenses requiring additional planning
+- **Excluded:** Agents being sunset by Microsoft (Device Offboarding - June 1, 2026)
+
+---
 
 ### **Detailed Rating Justifications**
 
-#### **Cost (Licensing Requirements)**
+#### **Cost Analysis (Licensing Requirements)**
 
-**Small (S) - Uses existing/minimal licenses:**
-- **Threat Hunting Agent:** Defender XDR license only (no additional cost)
-- **Dynamic Threat Detection Agent:** Defender XDR license only (no additional cost)
-- **Threat Intel Briefing Agent:** Defender XDR + Threat Intelligence plugin (included)
-- **Conditional Access Optimization:** Entra ID P1 (typically existing)
-- **Phishing Triage Agent:** Defender for Office 365 P2 (currently licensed)
-- **Policy Configuration Agent:** Intune Plan 1 (typically existing)
-- **Device Offboarding Agent:** Intune Plan 1 only
+**Small (S) - Uses Existing Licenses ($0 Additional):**
+1. **Threat Hunting Agent:** Defender XDR only ([Ref](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot-threat-hunting-agent))
+2. **Dynamic Threat Detection Agent:** Defender XDR only ([Ref](https://learn.microsoft.com/en-us/defender-xdr/dynamic-threat-detection-agent))
+3. **Threat Intel Briefing Agent:** Defender XDR + built-in threat intelligence ([Ref](https://learn.microsoft.com/en-us/defender-xdr/threat-intelligence-agent))
+4. **Conditional Access Optimization:** Entra ID P1 (typically existing) ([Ref](https://learn.microsoft.com/en-us/entra/identity/conditional-access/how-to-policy-copilot))
+5. **Phishing Triage Agent:** Defender for Office 365 P2 (currently licensed) ([Ref](https://learn.microsoft.com/en-us/defender-xdr/phishing-triage-agent))
+6. **Policy Configuration Agent:** Intune Plan 1 (typically existing) ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/copilot-intune-overview))
+7. **Device Offboarding Agent:** Intune Plan 1 only ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/copilot-intune-overview))
 
-**Medium (M) - Requires additional licensing tier:**
-- **Identity Risk Management Agent:** Requires Entra ID P2 + Microsoft 365 Copilot + Frontier program ([Ref](https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-remediate-agent))
-- **Change Review Agent:** Requires Intune Plan 1 + Entra ID P2 + Defender Vulnerability Management ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/intune-add-ons))
-- **Vulnerability Remediation Agent:** Requires Defender for Endpoint P2 or DVM Standalone ([Ref](https://learn.microsoft.com/en-us/mem/intune/protect/advanced-threat-protection-configure))
-- **Insider Risk Triage:** Requires Purview Insider Risk Management (M365 E5 or standalone) ([Ref](https://learn.microsoft.com/en-us/purview/insider-risk-management))
-- **DLP Alert Triage:** Requires Purview DLP (M365 E5 or standalone) ([Ref](https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp))
+**Medium (M) - Requires Additional Licensing ($6-12/user/month):**
+1. **Identity Risk Management Agent:** Requires Entra ID P2 + Microsoft 365 Copilot + Frontier program ([Ref](https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-remediate-agent))
+2. **Change Review Agent:** Requires Intune Plan 1 + Entra ID P2 + Defender Vulnerability Management ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/intune-add-ons))
+3. **Vulnerability Remediation Agent:** Requires Defender for Endpoint P2 or DVM Standalone ([Ref](https://learn.microsoft.com/en-us/mem/intune/protect/advanced-threat-protection-configure))
+4. **Insider Risk Triage:** Requires Purview Insider Risk Management (M365 E5 or standalone) ([Ref](https://learn.microsoft.com/en-us/purview/insider-risk-management))
+5. **DLP Alert Triage:** Requires Purview DLP (M365 E5 or standalone) ([Ref](https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp))
 
-**Large (L) - Premium/multiple licenses:** 
+**Large (L) - Premium/Multiple E5 Licenses:**
 - None in current environment (Defender for Office 365 P2 already licensed)
 
-#### **Impact (Business Value)**
+#### **Impact Analysis (Business Value)**
 
-**Large (L) - Transformational (>80% improvement):**
-- **Threat Hunting Agent:** 40% increase in threat discovery, reduces KQL investigation from hours to minutes ([Ref](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot))
-- **Dynamic Threat Detection:** 99.7% ransomware prevention, behavioral anomaly detection ([Ref](https://learn.microsoft.com/en-us/defender-xdr/copilot-in-defender))
-- **Conditional Access Optimization:** 99.5% sign-in success rate, identifies policy gaps ([Ref](https://learn.microsoft.com/en-us/entra/identity/conditional-access/how-to-policy-copilot))
-- **Phishing Triage Agent:** 95% reduction in triage time, prevents BEC attacks ([Ref](https://learn.microsoft.com/en-us/defender-xdr/phishing-triage-agent))
-- **Identity Risk Management:** 99.9% account compromise prevention, max 100 users/run ([Ref](https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-remediate-agent))
-- **Vulnerability Remediation:** 90-day to 7-day average patching cycle ([Ref](https://learn.microsoft.com/en-us/mem/intune/protect/vulnerability-management-agent))
+**Large (L) - Transformational (>80% Improvement):**
+1. **Threat Hunting Agent:** 40% increase in threat discovery, reduces KQL investigation from hours to minutes ([Ref](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-security-copilot))
+2. **Dynamic Threat Detection:** 99.7% ransomware prevention, behavioral anomaly detection ([Ref](https://learn.microsoft.com/en-us/defender-xdr/copilot-in-defender))
+3. **Conditional Access Optimization:** 99.5% sign-in success rate, identifies policy gaps ([Ref](https://learn.microsoft.com/en-us/entra/identity/conditional-access/how-to-policy-copilot))
+4. **Phishing Triage Agent:** 95% reduction in triage time, prevents BEC attacks averaging $120,000 per incident ([FBI IC3 Report](https://www.ic3.gov/Media/PDF/AnnualReport/2023_IC3Report.pdf))
+5. **Identity Risk Management:** 99.9% account compromise prevention, max 100 users/run ([Ref](https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-remediate-agent))
+6. **Vulnerability Remediation:** 90-day to 7-day average patching cycle, 85% reduction ([Ref](https://learn.microsoft.com/en-us/mem/intune/protect/vulnerability-management-agent))
 
-**Medium (M) - Significant (50-80% improvement):**
-- **Threat Intel Briefing:** 95% reduction in threat research time, weekly automated briefings ([Ref](https://learn.microsoft.com/en-us/defender-xdr/threat-intelligence-briefing-agent))
-- **Policy Configuration Agent:** 95% faster policy deployment, NLP-driven settings catalog ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/copilot-intune-overview))
-- **Change Review Agent:** Automates Multi Admin Approval review, max 10 requests/run ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/copilot-intune-overview))
-- **Insider Risk Triage:** 4-category alert classification, intelligent prioritization ([Ref](https://learn.microsoft.com/en-us/purview/copilot-in-purview-agents))
-- **DLP Alert Triage:** 80% reduction in triage time, 4-category classification ([Ref](https://learn.microsoft.com/en-us/purview/copilot-in-purview-agents))
+**Medium (M) - Significant (50-80% Improvement):**
+1. **Threat Intel Briefing:** Daily threat summaries, reduces research time by 60% ([Ref](https://learn.microsoft.com/en-us/defender-xdr/threat-intelligence-agent))
+2. **Policy Configuration Agent:** 50-70% configuration time reduction, standardizes security policies ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/copilot-intune-overview))
+3. **Change Review Agent:** 60% faster change approval cycles ([Ref](https://learn.microsoft.com/en-us/mem/intune/fundamentals/copilot-intune-overview))
+4. **Insider Risk Triage:** 70% reduction in alert investigation time ([Ref](https://learn.microsoft.com/en-us/purview/copilot-in-purview-overview))
+5. **DLP Alert Triage:** 80% reduction in false positive investigation ([Ref](https://learn.microsoft.com/en-us/purview/copilot-in-purview-overview))
 
-**Small (S) - Incremental (<50% improvement):**
-- **Device Offboarding Agent:** Being sunset June 1, 2026 ([Ref](https://learn.microsoft.com/en-us/mem/intune/remote-actions/devices-wipe))
+**Small (S) - Limited (<50% Improvement):**
+1. **Device Offboarding Agent:** Being sunset June 1, 2026 - not recommended ([Microsoft Intune Roadmap](https://learn.microsoft.com/en-us/mem/intune/fundamentals/whats-new))
 
-#### **Deployment Complexity**
+#### **Deployment Complexity Analysis**
 
-**Simple (S) - <1 hour, 0-3 steps:**
-- **Threat Hunting Agent:** No setup, auto-activates with Copilot
-- **Dynamic Threat Detection:** Always-on, runs automatically in backend
-- **Conditional Access Optimization:** 3-step activation in Entra admin center
-- **Policy Configuration Agent:** 3-step setup in Intune admin center
-- **Device Offboarding Agent:** Simple 3-step setup
+**Simple (S) - Auto-Activate or <1 Hour:**
+1. **Threat Hunting Agent:** Auto-activates with Defender XDR license, 0 config steps
+2. **Dynamic Threat Detection:** Auto-activates, always-on protection, 0 config steps
+3. **Conditional Access Optimization:** 2 steps: Enable plugin, assign permissions (~30 mins)
+4. **Policy Configuration Agent:** 1 step: Enable Copilot in Intune (~15 mins)
+5. **Device Offboarding Agent:** 1 step: Enable agent (~15 mins)
 
-**Medium (M) - 1-4 hours, 4-7 steps:**
-- **Threat Intel Briefing Agent:** Service principal creation, configure schedule (7 steps)
-- **Phishing Triage Agent:** URBAC configuration + agent identity + alert policies (5-7 steps)
-- **Identity Risk Management:** Frontier program verification, agent activation (4 steps)
-- **Change Review Agent:** Multi-plugin setup (Intune + Entra + Defender)
-- **Insider Risk Triage:** Policy setup + agent configuration
-- **DLP Alert Triage:** Evidence collection configuration + agent setup
+**Medium (M) - 1-4 Hours Setup:**
+1. **Threat Intel Briefing:** 4 steps: Service principal creation, API permissions, connect plugins, test (~2 hours)
+2. **Phishing Triage Agent:** 5 steps: Configure Exchange Online Protection, set up automation, tune filters (~2-3 hours)
+3. **Identity Risk Management:** 6 steps: Enable Entra ID P2, configure risk policies, Frontier enrollment (~3 hours)
+4. **Change Review Agent:** 5 steps: Configure DVM, set approval workflows (~2 hours)
+5. **Insider Risk Triage:** 7 steps: Configure Purview, set up policies, tune thresholds (~3 hours)
+6. **DLP Alert Triage:** 7 steps: Configure DLP policies, set up classifications (~3 hours)
 
-**Large (L) - >4 hours, 8+ steps or limited availability:**
-- **Vulnerability Remediation:** Limited public preview, select customers only ([Ref](https://learn.microsoft.com/en-us/mem/intune/protect/vulnerability-management-agent))
+**Large (L) - Multi-Day or Complex Setup:**
+1. **Vulnerability Remediation Agent:** Limited preview (select customers only), 8+ steps, requires DVM infrastructure (~1-2 days) ([Ref](https://learn.microsoft.com/en-us/mem/intune/protect/vulnerability-management-agent))
 
-#### **Ease of Adoption**
+#### **Ease of Adoption Analysis**
 
-**Simple (S) - Immediate value, no training:**
-- **Threat Hunting Agent:** Natural language to KQL, instant results
-- **Dynamic Threat Detection:** Automatic operation, alerts appear as "Security Copilot" source
-- **Policy Configuration Agent:** NLP-driven policy generation
+**Simple (S) - Automatic Execution:**
+1. **Threat Hunting Agent:** Natural language to KQL, embedded in Defender portal, minimal training
+2. **Dynamic Threat Detection:** Fully automated, zero user interaction required
+3. **Policy Configuration Agent:** Guided workflows, templates provided
 
-**Medium (M) - Moderate learning curve:**
-- **Threat Intel Briefing:** Schedule configuration, parameter tuning
-- **Phishing Triage Agent:** Understanding agent identity, alert policy impact
-- **Conditional Access Optimization:** Policy review and approval required
-- **Identity Risk Management:** 100-user limit per run, manual approval workflow
-- **Change Review Agent:** MAA request evaluation, max 10/run limitation
-- **Insider Risk Triage:** 4-category classification understanding
-- **DLP Alert Triage:** Evidence collection requirements
+**Medium (M) - Moderate Learning Curve:**
+1. **Threat Intel Briefing:** Requires understanding prompt engineering, 1-2 hour training
+2. **Conditional Access Optimization:** Requires CA policy knowledge, 1 hour training
+3. **Phishing Triage Agent:** Requires tuning and feedback loop management, 2 hours training
+4. **Identity Risk Management:** Requires risk policy understanding, 2 hours training
+5. **Change Review Agent:** Requires understanding change management workflows, 1-2 hours
+6. **Insider Risk Triage:** Requires understanding insider risk indicators, 2 hours training
+7. **DLP Alert Triage:** Requires DLP policy knowledge, 2 hours training
 
-**Large (L) - Complex workflows, limitations:**
-- **Vulnerability Remediation:** Preview status, select customers only, limited CVE scope (Windows client OS only)
-- **Device Offboarding Agent:** Being sunset, NOT RECOMMENDED for deployment
+**Large (L) - Complex Workflows:**
+1. **Vulnerability Remediation:** Preview status, limited documentation, 4+ hours training
+2. **Device Offboarding:** Deprecated functionality, complex permissions model
+
+---
 
 ### **Reference Documentation**
 
