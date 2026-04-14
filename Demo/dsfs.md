@@ -2799,6 +2799,38 @@ Payback Period = 3.4 weeks
 
 The following matrix evaluates all 10 agents across four critical dimensions to guide MVP selection and deployment prioritization. All ratings are based on official Microsoft documentation and licensing requirements.
 
+#### **Rating Scale & Evaluation Criteria**
+
+**Rating Scale:** S = Small/Simple | M = Medium/Moderate | L = Large/Complex
+
+**Key Evaluation Points:**
+
+- **Cost:** Licensing requirements beyond Security Copilot base ($4/user/month)
+  - **S (Small):** Uses existing licenses (Defender XDR, Entra ID P1, Intune Plan 1, Defender for Office 365 P2)
+  - **M (Medium):** Requires 1-2 additional license tiers (Entra ID P2, DVM, Purview standalone)
+  - **L (Large):** Requires premium or multiple E5 licenses
+
+- **Impact:** Measurable business value and operational improvement
+  - **S (Small):** <50% time reduction or limited scope (sunset features)
+  - **M (Medium):** 50-80% efficiency improvement, significant risk reduction
+  - **L (Large):** >80% transformation, prevents major threats (ransomware, BEC, data breach)
+
+- **Deployment Complexity:** Technical setup and configuration effort
+  - **S (Simple):** Auto-activate or 1-3 steps, <1 hour deployment
+  - **M (Medium):** 4-7 configuration steps, 1-4 hours, requires role assignment
+  - **L (Large):** Multi-day setup, requires preview access, complex integrations
+
+- **Ease of Adoption:** User learning curve and workflow integration
+  - **S (Simple):** Automatic execution, minimal user interaction, embedded in existing workflows
+  - **M (Medium):** Moderate training (1-2 hours), guided prompts, requires practice
+  - **L (Large):** Extensive training (4+ hours), complex workflows, limited preview availability
+
+**Decision Framework:**
+- **MVP Priority:** S/S ratings (low cost + simple deployment) with L impact
+- **Phase 2:** M cost agents with L impact that leverage existing infrastructure
+- **Phase 3:** M/L complexity agents requiring additional planning or premium licenses
+- **Excluded:** Agents being sunset by Microsoft or with limited current applicability
+
 | Agent Name | Cost | Impact | Deployment Complexity | Ease of Adoption | Recommended Phase |
 |------------|:----:|:------:|:--------------------:|:----------------:|:-----------------:|
 | **Threat Hunting Agent** |  |  |  |  | **MVP - Phase 1** |
