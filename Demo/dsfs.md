@@ -2827,26 +2827,31 @@ The following matrix evaluates all agents across four critical dimensions to gui
 
 #### **Agent Comparison Table**
 
-| Agent Name | Cost | Impact | Deployment Complexity | Ease of Adoption | Recommended Phase |
-|------------|:----:|:------:|:--------------------:|:----------------:|:-----------------:|
-| **Threat Hunting Agent** | S | L | S | S | **MVP - Phase 1** |
-| **Dynamic Threat Detection Agent** | S | L | S | S | **MVP - Phase 1** |
-| **Threat Intel Briefing Agent** | S | M | M | M | **MVP - Phase 1** |
-| **Conditional Access Optimization** | S | L | S | M | **MVP - Phase 1** |
-| **Phishing Triage Agent** | S | L | M | M | **MVP - Phase 1** |
-| **Identity Risk Management Agent** | M | L | M | M | Phase 2 |
-| **Policy Configuration Agent** | S | M | S | S | Phase 2 |
-| **Change Review Agent** | M | M | M | M | Phase 3 |
-| **Vulnerability Remediation Agent** | M | L | L | L | Phase 3 |
-| **Insider Risk Triage Agent** | M | M | M | M | Phase 3 |
-| **DLP Alert Triage Agent** | M | M | M | M | Phase 3 |
-| **Device Offboarding Agent** | S | S | S | L | ❌ Excluded |
+| Agent Name | Cost | Impact | Deployment Complexity | Ease of Adoption | Overall Comparative Value (S/M/L) | Recommended Phase |
+|------------|------|--------|----------------------|------------------|-----------------------------------|-------------------|
+| **Threat Hunting Agent** | Uses existing licenses (Defender XDR) - $0 additional | >80% transformation, reduces KQL investigation from hours to minutes, 40% increase in threat discovery | Auto-activate with Defender XDR license, 0 config steps, <15 mins | Automatic execution, natural language to KQL, embedded in Defender portal, minimal training | L | **MVP - Phase 1** |
+| **Dynamic Threat Detection Agent** | Uses existing licenses (Defender XDR) - $0 additional | >80% transformation, 99.7% ransomware prevention, behavioral anomaly detection, prevents major threats | Auto-activate, always-on protection, 0 config steps, immediate value | Automatic execution, zero user interaction required, fully autonomous | L | **MVP - Phase 1** |
+| **Threat Intel Briefing Agent** | Uses existing licenses (Defender XDR + built-in threat intelligence) - $0 additional | 50-80% efficiency improvement, daily threat summaries, reduces research time by 60% | 4 steps (service principal, API permissions, plugins, test), ~2 hours | Moderate training (1-2 hours), requires prompt engineering understanding, guided workflows | M | **MVP - Phase 1** |
+| **Conditional Access Optimization** | Uses existing licenses (Entra ID P1, typically existing) - $0 additional | >80% transformation, 99.5% sign-in success rate, identifies policy gaps, prevents unauthorized access | 2 steps (enable plugin, assign permissions), ~30 mins | Moderate training (1 hour), requires CA policy knowledge, guided prompts | L | **MVP - Phase 1** |
+| **Phishing Triage Agent** | Uses existing licenses (Defender for Office 365 P2, currently licensed) - $0 additional | >80% transformation, 95% reduction in triage time, prevents BEC attacks ($120K avg per incident) | 5 steps (configure EOP, automation setup, tune filters), 2-3 hours | Moderate training (2 hours), requires tuning and feedback loop management | L | **MVP - Phase 1** |
+| **Identity Risk Management Agent** | Requires Entra ID P2 + Microsoft 365 Copilot + Frontier program - ~$8/user/month additional | >80% transformation, 99.9% account compromise prevention, max 100 users/run, automated remediation | 6 steps (enable Entra ID P2, risk policies, Frontier enrollment), ~3 hours | Moderate training (2 hours), requires risk policy understanding, guided workflows | M | Phase 2 |
+| **Policy Configuration Agent** | Uses existing licenses (Intune Plan 1, typically existing) - $0 additional | 50-80% efficiency improvement, 50-70% configuration time reduction, standardizes security policies | 1 step (enable Copilot in Intune), ~15 mins | Automatic execution, guided workflows, templates provided, minimal training | M | Phase 2 |
+| **Change Review Agent** | Requires Intune Plan 1 + Entra ID P2 + Defender Vulnerability Management - ~$10/user/month | 50-80% efficiency improvement, 60% faster change approval cycles, improves compliance | 5 steps (configure DVM, approval workflows), ~2 hours | Moderate training (1-2 hours), requires change management workflow understanding | M | Phase 3 |
+| **Vulnerability Remediation Agent** | Requires Defender for Endpoint P2 or DVM Standalone - ~$6/user/month | >80% transformation, 90-day to 7-day average patching cycle (85% reduction), critical vulnerability prioritization | Multi-day setup, limited preview (select customers only), 8+ steps, requires DVM infrastructure | Extensive training (4+ hours), preview status with limited documentation, complex workflows | M | Phase 3 |
+| **Insider Risk Triage Agent** | Requires Purview Insider Risk Management (M365 E5 or standalone) - ~$12/user/month | 50-80% efficiency improvement, 70% reduction in alert investigation time, identifies data exfiltration risks | 7 steps (configure Purview, policies, tune thresholds), ~3 hours | Moderate training (2 hours), requires insider risk indicator understanding | M | Phase 3 |
+| **DLP Alert Triage Agent** | Requires Purview DLP (M365 E5 or standalone) - ~$12/user/month | 50-80% efficiency improvement, 80% reduction in false positive investigation, protects sensitive data | 7 steps (configure DLP policies, classifications), ~3 hours | Moderate training (2 hours), requires DLP policy knowledge | M | Phase 3 |
+| **Device Offboarding Agent** | Uses existing licenses (Intune Plan 1) - $0 additional | <50% improvement, being sunset June 1, 2026 - limited value | 1 step (enable agent), ~15 mins | Extensive training (4+ hours), deprecated functionality, complex permissions model | S | ❌ Excluded |
+
+**Overall Comparative Value Rating:**
+- **L (Large/High Value):** MVP-ready agents with $0 additional licensing, >80% impact, simple deployment - immediate ROI
+- **M (Medium Value):** Valuable agents requiring moderate investment or complexity - phased deployment recommended
+- **S (Small/Low Value):** Limited value agents, sunset features, or high complexity relative to benefit - deprioritize
 
 **Decision Framework:**
-- **MVP Priority (Phase 1):** S cost + S deployment + L impact = Immediate value with minimal investment
-- **Phase 2:** M cost with L impact that leverage existing infrastructure  
-- **Phase 3:** M/L complexity or premium licenses requiring additional planning
-- **Excluded:** Agents being sunset by Microsoft (Device Offboarding - June 1, 2026)
+- **MVP Priority (Phase 1):** Large overall value (S cost + S/M deployment + L impact) = Immediate value with minimal investment
+- **Phase 2:** Medium overall value with strategic importance (M cost + L impact or S cost + unique capabilities)
+- **Phase 3:** Medium overall value requiring additional planning (M/L complexity or premium licenses)
+- **Excluded:** Small overall value - agents being sunset by Microsoft (Device Offboarding - June 1, 2026)
 
 ---
 
