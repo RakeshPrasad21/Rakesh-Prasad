@@ -3302,173 +3302,486 @@ The following matrix evaluates all 12 agents across four critical dimensions to 
 
 ---
 
-### **Agent Incident Type Coverage**
+### **Agent Incident Type Coverage - Daily Volume Analysis**
 
-Below are KQL queries to identify which incident types each agent addresses in your environment.
+Below are enhanced KQL queries showing **daily incident trends, volumes, and coverage percentages** to understand exactly how many incidents each agent will handle.
 
 #### **Phishing Triage Agent**
-**Incident Types:** Email-based threats, phishing, credential harvesting, business email compromise (BEC)
+**Incident Types:** Email-based threats, phishing, credential harvesting, business email compromise (BEC)  
+**Expected Coverage:** 25-35% of total incidents | **Time Savings:** 95% reduction in triage time
 
 ```kql
-// Find phishing-related incidents in last 30 days
+// Daily phishing incident trends with coverage analysis
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("phishing", "spam", "BEC", "credential", "spoofing")
-| summarize IncidentCount = count(), 
-            AvgInvestigationTime = avg(TimeToClose),
-            IncidentsList = make_list(Title)
-    by Classification, Severity
-| project Classification, Severity, IncidentCount, 
-          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
-          IncidentsList
-| order by IncidentCount desc
+| where Title has_any ("phishing", "spam", "BEC", "credential", "spoofing", "email", "malicious attachment")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
+            AvgInvestigationTimeHours = avg(TimeToClose) / 3600.0,
+            TotalInvestigationHours = sum(TimeToClose) / 3600.0,
+            HighSeverity = countif(Severity == "High"),
+            TruePositives = countif(Classification == "TruePositive"),
+            FalsePositives = countif(Classification == "FalsePositive")
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents)
+| project IncidentDate, 
+          DailyIncidents, 
+          CumulativeIncidents,
+          AvgInvestigationTimeHours = round(AvgInvestigationTimeHours, 2),
+          TotalInvestigationHours = round(TotalInvestigationHours, 2),
+          HighSeverity,
+          TruePositives,
+          FalsePositives
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("phishing", "spam", "BEC", "credential", "spoofing", "email", "malicious attachment")
+    | summarize TotalPhishingIncidents = count(),
+                TotalInvestigationHours = sum(TimeToClose) / 3600.0
+    | extend AvgDailyIncidents = round(TotalPhishingIncidents / 30.0, 2),
+             CoveragePercent = round(TotalPhishingIncidents * 100.0 / TotalIncidents, 2),
+             PotentialTimeSavings95Percent = round(TotalInvestigationHours * 0.95, 2)
+    | project IncidentDate = now(),
+              DailyIncidents = TotalPhishingIncidents,
+              CumulativeIncidents = TotalPhishingIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalPhishingIncidents, " incidents | Avg Daily: ", AvgDailyIncidents, 
+                              " | Coverage: ", CoveragePercent, "% | Time Saved (95%): ", PotentialTimeSavings95Percent, " hours")
+)
 ```
 
 #### **Dynamic Threat Detection Agent**
-**Incident Types:** Ransomware, malware, anomalous behavior, lateral movement, privilege escalation
+**Incident Types:** Ransomware, malware, anomalous behavior, lateral movement, privilege escalation  
+**Expected Coverage:** 20-30% of total incidents | **Time Savings:** 70% reduction in detection time + 55% false positive reduction
 
 ```kql
-// Find behavioral threat incidents
+// Daily behavioral threat trends with ransomware prevention metrics
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("ransomware", "malware", "suspicious", "anomalous", "lateral movement", "privilege escalation")
-| summarize IncidentCount = count(),
-            AvgInvestigationTime = avg(TimeToClose),
-            IncidentsList = make_list(Title)
-    by Classification, Severity
-| project Classification, Severity, IncidentCount,
-          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
-          IncidentsList
-| order by IncidentCount desc
+| where Title has_any ("ransomware", "malware", "suspicious", "anomalous", "lateral movement", "privilege escalation", "behavioral")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
+            RansomwareIncidents = countif(Title has "ransomware"),
+            MalwareIncidents = countif(Title has "malware"),
+            AnomalousActivity = countif(Title has_any ("suspicious", "anomalous")),
+            AvgDetectionTimeHours = avg(TimeToClose) / 3600.0,
+            HighSeverity = countif(Severity == "High")
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents)
+| project IncidentDate,
+          DailyIncidents,
+          CumulativeIncidents,
+          RansomwareIncidents,
+          MalwareIncidents,
+          AnomalousActivity,
+          AvgDetectionTimeHours = round(AvgDetectionTimeHours, 2),
+          HighSeverity
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("ransomware", "malware", "suspicious", "anomalous", "lateral movement", "privilege escalation", "behavioral")
+    | summarize TotalBehavioralIncidents = count(),
+                TotalDetectionHours = sum(TimeToClose) / 3600.0,
+                RansomwareTotal = countif(Title has "ransomware")
+    | extend AvgDailyIncidents = round(TotalBehavioralIncidents / 30.0, 2),
+             CoveragePercent = round(TotalBehavioralIncidents * 100.0 / TotalIncidents, 2),
+             TimeSaved70Percent = round(TotalDetectionHours * 0.70, 2),
+             FalsePositiveReduction = "55% (from 70% to 15%)"
+    | project IncidentDate = now(),
+              DailyIncidents = TotalBehavioralIncidents,
+              CumulativeIncidents = TotalBehavioralIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalBehavioralIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Time Saved (70%): ", TimeSaved70Percent, " hours | FP Reduction: ", FalsePositiveReduction)
+)
 ```
 
 #### **Threat Hunting Agent**
-**Incident Types:** Advanced persistent threats (APT), zero-day exploits, complex multi-stage attacks
+**Incident Types:** Advanced persistent threats (APT), zero-day exploits, complex multi-stage attacks  
+**Expected Coverage:** 15-20% of total incidents | **Time Savings:** 80% reduction in complex investigation time
 
 ```kql
-// Find incidents requiring advanced threat hunting
+// Daily complex investigation trends requiring advanced hunting
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
 | where Severity in ("High", "Medium")
-| where Status != "Closed"
-| extend InvestigationTimeHours = (TimeToClose) / 3600.0
-| where InvestigationTimeHours > 2 or isempty(TimeToClose)
-| summarize TotalIncidents = count(),
-            AvgTimeHours = avg(InvestigationTimeHours),
-            OpenIncidents = countif(Status == "Active")
-    by Classification, Severity
-| order by TotalIncidents desc
+| extend InvestigationTimeHours = TimeToClose / 3600.0
+| where InvestigationTimeHours > 2 or isempty(TimeToClose) or Status != "Closed"
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyComplexIncidents = count(),
+            AvgInvestigationHours = avg(InvestigationTimeHours),
+            TotalInvestigationHours = sum(InvestigationTimeHours),
+            OpenIncidents = countif(Status in ("Active", "New")),
+            HighSeverity = countif(Severity == "High"),
+            LongRunning = countif(InvestigationTimeHours > 8)
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyComplexIncidents)
+| project IncidentDate,
+          DailyComplexIncidents,
+          CumulativeIncidents,
+          AvgInvestigationHours = round(AvgInvestigationHours, 2),
+          TotalInvestigationHours = round(TotalInvestigationHours, 2),
+          OpenIncidents,
+          HighSeverity,
+          LongRunning
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Severity in ("High", "Medium")
+    | extend InvestigationTimeHours = TimeToClose / 3600.0
+    | where InvestigationTimeHours > 2 or isempty(TimeToClose) or Status != "Closed"
+    | summarize TotalComplexIncidents = count(),
+                TotalInvestigationHours = sum(InvestigationTimeHours)
+    | extend AvgDailyIncidents = round(TotalComplexIncidents / 30.0, 2),
+             CoveragePercent = round(TotalComplexIncidents * 100.0 / TotalIncidents, 2),
+             TimeSaved80Percent = round(TotalInvestigationHours * 0.80, 2),
+             NewThreatDiscovery = "40% more threats discovered"
+    | project IncidentDate = now(),
+              DailyComplexIncidents = TotalComplexIncidents,
+              CumulativeIncidents = TotalComplexIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalComplexIncidents, " complex incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Time Saved (80%): ", TimeSaved80Percent, " hours | ", NewThreatDiscovery)
+)
 ```
 
 #### **Threat Intelligence Briefing Agent**
-**Incident Types:** CVE-based attacks, known threat actor campaigns, emerging threats
+**Incident Types:** CVE-based attacks, known threat actor campaigns, emerging threats  
+**Expected Coverage:** 10-15% of total incidents | **Time Savings:** 60% reduction in threat research time
 
 ```kql
-// Find incidents related to known CVEs and threat intelligence
+// Daily CVE and threat intelligence incident trends
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Description has_any ("CVE-", "vulnerability", "exploit", "threat actor")
-    or Title has_any ("CVE-", "vulnerability", "exploit")
-| summarize IncidentCount = count(),
-            UniqueCVEs = dcount(Description),
-            IncidentsList = make_list(Title)
-    by Severity
-| project Severity, IncidentCount, UniqueCVEs, IncidentsList
-| order by IncidentCount desc
+| where Description has_any ("CVE-", "vulnerability", "exploit", "threat actor", "campaign")
+    or Title has_any ("CVE-", "vulnerability", "exploit", "threat actor")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
+            UniqueCVEs = dcount(extract("CVE-[0-9]{4}-[0-9]+", 0, strcat(Title, " ", Description))),
+            CriticalSeverity = countif(Severity == "High"),
+            KnownThreatActors = countif(Description has "threat actor" or Title has "threat actor"),
+            AvgResearchTimeHours = avg(TimeToClose) / 3600.0
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents)
+| project IncidentDate,
+          DailyIncidents,
+          CumulativeIncidents,
+          UniqueCVEs,
+          CriticalSeverity,
+          KnownThreatActors,
+          AvgResearchTimeHours = round(AvgResearchTimeHours, 2)
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Description has_any ("CVE-", "vulnerability", "exploit", "threat actor", "campaign")
+        or Title has_any ("CVE-", "vulnerability", "exploit", "threat actor")
+    | summarize TotalThreatIntelIncidents = count(),
+                TotalUniqueCVEs = dcount(extract("CVE-[0-9]{4}-[0-9]+", 0, strcat(Title, " ", Description))),
+                TotalResearchHours = sum(TimeToClose) / 3600.0
+    | extend AvgDailyIncidents = round(TotalThreatIntelIncidents / 30.0, 2),
+             CoveragePercent = round(TotalThreatIntelIncidents * 100.0 / TotalIncidents, 2),
+             TimeSaved60Percent = round(TotalResearchHours * 0.60, 2)
+    | project IncidentDate = now(),
+              DailyIncidents = TotalThreatIntelIncidents,
+              CumulativeIncidents = TotalThreatIntelIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalThreatIntelIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Unique CVEs: ", TotalUniqueCVEs, " | Time Saved (60%): ", TimeSaved60Percent, " hours")
+)
 ```
 
 #### **Conditional Access Optimization Agent**
-**Incident Types:** Failed sign-ins, impossible travel, risky sign-ins, MFA failures
+**Incident Types:** Failed sign-ins, impossible travel, risky sign-ins, MFA failures  
+**Expected Coverage:** 20-25% of total incidents | **Prevention Rate:** 99.5% of risky sign-ins prevented with optimized policies
 
 ```kql
-// Find identity-related incidents that CA policies could prevent
+// Daily identity access incidents preventable by CA policies
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("sign-in", "authentication", "impossible travel", "risky", "MFA")
-| summarize IncidentCount = count(),
-            AvgInvestigationTime = avg(TimeToClose),
-            IncidentsList = make_list(Title)
-    by Classification, Severity
-| project Classification, Severity, IncidentCount,
-          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
-          IncidentsList
-| order by IncidentCount desc
+| where Title has_any ("sign-in", "authentication", "impossible travel", "risky", "MFA", "conditional access")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
+            ImpossibleTravel = countif(Title has "impossible travel"),
+            RiskySignIns = countif(Title has "risky"),
+            MFAFailures = countif(Title has "MFA"),
+            HighRisk = countif(Severity == "High"),
+            PreventableIncidents = count()  // 99.5% could be auto-prevented with CA
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents),
+         EstimatedPrevented = round(PreventableIncidents * 0.995, 0)
+| project IncidentDate,
+          DailyIncidents,
+          CumulativeIncidents,
+          ImpossibleTravel,
+          RiskySignIns,
+          MFAFailures,
+          HighRisk,
+          EstimatedPrevented
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("sign-in", "authentication", "impossible travel", "risky", "MFA", "conditional access")
+    | summarize TotalAccessIncidents = count()
+    | extend AvgDailyIncidents = round(TotalAccessIncidents / 30.0, 2),
+             CoveragePercent = round(TotalAccessIncidents * 100.0 / TotalIncidents, 2),
+             PreventedWith995Policy = round(TotalAccessIncidents * 0.995, 0),
+             PreventionRate = "99.5%"
+    | project IncidentDate = now(),
+              DailyIncidents = TotalAccessIncidents,
+              CumulativeIncidents = TotalAccessIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalAccessIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Preventable (99.5%): ", PreventedWith995Policy, " incidents")
+)
 ```
 
 #### **Identity Risk Management Agent**
-**Incident Types:** Compromised accounts, password spray, account takeover, risky users
+**Incident Types:** Compromised accounts, password spray, account takeover, risky users  
+**Expected Coverage:** 15-20% of total incidents | **Prevention Rate:** 99.9% with AI-driven risk detection
 
 ```kql
-// Find identity compromise incidents
+// Daily identity compromise trends with affected account analysis
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("account compromise", "password spray", "brute force", "account takeover", "compromised user")
-| summarize IncidentCount = count(),
+| where Title has_any ("account compromise", "password spray", "brute force", "account takeover", "compromised user", "credential")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
             AffectedAccounts = dcount(Owner),
-            AvgTimeToClose = avg(TimeToClose),
-            IncidentsList = make_list(Title)
-    by Classification, Severity
-| project Classification, Severity, IncidentCount, AffectedAccounts,
-          AvgTimeToCloseHours = AvgTimeToClose / 3600.0,
-          IncidentsList
-| order by IncidentCount desc
+            PasswordSprayAttacks = countif(Title has "password spray"),
+            AccountTakeovers = countif(Title has "takeover"),
+            HighRiskUsers = countif(Severity == "High"),
+            AvgRemediationHours = avg(TimeToClose) / 3600.0,
+            AutoRemediatable = round(count() * 0.85, 0)  // 85% can be auto-remediated
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents)
+| project IncidentDate,
+          DailyIncidents,
+          CumulativeIncidents,
+          AffectedAccounts,
+          PasswordSprayAttacks,
+          AccountTakeovers,
+          HighRiskUsers,
+          AvgRemediationHours = round(AvgRemediationHours, 2),
+          AutoRemediatable
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("account compromise", "password spray", "brute force", "account takeover", "compromised user", "credential")
+    | summarize TotalIdentityIncidents = count(),
+                TotalAffectedAccounts = dcount(Owner),
+                TotalRemediationHours = sum(TimeToClose) / 3600.0
+    | extend AvgDailyIncidents = round(TotalIdentityIncidents / 30.0, 2),
+             CoveragePercent = round(TotalIdentityIncidents * 100.0 / TotalIncidents, 2),
+             PreventionRate = "99.9%",
+             AutoRemediationRate = "85%",
+             TimeSaved = round(TotalRemediationHours * 0.85, 2)
+    | project IncidentDate = now(),
+              DailyIncidents = TotalIdentityIncidents,
+              CumulativeIncidents = TotalIdentityIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalIdentityIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Accounts: ", TotalAffectedAccounts, 
+                              " | Prevention: 99.9% | Auto-Remediation: 85% | Time Saved: ", TimeSaved, " hours")
+)
 ```
 
 #### **Vulnerability Remediation Agent**
-**Incident Types:** Unpatched vulnerabilities, missing security updates, exploit attempts
+**Incident Types:** Unpatched vulnerabilities, missing security updates, exploit attempts  
+**Expected Coverage:** 10-15% of total incidents | **Patch Time:** 90 days → 7 days (93% faster)
 
 ```kql
-// Find vulnerability-related incidents
+// Daily vulnerability incident trends with patch time analysis
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("vulnerability", "unpatched", "missing update", "CVE", "exploit")
+| where Title has_any ("vulnerability", "unpatched", "missing update", "CVE", "exploit", "patch")
     and Title !has "phishing"
-| summarize IncidentCount = count(),
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyVulnIncidents = count(),
             CriticalVulns = countif(Severity == "High"),
-            AvgPatchTime = avg(TimeToClose),
-            IncidentsList = make_list(Title)
-    by Severity
-| project Severity, IncidentCount, CriticalVulns,
-          AvgPatchTimeDays = AvgPatchTime / 86400.0,
-          IncidentsList
-| order by IncidentCount desc
+            ActiveExploits = countif(Title has "exploit"),
+            AvgCurrentPatchDays = avg(TimeToClose) / 86400.0,  // Current: ~90 days
+            TotalPatchDays = sum(TimeToClose) / 86400.0
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyVulnIncidents),
+         TargetPatchDays = 7.0,  // Agent target: 7 days
+         DaysSaved = round((AvgCurrentPatchDays - 7.0) * DailyVulnIncidents, 0)
+| project IncidentDate,
+          DailyVulnIncidents,
+          CumulativeIncidents,
+          CriticalVulns,
+          ActiveExploits,
+          AvgCurrentPatchDays = round(AvgCurrentPatchDays, 1),
+          TargetPatchDays,
+          DaysSaved
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("vulnerability", "unpatched", "missing update", "CVE", "exploit", "patch")
+        and Title !has "phishing"
+    | summarize TotalVulnIncidents = count(),
+                TotalCurrentPatchDays = sum(TimeToClose) / 86400.0,
+                CriticalTotal = countif(Severity == "High")
+    | extend AvgDailyIncidents = round(TotalVulnIncidents / 30.0, 2),
+             CoveragePercent = round(TotalVulnIncidents * 100.0 / TotalIncidents, 2),
+             CurrentAvgPatchTime = round(TotalCurrentPatchDays / TotalVulnIncidents, 1),
+             TargetPatchTime = 7.0,
+             TotalDaysSaved = round(TotalCurrentPatchDays - (TotalVulnIncidents * 7.0), 0),
+             SpeedImprovement = "93% faster (90 days → 7 days)"
+    | project IncidentDate = now(),
+              DailyVulnIncidents = TotalVulnIncidents,
+              CumulativeIncidents = TotalVulnIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalVulnIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Current Avg Patch: ", CurrentAvgPatchTime, " days | Target: 7 days | ",
+                              SpeedImprovement, " | Days Saved: ", TotalDaysSaved)
+)
 ```
 
 #### **Insider Risk Triage Agent**
-**Incident Types:** Data exfiltration, abnormal file access, policy violations
+**Incident Types:** Data exfiltration, abnormal file access, policy violations  
+**Expected Coverage:** 5-10% of total incidents | **Time Savings:** 70% reduction in investigation time
 
 ```kql
-// Find insider risk incidents
+// Daily insider risk incident trends with data exfiltration analysis
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("data exfiltration", "insider", "policy violation", "abnormal access", "sensitive data")
-| summarize IncidentCount = count(),
-            AvgInvestigationTime = avg(TimeToClose),
-            IncidentsList = make_list(Title)
-    by Classification, Severity
-| project Classification, Severity, IncidentCount,
-          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
-          IncidentsList
-| order by IncidentCount desc
+| where Title has_any ("data exfiltration", "insider", "policy violation", "abnormal access", "sensitive data", "unauthorized")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
+            DataExfiltration = countif(Title has "exfiltration"),
+            PolicyViolations = countif(Title has "policy violation"),
+            AbnormalAccess = countif(Title has "abnormal"),
+            HighRisk = countif(Severity == "High"),
+            AvgInvestigationHours = avg(TimeToClose) / 3600.0,
+            TotalInvestigationHours = sum(TimeToClose) / 3600.0
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents)
+| project IncidentDate,
+          DailyIncidents,
+          CumulativeIncidents,
+          DataExfiltration,
+          PolicyViolations,
+          AbnormalAccess,
+          HighRisk,
+          AvgInvestigationHours = round(AvgInvestigationHours, 2),
+          TotalInvestigationHours = round(TotalInvestigationHours, 2)
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("data exfiltration", "insider", "policy violation", "abnormal access", "sensitive data", "unauthorized")
+    | summarize TotalInsiderIncidents = count(),
+                TotalInvestigationHours = sum(TimeToClose) / 3600.0
+    | extend AvgDailyIncidents = round(TotalInsiderIncidents / 30.0, 2),
+             CoveragePercent = round(TotalInsiderIncidents * 100.0 / TotalIncidents, 2),
+             TimeSaved70Percent = round(TotalInvestigationHours * 0.70, 2)
+    | project IncidentDate = now(),
+              DailyIncidents = TotalInsiderIncidents,
+              CumulativeIncidents = TotalInsiderIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalInsiderIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Time Saved (70%): ", TimeSaved70Percent, " hours")
+)
 ```
 
 #### **DLP Alert Triage Agent**
-**Incident Types:** DLP policy violations, sensitive data exposure, unauthorized sharing
+**Incident Types:** DLP policy violations, sensitive data exposure, unauthorized sharing  
+**Expected Coverage:** 15-20% of total incidents | **False Positive Reduction:** 80% (from 60% to 12%)
 
 ```kql
-// Find DLP-related incidents
+// Daily DLP incident trends with false positive analysis
+let TotalIncidents = toscalar(
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | summarize count()
+);
 SecurityIncident
 | where TimeGenerated > ago(30d)
-| where Title has_any ("DLP", "data loss", "sensitive data", "pii", "confidential", "unauthorized sharing")
-| summarize IncidentCount = count(),
+| where Title has_any ("DLP", "data loss", "sensitive data", "pii", "confidential", "unauthorized sharing", "oversharing")
+| extend IncidentDate = bin(TimeGenerated, 1d)
+| summarize DailyIncidents = count(),
             FalsePositives = countif(Classification == "FalsePositive"),
             TruePositives = countif(Classification == "TruePositive"),
-            AvgTriageTime = avg(TimeToClose)
-    by Severity
-| project Severity, IncidentCount, FalsePositives, TruePositives,
-          FalsePositiveRate = round(todouble(FalsePositives) / todouble(IncidentCount) * 100, 2),
-          AvgTriageTimeHours = AvgTriageTime / 3600.0
-| order by IncidentCount desc
+            SensitiveDataExposure = countif(Title has_any ("pii", "confidential")),
+            UnauthorizedSharing = countif(Title has "sharing"),
+            AvgTriageHours = avg(TimeToClose) / 3600.0,
+            TotalTriageHours = sum(TimeToClose) / 3600.0
+    by IncidentDate
+| extend CumulativeIncidents = row_cumsum(DailyIncidents),
+         CurrentFPRate = round(todouble(FalsePositives) / todouble(DailyIncidents) * 100, 1),
+         TargetFPRate = 12.0,  // Agent reduces FP from 60% to 12%
+         TimeSavedOnFP = round((TotalTriageHours * FalsePositives / DailyIncidents) * 0.80, 2)
+| project IncidentDate,
+          DailyIncidents,
+          CumulativeIncidents,
+          FalsePositives,
+          TruePositives,
+          CurrentFPRate,
+          TargetFPRate,
+          SensitiveDataExposure,
+          UnauthorizedSharing,
+          TimeSavedOnFP
+| order by IncidentDate desc
+| union (
+    SecurityIncident
+    | where TimeGenerated > ago(30d)
+    | where Title has_any ("DLP", "data loss", "sensitive data", "pii", "confidential", "unauthorized sharing", "oversharing")
+    | summarize TotalDLPIncidents = count(),
+                TotalFP = countif(Classification == "FalsePositive"),
+                TotalTP = countif(Classification == "TruePositive"),
+                TotalTriageHours = sum(TimeToClose) / 3600.0
+    | extend AvgDailyIncidents = round(TotalDLPIncidents / 30.0, 2),
+             CoveragePercent = round(TotalDLPIncidents * 100.0 / TotalIncidents, 2),
+             CurrentFPRate = round(todouble(TotalFP) / todouble(TotalDLPIncidents) * 100, 1),
+             TargetFPRate = 12.0,
+             FPReduction = "80% (from 60% to 12%)",
+             TimeSavedOnFP = round((TotalTriageHours * TotalFP / TotalDLPIncidents) * 0.80, 2)
+    | project IncidentDate = now(),
+              DailyIncidents = TotalDLPIncidents,
+              CumulativeIncidents = TotalDLPIncidents,
+              Summary = strcat("📊 30-Day Summary | Total: ", TotalDLPIncidents, " incidents | Avg Daily: ", AvgDailyIncidents,
+                              " | Coverage: ", CoveragePercent, "% | Current FP Rate: ", CurrentFPRate, "% | Target FP: 12% | ",
+                              FPReduction, " | Time Saved on FP: ", TimeSavedOnFP, " hours")
+)
 ```
 
 ---
