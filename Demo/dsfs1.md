@@ -917,12 +917,38 @@ Microsoft Defender provides **four core autonomous agents** designed to accelera
 
 #### **Workflow**
 
-```
-Incoming Email → AI Content Analysis → Threat Scoring → Automatic Quarantine
-       ↓                                      ↓
-Safe URLs Check ← Sandbox Detonation → Alert SOC if High Risk
-       ↓                                      ↓
-Historical Pattern Match → Update Threat Intelligence Feed
+```mermaid
+graph TB
+    START[📧 Incoming Email] --> ANALYZE[🔍 AI Content Analysis]
+    ANALYZE --> HEADERS[📋 Header Analysis]
+    ANALYZE --> CONTENT[📝 Content Scanning]
+    
+    HEADERS --> SCORE[⚖️ Threat Scoring Engine]
+    CONTENT --> SCORE
+    
+    SCORE --> DECISION{Risk Level?}
+    
+    DECISION -->|High| QUARANTINE[🔴 Automatic Quarantine]
+    DECISION -->|Medium| SANDBOX[🧪 Sandbox Detonation]
+    DECISION -->|Low| SAFECHECK[✅ Safe URL Check]
+    
+    QUARANTINE --> ALERT[🚨 Alert SOC]
+    SANDBOX --> VERDICT{Malicious?}
+    VERDICT -->|Yes| QUARANTINE
+    VERDICT -->|No| DELIVER[📬 Deliver to Inbox]
+    
+    SAFECHECK --> PATTERN[🔄 Pattern Match]
+    PATTERN --> DELIVER
+    
+    ALERT --> INTEL[📊 Update Threat Intel]
+    DELIVER --> INTEL
+    
+    INTEL --> NOTIFY[📤 User Notification]
+    
+    style QUARANTINE fill:#ff6b6b
+    style DELIVER fill:#51cf66
+    style ALERT fill:#ffd43b
+    style SANDBOX fill:#748ffc
 ```
 
 #### **Business Value**
@@ -1023,18 +1049,44 @@ Historical Pattern Match → Update Threat Intelligence Feed
 
 #### **Workflow**
 
-```
-Security Signals (Identity, Endpoint, Network, Email)
-            ↓
-    AI Behavioral Modeling
-            ↓
-    Anomaly Threshold Detection
-            ↓
-    Threat Severity Classification
-            ↓
-    Automatic Incident Creation → Alert SOC
-            ↓
-    Suggested Remediation Actions
+```mermaid
+graph TB
+    SIGNALS[🎯 Security Signals] --> IDENTITY[👤 Identity Signals]
+    SIGNALS --> ENDPOINT[💻 Endpoint Signals]
+    SIGNALS --> NETWORK[🌐 Network Signals]
+    SIGNALS --> EMAIL[📧 Email Signals]
+    
+    IDENTITY --> MODEL[🤖 AI Behavioral Modeling]
+    ENDPOINT --> MODEL
+    NETWORK --> MODEL
+    EMAIL --> MODEL
+    
+    MODEL --> BASELINE[📊 Baseline Comparison]
+    BASELINE --> ANOMALY[⚠️ Anomaly Detection]
+    
+    ANOMALY --> THRESHOLD{Exceeds<br/>Threshold?}
+    
+    THRESHOLD -->|Yes| CLASSIFY[🎚️ Threat Severity<br/>Classification]
+    THRESHOLD -->|No| MONITOR[👁️ Continue Monitoring]
+    
+    CLASSIFY --> SEVERITY{Severity?}
+    
+    SEVERITY -->|Critical/High| INCIDENT[🚨 Auto-Create Incident]
+    SEVERITY -->|Medium| ALERT[⚡ Generate Alert]
+    SEVERITY -->|Low| LOG[📝 Log Event]
+    
+    INCIDENT --> SOC[👨‍💼 Alert SOC Team]
+    ALERT --> SOC
+    
+    SOC --> REMEDIATION[💊 AI Suggested<br/>Remediation Actions]
+    
+    REMEDIATION --> LEARN[🧠 ML Model Update]
+    MONITOR --> LEARN
+    
+    style INCIDENT fill:#ff6b6b
+    style SOC fill:#ffd43b
+    style REMEDIATION fill:#51cf66
+    style MODEL fill:#748ffc
 ```
 
 #### **Business Value**
@@ -1172,16 +1224,44 @@ curl -X POST https://graph.microsoft.com/v1.0/servicePrincipals `
 
 #### **Workflow**
 
-```
-Intelligence Sources → AI Aggregation Engine → Relevance Filtering
-            ↓                                            ↓
-    Threat Actor Mapping ← Organizational Asset Inventory
-            ↓
-    Risk Prioritization (Business Impact x Likelihood)
-            ↓
-    Automated Briefing Generation (Daily/Weekly/Incident-Driven)
-            ↓
-    Distribution (SOC Dashboard, Email, Teams, Sentinel)
+```mermaid
+graph TB
+    SOURCES[🌍 Intelligence Sources] --> MDTI[🛡️ Microsoft Defender<br/>Threat Intelligence]
+    SOURCES --> CVE[👾 CVE Databases<br/>NVD/MITRE]
+    SOURCES --> OSINT[🔍 OSINT/Dark Web]
+    SOURCES --> ISAC[🏢 Industry ISACs]
+    SOURCES --> CISA[🇺🇸 Gov CISA Alerts]
+    
+    MDTI --> AGGREGATE[🤖 AI Aggregation Engine<br/>65T daily signals]
+    CVE --> AGGREGATE
+    OSINT --> AGGREGATE
+    ISAC --> AGGREGATE
+    CISA --> AGGREGATE
+    
+    AGGREGATE --> FILTER[🎯 Relevance Filtering]
+    
+    FILTER --> ASSETS[📋 Organizational<br/>Asset Inventory]
+    ASSETS --> ACTOR[🎭 Threat Actor Mapping]
+    
+    ACTOR --> PRIORITY[⚖️ Risk Prioritization<br/>Impact x Likelihood]
+    
+    PRIORITY --> BRIEFING[📊 Automated Briefing<br/>Generation]
+    
+    BRIEFING --> SCHEDULE{Briefing Type?}
+    
+    SCHEDULE -->|Daily| DIST1[📧 Distribution]
+    SCHEDULE -->|Weekly| DIST1
+    SCHEDULE -->|Incident| DIST1
+    
+    DIST1 --> DASHBOARD[📊 SOC Dashboard]
+    DIST1 --> EMAIL[📧 Email Delivery]
+    DIST1 --> TEAMS[👥 Microsoft Teams]
+    DIST1 --> SENTINEL[🔎 Sentinel Integration]
+    
+    style AGGREGATE fill:#748ffc
+    style PRIORITY fill:#ffd43b
+    style BRIEFING fill:#51cf66
+    style DIST1 fill:#ff6b6b
 ```
 
 #### **Sample Briefing Sections**
@@ -1399,6 +1479,57 @@ Microsoft Entra (formerly Azure AD) provides **two autonomous agents** focused o
 
 **To Act on Suggestions:**
 - Security Administrator role
+
+#### **Workflow**
+
+```mermaid
+graph TB
+    TRIGGER[⏰ Scheduled Run] --> START[🔍 Agent Activation]
+    START --> COLLECT[📋 Data Collection]
+    
+    COLLECT --> SIGNIN[🔑 Entra Sign-in Logs]
+    COLLECT --> RISK[⚠️ Risk Detections]
+    COLLECT --> USERS[👥 Risky Users]
+    COLLECT --> AUDIT[📝 Audit Logs]
+    
+    SIGNIN --> ANALYZE[🤖 AI Risk Analysis]
+    RISK --> ANALYZE
+    USERS --> ANALYZE
+    AUDIT --> ANALYZE
+    
+    ANALYZE --> SCORE[🎯 Risk Scoring<br/>Up to 100 users]
+    
+    SCORE --> CLASSIFY{Risk Level?}
+    
+    CLASSIFY -->|High| REMEDIATE[💊 Generate Remediation<br/>Recommendations]
+    CLASSIFY -->|Medium| REMEDIATE
+    CLASSIFY -->|Low| MONITOR[👁️ Continue Monitoring]
+    
+    REMEDIATE --> ACTIONS[📝 Action List]
+    ACTIONS --> PWD[🔒 Force Password Reset]
+    ACTIONS --> MFA[📱 Require MFA]
+    ACTIONS --> REVOKE[🚫 Revoke Tokens]
+    ACTIONS --> BLOCK[🚨 Block Sign-in]
+    
+    PWD --> REVIEW[👨‍💼 Admin Review<br/>Required]
+    MFA --> REVIEW
+    REVOKE --> REVIEW
+    BLOCK --> REVIEW
+    
+    REVIEW --> APPROVE{Approve?}
+    
+    APPROVE -->|Yes| EXECUTE[✅ Execute Remediation]
+    APPROVE -->|No| DISMISS[❌ Dismiss Suggestion]
+    
+    EXECUTE --> CONFIRM[📊 Risk Re-evaluation]
+    MONITOR --> CONFIRM
+    DISMISS --> CONFIRM
+    
+    style ANALYZE fill:#748ffc
+    style REMEDIATE fill:#ffd43b
+    style REVIEW fill:#ff6b6b
+    style EXECUTE fill:#51cf66
+```
 
 #### **Known Limitations**
 
@@ -3065,7 +3196,284 @@ Payback Period = 3.4 weeks
 
 ---
 
-## 📚 References & Resources
+## � Agent Comparison Matrix
+
+### **Cost / Impact / Complexity Analysis**
+
+The following matrix evaluates all 12 agents across four critical dimensions to guide MVP selection and deployment prioritization. **Current licensing: Defender E5 + Defender for Office 365 P2 already in place.**
+
+| Agent Name | Cost | Impact | Deployment Complexity | Ease of Adoption | Recommended Phase |
+|------------|:----:|:------:|:--------------------:|:----------------:|:-----------------:|
+| **Phishing Triage Agent** | S | L | M | M | **MVP - Phase 1** |
+| **Dynamic Threat Detection Agent** | S | L | S | S | **MVP - Phase 1** |
+| **Threat Hunting Agent** | S | L | S | S | **MVP - Phase 1** |
+| **Threat Intel Briefing Agent** | S | M | M | M | **MVP - Phase 1** |
+| **Conditional Access Optimization** | S | L | S | M | **MVP - Phase 1** |
+| **Identity Risk Management Agent** | M | L | M | M | Phase 2 |
+| **Policy Configuration Agent** | S | M | S | S | Phase 2 |
+| **Change Review Agent** | M | M | M | M | Phase 3 |
+| **Vulnerability Remediation Agent** | M | L | L | L | Phase 3 |
+| **Device Offboarding Agent** | S | S | S | L | ❌ Excluded |
+| **Insider Risk Triage Agent** | M | M | M | M | Phase 3 |
+| **DLP Alert Triage Agent** | M | M | M | M | Phase 3 |
+
+### **Detailed Rating Justifications**
+
+#### **Cost (Licensing Requirements)**
+
+**Small (S) - Uses existing Defender E5 + Defender for Office 365 P2 licenses ($0 additional):**
+- **Phishing Triage Agent:** Included in Defender for Office 365 P2 (currently licensed)
+- **Dynamic Threat Detection Agent:** Included in Defender E5 (currently licensed)
+- **Threat Hunting Agent:** Included in Defender E5 (currently licensed)
+- **Threat Intel Briefing Agent:** Included in Defender E5 threat intelligence
+- **Conditional Access Optimization:** Requires Entra ID P1 (typically included with M365 E5)
+- **Policy Configuration Agent:** Requires Intune Plan 1 (typically included with M365 E5)
+- **Device Offboarding Agent:** Requires Intune Plan 1 (typically included with M365 E5)
+
+**Medium (M) - Requires additional licensing tier ($6-12/user/month additional):**
+- **Identity Risk Management Agent:** Requires Entra ID P2 + Frontier program enrollment
+- **Change Review Agent:** Requires Defender Vulnerability Management add-on
+- **Vulnerability Remediation Agent:** Requires Defender Vulnerability Management add-on
+- **Insider Risk Triage:** Requires Purview Insider Risk Management (M365 E5 Compliance or standalone)
+- **DLP Alert Triage:** Requires Purview DLP (M365 E5 Compliance or standalone)
+
+**Large (L) - Premium/multiple E5 licenses:** 
+- None (Defender E5 + Defender for Office 365 P2 already cover all high-impact agents)
+
+#### **Impact (Business Value)**
+
+**Large (L) - Transformational (>80% improvement):**
+- **Phishing Triage Agent:** 95% reduction in triage time, prevents BEC attacks averaging $120,000 per incident
+- **Dynamic Threat Detection:** 99.7% ransomware prevention, behavioral anomaly detection
+- **Threat Hunting Agent:** 40% increase in threat discovery, reduces KQL investigation from hours to minutes
+- **Conditional Access Optimization:** 99.5% sign-in success rate, identifies policy gaps
+- **Identity Risk Management:** 99.9% account compromise prevention, automated risk remediation
+- **Vulnerability Remediation:** 90-day to 7-day average patching cycle (85% reduction)
+
+**Medium (M) - Significant (50-80% improvement):**
+- **Threat Intel Briefing:** Daily threat summaries, reduces research time by 60%
+- **Policy Configuration Agent:** 50-70% configuration time reduction, standardizes security policies
+- **Change Review Agent:** 60% faster change approval cycles
+- **Insider Risk Triage:** 70% reduction in alert investigation time
+- **DLP Alert Triage:** 80% reduction in false positive investigation
+
+**Small (S) - Limited (<50% improvement):**
+- **Device Offboarding Agent:** Being sunset June 1, 2026 - not recommended for POC
+
+#### **Deployment Complexity**
+
+**Simple (S) - Auto-activate or <1 hour:**
+- **Dynamic Threat Detection:** Auto-activates with Defender E5, 0 config steps
+- **Threat Hunting Agent:** Auto-activates with Defender E5, 0 config steps
+- **Conditional Access Optimization:** 2 steps (enable plugin, assign permissions), ~30 mins
+- **Policy Configuration Agent:** 1 step (enable Copilot in Intune), ~15 mins
+- **Device Offboarding Agent:** 1 step (enable agent), ~15 mins
+
+**Medium (M) - 1-4 hours setup:**
+- **Phishing Triage Agent:** 5 steps (configure EOP, automation setup, tune filters), 2-3 hours
+- **Threat Intel Briefing:** 4 steps (service principal, API permissions, plugins, test), ~2 hours
+- **Identity Risk Management:** 6 steps (enable Entra ID P2, risk policies, Frontier enrollment), ~3 hours
+- **Change Review Agent:** 5 steps (configure DVM, approval workflows), ~2 hours
+- **Insider Risk Triage:** 7 steps (configure Purview, policies, tune thresholds), ~3 hours
+- **DLP Alert Triage:** 7 steps (configure DLP policies, classifications), ~3 hours
+
+**Large (L) - Multi-day or complex setup:**
+- **Vulnerability Remediation Agent:** Limited preview, 8+ steps, requires DVM infrastructure, ~1-2 days
+
+#### **Ease of Adoption**
+
+**Simple (S) - Automatic execution:**
+- **Dynamic Threat Detection:** Fully automated, zero user interaction required
+- **Threat Hunting Agent:** Natural language to KQL, embedded in Defender portal, minimal training
+- **Policy Configuration Agent:** Guided workflows, templates provided
+
+**Medium (M) - Moderate learning curve:**
+- **Phishing Triage Agent:** Requires tuning and feedback loop management, 2 hours training
+- **Threat Intel Briefing:** Requires understanding prompt engineering, 1-2 hour training
+- **Conditional Access Optimization:** Requires CA policy knowledge, 1 hour training
+- **Identity Risk Management:** Requires risk policy understanding, 2 hours training
+- **Change Review Agent:** Requires understanding change management workflows, 1-2 hours
+- **Insider Risk Triage:** Requires understanding insider risk indicators, 2 hours training
+- **DLP Alert Triage:** Requires DLP policy knowledge, 2 hours training
+
+**Large (L) - Complex workflows:**
+- **Vulnerability Remediation:** Preview status, limited documentation, 4+ hours training
+- **Device Offboarding:** Deprecated functionality, complex permissions model
+
+---
+
+### **Agent Incident Type Coverage**
+
+Below are KQL queries to identify which incident types each agent addresses in your environment.
+
+#### **Phishing Triage Agent**
+**Incident Types:** Email-based threats, phishing, credential harvesting, business email compromise (BEC)
+
+```kql
+// Find phishing-related incidents in last 30 days
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("phishing", "spam", "BEC", "credential", "spoofing")
+| summarize IncidentCount = count(), 
+            AvgInvestigationTime = avg(TimeToClose),
+            IncidentsList = make_list(Title)
+    by Classification, Severity
+| project Classification, Severity, IncidentCount, 
+          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
+          IncidentsList
+| order by IncidentCount desc
+```
+
+#### **Dynamic Threat Detection Agent**
+**Incident Types:** Ransomware, malware, anomalous behavior, lateral movement, privilege escalation
+
+```kql
+// Find behavioral threat incidents
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("ransomware", "malware", "suspicious", "anomalous", "lateral movement", "privilege escalation")
+| summarize IncidentCount = count(),
+            AvgInvestigationTime = avg(TimeToClose),
+            IncidentsList = make_list(Title)
+    by Classification, Severity
+| project Classification, Severity, IncidentCount,
+          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
+          IncidentsList
+| order by IncidentCount desc
+```
+
+#### **Threat Hunting Agent**
+**Incident Types:** Advanced persistent threats (APT), zero-day exploits, complex multi-stage attacks
+
+```kql
+// Find incidents requiring advanced threat hunting
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Severity in ("High", "Medium")
+| where Status != "Closed"
+| extend InvestigationTimeHours = (TimeToClose) / 3600.0
+| where InvestigationTimeHours > 2 or isempty(TimeToClose)
+| summarize TotalIncidents = count(),
+            AvgTimeHours = avg(InvestigationTimeHours),
+            OpenIncidents = countif(Status == "Active")
+    by Classification, Severity
+| order by TotalIncidents desc
+```
+
+#### **Threat Intelligence Briefing Agent**
+**Incident Types:** CVE-based attacks, known threat actor campaigns, emerging threats
+
+```kql
+// Find incidents related to known CVEs and threat intelligence
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Description has_any ("CVE-", "vulnerability", "exploit", "threat actor")
+    or Title has_any ("CVE-", "vulnerability", "exploit")
+| summarize IncidentCount = count(),
+            UniqueCVEs = dcount(Description),
+            IncidentsList = make_list(Title)
+    by Severity
+| project Severity, IncidentCount, UniqueCVEs, IncidentsList
+| order by IncidentCount desc
+```
+
+#### **Conditional Access Optimization Agent**
+**Incident Types:** Failed sign-ins, impossible travel, risky sign-ins, MFA failures
+
+```kql
+// Find identity-related incidents that CA policies could prevent
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("sign-in", "authentication", "impossible travel", "risky", "MFA")
+| summarize IncidentCount = count(),
+            AvgInvestigationTime = avg(TimeToClose),
+            IncidentsList = make_list(Title)
+    by Classification, Severity
+| project Classification, Severity, IncidentCount,
+          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
+          IncidentsList
+| order by IncidentCount desc
+```
+
+#### **Identity Risk Management Agent**
+**Incident Types:** Compromised accounts, password spray, account takeover, risky users
+
+```kql
+// Find identity compromise incidents
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("account compromise", "password spray", "brute force", "account takeover", "compromised user")
+| summarize IncidentCount = count(),
+            AffectedAccounts = dcount(Owner),
+            AvgTimeToClose = avg(TimeToClose),
+            IncidentsList = make_list(Title)
+    by Classification, Severity
+| project Classification, Severity, IncidentCount, AffectedAccounts,
+          AvgTimeToCloseHours = AvgTimeToClose / 3600.0,
+          IncidentsList
+| order by IncidentCount desc
+```
+
+#### **Vulnerability Remediation Agent**
+**Incident Types:** Unpatched vulnerabilities, missing security updates, exploit attempts
+
+```kql
+// Find vulnerability-related incidents
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("vulnerability", "unpatched", "missing update", "CVE", "exploit")
+    and Title !has "phishing"
+| summarize IncidentCount = count(),
+            CriticalVulns = countif(Severity == "High"),
+            AvgPatchTime = avg(TimeToClose),
+            IncidentsList = make_list(Title)
+    by Severity
+| project Severity, IncidentCount, CriticalVulns,
+          AvgPatchTimeDays = AvgPatchTime / 86400.0,
+          IncidentsList
+| order by IncidentCount desc
+```
+
+#### **Insider Risk Triage Agent**
+**Incident Types:** Data exfiltration, abnormal file access, policy violations
+
+```kql
+// Find insider risk incidents
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("data exfiltration", "insider", "policy violation", "abnormal access", "sensitive data")
+| summarize IncidentCount = count(),
+            AvgInvestigationTime = avg(TimeToClose),
+            IncidentsList = make_list(Title)
+    by Classification, Severity
+| project Classification, Severity, IncidentCount,
+          AvgInvestigationTimeHours = AvgInvestigationTime / 3600.0,
+          IncidentsList
+| order by IncidentCount desc
+```
+
+#### **DLP Alert Triage Agent**
+**Incident Types:** DLP policy violations, sensitive data exposure, unauthorized sharing
+
+```kql
+// Find DLP-related incidents
+SecurityIncident
+| where TimeGenerated > ago(30d)
+| where Title has_any ("DLP", "data loss", "sensitive data", "pii", "confidential", "unauthorized sharing")
+| summarize IncidentCount = count(),
+            FalsePositives = countif(Classification == "FalsePositive"),
+            TruePositives = countif(Classification == "TruePositive"),
+            AvgTriageTime = avg(TimeToClose)
+    by Severity
+| project Severity, IncidentCount, FalsePositives, TruePositives,
+          FalsePositiveRate = round(todouble(FalsePositives) / todouble(IncidentCount) * 100, 2),
+          AvgTriageTimeHours = AvgTriageTime / 3600.0
+| order by IncidentCount desc
+```
+
+---
+
+## �📚 References & Resources
 
 ### **Microsoft Documentation**
 
@@ -3169,6 +3577,77 @@ Payback Period = 3.4 weeks
 2. **PROCEED WITH MODIFICATIONS:** Limited production deployment with specific improvements - *if most GO criteria met*
 3. **EXTEND POC:** Additional 4-week POC to address specific concerns - *if results inconclusive*
 4. **DO NOT PROCEED:** Halt Security Copilot initiative - *if NO-GO criteria triggered*
+
+---
+
+### **Recommended MVP Implementation Strategy**
+
+**Strategic Approach: Maximize Impact While Minimizing Costs and Complexity**
+
+Based on the Agent Comparison Matrix analysis and existing licensing infrastructure (Defender E5 + Defender for Office 365 P2), we recommend a **phased MVP deployment focused on 5 high-impact agents that require ZERO additional licensing costs and minimal infrastructure deployment**.
+
+#### **MVP Phase 1: Zero-Cost, High-Impact Agents (Weeks 1-4)**
+
+**Recommended Agents:**
+1. **Dynamic Threat Detection Agent** (Cost: S, Impact: L, Deployment: S)
+2. **Threat Hunting Agent** (Cost: S, Impact: L, Deployment: S)
+3. **Phishing Triage Agent** (Cost: S, Impact: L, Deployment: M)
+4. **Conditional Access Optimization Agent** (Cost: S, Impact: L, Deployment: S)
+5. **Threat Intelligence Briefing Agent** (Cost: S, Impact: M, Deployment: M)
+
+**Justification:**
+
+**Cost Optimization (Minimized):**
+- **$0 additional licensing required** - All 5 agents leverage existing Defender E5 and Defender for Office 365 P2 licenses
+- Only Security Copilot base licensing needed ($4/user/month for 50 pilot users = $200/month POC cost)
+- No infrastructure deployment required (no new servers, databases, or connectors beyond standard Sentinel Data Federation)
+- Eliminates risk of stranded license investments if POC does not proceed
+
+**SecOps Impact (Maximized):**
+- **Combined impact addresses 80%+ of SOC workload:**
+  - Phishing Triage: 95% reduction in email threat investigation time
+  - Dynamic Threat Detection: 99.7% ransomware prevention + behavioral anomaly detection
+  - Threat Hunting: 40% increase in proactive threat discovery, hours → minutes for KQL investigations
+  - Conditional Access: 99.5% sign-in success rate, prevents unauthorized access
+  - Threat Intelligence: 60% reduction in threat research time
+- **Prevents high-cost incidents:** BEC attacks ($120K avg), ransomware ($4.2M avg), account compromise
+- **Immediate ROI visibility** within 2-4 weeks of deployment
+
+**Deployment Footprint (Minimized):**
+- **Zero infrastructure required** - All agents are cloud-native SaaS
+- **No on-premises components** - No hardware, VMs, or network changes
+- **Minimal integration complexity** - Agents auto-activate with existing Defender/Entra licensing
+- **Leverages existing Sentinel workspace** - Uses standard Data Federation connector (already POC requirement)
+- **Total deployment time: ~6 hours** across all 5 agents
+
+**Complexity (Minimized):**
+- **3 agents auto-activate** (Dynamic Detection, Threat Hunting) = 0 configuration steps
+- **2 agents require simple setup** (Conditional Access: 30 mins, Threat Intel: 2 hours)
+- **1 agent requires moderate setup** (Phishing Triage: 2-3 hours tuning)
+- **Minimal training required:** Most agents have embedded workflows and guided prompts
+- **Low change management impact:** No process disruptions, enhances existing SOC workflows
+
+**Why This MVP Beats Alternatives:**
+
+| Approach | Additional Licensing Cost | Infrastructure Required | Deployment Time | Impact Coverage |
+|----------|---------------------------|------------------------|----------------|-----------------|
+| **Recommended MVP (5 agents)** | **$0** | **None** | **~6 hours** | **80% of SOC workload** |
+| All 12 agents | ~$6-12/user/month | DVM, Purview | ~2-3 days | 100% coverage |
+| Defender-only (4 agents) | $0 | None | ~4 hours | 60% coverage |
+| Single agent test | $0 | None | 30 mins | 10-20% coverage |
+
+**Success Criteria for MVP:**
+- 50%+ reduction in investigation time (measured after 4 weeks)
+- 90%+ phishing triage time reduction
+- SOC team satisfaction score >3.5/5.0
+- Zero critical security issues from AI recommendations
+- Positive projected ROI for full deployment
+
+**Post-MVP Expansion (If Successful):**
+- **Phase 2 (Weeks 5-6):** Add Identity Risk Management Agent + Policy Configuration Agent (requires Entra ID P2 evaluation)
+- **Phase 3 (Weeks 7-8):** Add Purview/DVM agents based on business case and licensing approval
+
+This MVP strategy de-risks the POC investment, delivers rapid time-to-value, and provides clear go/no-go decision data within 4 weeks while maintaining the option to expand to additional agents based on proven success.
 
 ---
 
