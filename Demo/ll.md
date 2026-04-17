@@ -1650,6 +1650,15 @@ Content-Type: application/json
 {
   "query": "{ __type(name: \"Entity\") { name fields { name type { name kind ofType { name kind } } } } }"
 }
+
+{
+  "filter": "",
+  "include": [
+    "all_nodes",
+    "all_edges"
+  ],
+  "limit": 5000
+}
 ```
 
 **End of Document**
