@@ -1417,27 +1417,13 @@ DeviceTvmSoftwareVulnerabilities
   "contentVersion": "1.0.0.0",
   "parameters": {
     "logicAppName": {
-      "type": "string",
-      "defaultValue": "CrowdStrike-Privileged-Identity-Report",
-      "metadata": {
-        "description": "Logic App Name"
-      }
-    },
-    "location": {
-      "type": "string",
-      "defaultValue": "[resourceGroup().location]"
+      "type": "string"
     },
     "clientId": {
-      "type": "string",
-      "metadata": {
-        "description": "CrowdStrike API Client ID"
-      }
+      "type": "string"
     },
     "clientSecret": {
-      "type": "securestring",
-      "metadata": {
-        "description": "CrowdStrike API Client Secret"
-      }
+      "type": "secureString"
     }
   },
   "resources": [
@@ -1445,13 +1431,22 @@ DeviceTvmSoftwareVulnerabilities
       "type": "Microsoft.Logic/workflows",
       "apiVersion": "2019-05-01",
       "name": "[parameters('logicAppName')]",
-      "location": "[parameters('location')]",
+      "location": "[resourceGroup().location]",
       "properties": {
-        "state": "Enabled",
         "definition": {
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+
+          "triggers": {
+            "manual": {
+              "type": "Request",
+              "kind": "Http"
+            }
+          },
+
           "actions": {
-            "Get_CrowdStrike_Token": {
+
+            "Get_Token": {
               "type": "Http",
               "inputs": {
                 "method": "POST",
@@ -1459,100 +1454,190 @@ DeviceTvmSoftwareVulnerabilities
                 "headers": {
                   "Content-Type": "application/x-www-form-urlencoded"
                 },
-                "body": "client_id=@{encodeUriComponent(parameters('clientId'))}&client_secret=@{encodeUriComponent(parameters('clientSecret'))}&grant_type=client_credentials"
-              },
-              "runAfter": {}
-            },
-            "Parse_Token": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('Get_CrowdStrike_Token')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access_token": {
-                      "type": "string"
-                    },
-                    "token_type": {
-                      "type": "string"
-                    },
-                    "expires_in": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              },
-              "runAfter": {
-                "Get_CrowdStrike_Token": ["Succeeded"]
+                "body": "[concat('client_id=', parameters('clientId'), '&client_secret=', parameters('clientSecret'), '&grant_type=client_credentials')]"
               }
             },
-            "Get_Privileged_Identity_Summary": {
+
+            "Call_GraphQL": {
               "type": "Http",
               "runAfter": {
-                "Parse_Token": ["Succeeded"]
+                "Get_Token": ["Succeeded"]
               },
               "inputs": {
-                "method": "GET",
-                "uri": "https://api.crowdstrike.com/identity-protection/insights/privileged-users/v1?time_range=7d",
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
                 "headers": {
-                  "Authorization": "Bearer @{body('Parse_Token')?['access_token']}",
-                  "Accept": "application/json"
+                  "Authorization": "Bearer @{body('Get_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "query { entities(first: 5000, types: [USER]) { nodes { primaryDisplayName hasADDomainAdminRole hasRole riskScoreSeverity riskFactors { type } accounts { domain } archived watched } } }"
                 }
               }
             },
-            "Parse_Identity_Data": {
+
+            "Parse_JSON": {
               "type": "ParseJson",
               "runAfter": {
-                "Get_Privileged_Identity_Summary": ["Succeeded"]
+                "Call_GraphQL": ["Succeeded"]
               },
               "inputs": {
-                "content": "@body('Get_Privileged_Identity_Summary')",
+                "content": "@body('Call_GraphQL')?['data']?['entities']?['nodes']",
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "privileged_count": { "type": "integer" },
-                    "stealthy_count": { "type": "integer" },
-                    "non_domain_joined": { "type": "integer" },
-                    "stale": { "type": "integer" },
-                    "pwd_never_expires": { "type": "integer" },
-                    "compromised_password": { "type": "integer" },
-                    "high_risk": { "type": "integer" },
-                    "gpo_exposed_pwd": { "type": "integer" },
-                    "shared_accounts": { "type": "integer" },
-                    "honeytoken": { "type": "integer" },
-                    "entra_admins": { "type": "integer" },
-                    "duplicate_password": { "type": "integer" }
-                  }
+                  "type": "array"
                 }
               }
             },
-            "Compose_Final_JSON": {
-              "type": "Compose",
-              "runAfter": { "Parse_Identity_Data": ["Succeeded"] },
+
+            "Initialize_Variables": {
+              "type": "InitializeVariable",
+              "runAfter": {
+                "Parse_JSON": ["Succeeded"]
+              },
               "inputs": {
-                "privileged": "@body('Parse_Identity_Data')?['privileged_count']",
-                "stealthy": "@body('Parse_Identity_Data')?['stealthy_count']",
-                "non_domain_joined": "@body('Parse_Identity_Data')?['non_domain_joined']",
-                "stale": "@body('Parse_Identity_Data')?['stale']",
-                "pwd_never_expires": "@body('Parse_Identity_Data')?['pwd_never_expires']",
-                "compromised_password": "@body('Parse_Identity_Data')?['compromised_password']",
-                "high_risk": "@body('Parse_Identity_Data')?['high_risk']",
-                "gpo_exposed_pwd": "@body('Parse_Identity_Data')?['gpo_exposed_pwd']",
-                "shared_accounts": "@body('Parse_Identity_Data')?['shared_accounts']",
-                "honeytoken": "@body('Parse_Identity_Data')?['honeytoken']",
-                "entra_admins": "@body('Parse_Identity_Data')?['entra_admins']",
-                "duplicate_password": "@body('Parse_Identity_Data')?['duplicate_password']"
+                "variables": [
+                  { "name": "Privileged", "type": "integer", "value": 0 },
+                  { "name": "HighRisk", "type": "integer", "value": 0 },
+                  { "name": "Stale", "type": "integer", "value": 0 },
+                  { "name": "DuplicatePassword", "type": "integer", "value": 0 },
+                  { "name": "WeakPassword", "type": "integer", "value": 0 },
+                  { "name": "CredentialTheft", "type": "integer", "value": 0 },
+                  { "name": "Stealthy", "type": "integer", "value": 0 },
+                  { "name": "Total", "type": "integer", "value": 0 }
+                ]
+              }
+            },
+
+            "ForEach_User": {
+              "type": "Foreach",
+              "runAfter": {
+                "Initialize_Variables": ["Succeeded"]
+              },
+              "foreach": "@body('Parse_JSON')",
+              "actions": {
+
+                "Increment_Total": {
+                  "type": "IncrementVariable",
+                  "inputs": {
+                    "name": "Total",
+                    "value": 1
+                  }
+                },
+
+                "Check_Privileged": {
+                  "type": "If",
+                  "expression": "@or(equals(item()?['hasADDomainAdminRole'], true), greater(length(item()?['hasRole']), 0))",
+                  "actions": {
+                    "Inc_Priv": {
+                      "type": "IncrementVariable",
+                      "inputs": {
+                        "name": "Privileged",
+                        "value": 1
+                      }
+                    }
+                  }
+                },
+
+                "Check_HighRisk": {
+                  "type": "If",
+                  "expression": "@equals(item()?['riskScoreSeverity'], 'HIGH')",
+                  "actions": {
+                    "Inc_High": {
+                      "type": "IncrementVariable",
+                      "inputs": {
+                        "name": "HighRisk",
+                        "value": 1
+                      }
+                    }
+                  }
+                },
+
+                "Loop_RiskFactors": {
+                  "type": "Foreach",
+                  "foreach": "@item()?['riskFactors']",
+                  "actions": {
+
+                    "Check_Stale": {
+                      "type": "If",
+                      "expression": "@equals(item()?['type'], 'Stale_Account')",
+                      "actions": {
+                        "Inc_Stale": {
+                          "type": "IncrementVariable",
+                          "inputs": { "name": "Stale", "value": 1 }
+                        }
+                      }
+                    },
+
+                    "Check_Duplicate": {
+                      "type": "If",
+                      "expression": "@equals(item()?['type'], 'Duplicate_password')",
+                      "actions": {
+                        "Inc_Dup": {
+                          "type": "IncrementVariable",
+                          "inputs": { "name": "DuplicatePassword", "value": 1 }
+                        }
+                      }
+                    },
+
+                    "Check_Weak": {
+                      "type": "If",
+                      "expression": "@equals(item()?['type'], 'Weak_password_policy')",
+                      "actions": {
+                        "Inc_Weak": {
+                          "type": "IncrementVariable",
+                          "inputs": { "name": "WeakPassword", "value": 1 }
+                        }
+                      }
+                    },
+
+                    "Check_Cred": {
+                      "type": "If",
+                      "expression": "@equals(item()?['type'], 'credential_theft')",
+                      "actions": {
+                        "Inc_Cred": {
+                          "type": "IncrementVariable",
+                          "inputs": { "name": "CredentialTheft", "value": 1 }
+                        }
+                      }
+                    },
+
+                    "Check_Stealthy": {
+                      "type": "If",
+                      "expression": "@equals(item()?['type'], 'HAS_Attack_Path')",
+                      "actions": {
+                        "Inc_Stealth": {
+                          "type": "IncrementVariable",
+                          "inputs": { "name": "Stealthy", "value": 1 }
+                        }
+                      }
+                    }
+
+                  }
+                }
+
+              }
+            },
+
+            "Return_Output": {
+              "type": "Response",
+              "runAfter": {
+                "ForEach_User": ["Succeeded"]
+              },
+              "inputs": {
+                "statusCode": 200,
+                "body": {
+                  "Privileged": "@variables('Privileged')",
+                  "HighRisk": "@variables('HighRisk')",
+                  "Stale": "@variables('Stale')",
+                  "DuplicatePassword": "@variables('DuplicatePassword')",
+                  "WeakPassword": "@variables('WeakPassword')",
+                  "CredentialTheft": "@variables('CredentialTheft')",
+                  "Stealthy": "@variables('Stealthy')",
+                  "TotalUsers": "@variables('Total')"
+                }
               }
             }
-          },
-          "triggers": {
-            "Recurrence": {
-              "type": "Recurrence",
-              "recurrence": {
-                "frequency": "Day",
-                "interval": 1
-              }
-            }
+
           }
         }
       }
@@ -1631,9 +1716,7 @@ Parse JSON
   }
 }
 
-POST https://api.crowdstrike.com/identity-protection/graphql
-Authorization: Bearer <token>
-Content-Type: application/json
+
 
 {
   "query": "query { entities(types: [USER], first: 500) { nodes { primaryDisplayName isPrivileged riskScore riskScoreSeverity privilegeRoles riskFactors { type } } } }"
