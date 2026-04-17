@@ -1630,6 +1630,14 @@ Parse JSON
     }
   }
 }
+
+POST https://api.crowdstrike.com/identity-protection/graphql
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "query": "query { identityInsights(timeRange: {last: 7, unit: DAY}) { privilegedUsers { username displayName isPrivileged riskScore stale compromisedPassword highRisk isShared isHoneytoken duplicatePassword nonDomainJoined } } }"
+}
 ```
 
 **End of Document**
