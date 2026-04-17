@@ -1638,6 +1638,10 @@ Content-Type: application/json
 {
   "query": "query { entities(types: [USER], first: 500) { nodes { primaryDisplayName isPrivileged riskScore riskScoreSeverity privilegeRoles riskFactors { type } } } }"
 }
+
+{
+  "query": "query { entities(types: [USER], first: 200) { nodes { primaryDisplayName attributes { key value } } }}"
+}
 ```
 
 **End of Document**
