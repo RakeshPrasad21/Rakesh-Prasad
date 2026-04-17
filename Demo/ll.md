@@ -1411,6 +1411,227 @@ DeviceTvmSoftwareVulnerabilities
 
 ---
 
+```
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "CrowdStrike-Privileged-Identity-Report",
+      "metadata": {
+        "description": "Logic App Name"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "clientId": {
+      "type": "string",
+      "metadata": {
+        "description": "CrowdStrike API Client ID"
+      }
+    },
+    "clientSecret": {
+      "type": "securestring",
+      "metadata": {
+        "description": "CrowdStrike API Client Secret"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "Get_CrowdStrike_Token": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/oauth2/token",
+                "headers": {
+                  "Content-Type": "application/x-www-form-urlencoded"
+                },
+                "body": "client_id=@{encodeUriComponent(parameters('clientId'))}&client_secret=@{encodeUriComponent(parameters('clientSecret'))}&grant_type=client_credentials"
+              },
+              "runAfter": {}
+            },
+            "Parse_Token": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('Get_CrowdStrike_Token')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    },
+                    "token_type": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "Get_CrowdStrike_Token": ["Succeeded"]
+              }
+            },
+            "Get_Privileged_Identity_Summary": {
+              "type": "Http",
+              "runAfter": {
+                "Parse_Token": ["Succeeded"]
+              },
+              "inputs": {
+                "method": "GET",
+                "uri": "https://api.crowdstrike.com/identity-protection/insights/privileged-users/v1?time_range=7d",
+                "headers": {
+                  "Authorization": "Bearer @{body('Parse_Token')?['access_token']}",
+                  "Accept": "application/json"
+                }
+              }
+            },
+            "Parse_Identity_Data": {
+              "type": "ParseJson",
+              "runAfter": {
+                "Get_Privileged_Identity_Summary": ["Succeeded"]
+              },
+              "inputs": {
+                "content": "@body('Get_Privileged_Identity_Summary')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "privileged_count": { "type": "integer" },
+                    "stealthy_count": { "type": "integer" },
+                    "non_domain_joined": { "type": "integer" },
+                    "stale": { "type": "integer" },
+                    "pwd_never_expires": { "type": "integer" },
+                    "compromised_password": { "type": "integer" },
+                    "high_risk": { "type": "integer" },
+                    "gpo_exposed_pwd": { "type": "integer" },
+                    "shared_accounts": { "type": "integer" },
+                    "honeytoken": { "type": "integer" },
+                    "entra_admins": { "type": "integer" },
+                    "duplicate_password": { "type": "integer" }
+                  }
+                }
+              }
+            },
+            "Compose_Final_JSON": {
+              "type": "Compose",
+              "runAfter": { "Parse_Identity_Data": ["Succeeded"] },
+              "inputs": {
+                "privileged": "@body('Parse_Identity_Data')?['privileged_count']",
+                "stealthy": "@body('Parse_Identity_Data')?['stealthy_count']",
+                "non_domain_joined": "@body('Parse_Identity_Data')?['non_domain_joined']",
+                "stale": "@body('Parse_Identity_Data')?['stale']",
+                "pwd_never_expires": "@body('Parse_Identity_Data')?['pwd_never_expires']",
+                "compromised_password": "@body('Parse_Identity_Data')?['compromised_password']",
+                "high_risk": "@body('Parse_Identity_Data')?['high_risk']",
+                "gpo_exposed_pwd": "@body('Parse_Identity_Data')?['gpo_exposed_pwd']",
+                "shared_accounts": "@body('Parse_Identity_Data')?['shared_accounts']",
+                "honeytoken": "@body('Parse_Identity_Data')?['honeytoken']",
+                "entra_admins": "@body('Parse_Identity_Data')?['entra_admins']",
+                "duplicate_password": "@body('Parse_Identity_Data')?['duplicate_password']"
+              }
+            }
+          },
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+```
+https://api.crowdstrike.com/identity-protection/combined/graphql/v1
+Headers:
+Authorization: Bearer @{body('HTTP_Token')?['access_token']}
+Content-Type: application/json
+
+Body:
+
+{
+  "query": "
+  {
+    entities(
+      types: [USER],
+      first: 1000,
+      filters: [
+        { field: \"lastSeen\", operator: GREATER_THAN, value: \"-7d\" }
+      ]
+    ) {
+      nodes {
+        primaryDisplayName
+        isPrivileged
+        riskScoreSeverity
+        privilegeRoles
+        riskFactors {
+          type
+        }
+      }
+    }
+  }"
+}
+
+Parse JSON
+
+{
+  "type": "object",
+  "properties": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "object",
+          "properties": {
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "primaryDisplayName": { "type": "string" },
+                  "isPrivileged": { "type": "boolean" },
+                  "riskScoreSeverity": { "type": "string" },
+                  "privilegeRoles": { "type": "array", "items": { "type": "string" } },
+                  "riskFactors": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 **End of Document**
 
 *For questions or support, contact: Security Operations Team*  
