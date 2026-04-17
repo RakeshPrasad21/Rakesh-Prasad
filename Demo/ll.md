@@ -1636,7 +1636,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "query": "query { identityInsights(timeRange: {last: 7, unit: DAY}) { privilegedUsers { username displayName isPrivileged riskScore stale compromisedPassword highRisk isShared isHoneytoken duplicatePassword nonDomainJoined } } }"
+  "query": "query { entities(types: [USER], first: 500) { nodes { primaryDisplayName isPrivileged riskScore riskScoreSeverity privilegeRoles riskFactors { type } } } }"
 }
 ```
 
