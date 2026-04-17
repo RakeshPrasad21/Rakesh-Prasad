@@ -1646,6 +1646,10 @@ Content-Type: application/json
 {
   "query": "{ entities(types: [USER], first: 500) { nodes { primaryDisplayName userName profile { isPrivileged passwordNeverExpires isStale isShared isHoneytoken } endpointInfo { isDomainJoined } risk { score severity compromisedPassword duplicatePasswordDetected highRisk } } } }"
 }
+
+{
+  "query": "{ __type(name: \"Entity\") { name fields { name type { name kind ofType { name kind } } } } }"
+}
 ```
 
 **End of Document**
