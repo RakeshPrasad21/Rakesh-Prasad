@@ -1659,6 +1659,22 @@ Content-Type: application/json
   ],
   "limit": 5000
 }
+
+{
+  entities(first: 5000, types: [USER]) {
+    nodes {
+      primaryDisplayName
+      hasADDomainAdminRole
+      hasRole
+      riskScore
+      riskScoreSeverity
+      riskFactors { type }
+      watched
+      learned
+      archived
+    }
+  }
+}
 ```
 
 **End of Document**
