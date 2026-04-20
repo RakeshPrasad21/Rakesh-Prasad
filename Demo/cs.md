@@ -1142,7 +1142,7 @@ Content-Type: application/json
           "11_Get_Attack_Paths_and_New_Accounts": ["Succeeded"]
         }
       },
-      "13_Build_Adaptive_Card": {
+      "11_Build_Adaptive_Card": {
         "type": "Compose",
         "inputs": {
           "type": "AdaptiveCard",
@@ -1205,11 +1205,11 @@ Content-Type: application/json
                   "facts": [
                     {
                       "title": "Overall Score",
-                      "value": "@{body('6_Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScore']}/100"
+                      "value": "@{body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScore']}/100"
                     },
                     {
                       "title": "Risk Level",
-                      "value": "@{body('6_Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScoreLevel']}"
+                      "value": "@{body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScoreLevel']}"
                     },
                     {
                       "title": "Domain",
@@ -1234,15 +1234,15 @@ Content-Type: application/json
                   "facts": [
                     {
                       "title": "🔴 High Risk Accounts",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['highRiskCount']} privileged users"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['highRiskCount']} privileged users"
                     },
                     {
                       "title": "🟠 Medium Risk Accounts",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['mediumRiskCount']} privileged users"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['mediumRiskCount']} privileged users"
                     },
                     {
                       "title": "🟢 Normal Risk Accounts",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['normalRiskCount']} privileged users"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['normalRiskCount']} privileged users"
                     }
                   ]
                 }
@@ -1264,23 +1264,23 @@ Content-Type: application/json
                   "facts": [
                     {
                       "title": "🔑 Weak Passwords",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['weakPasswordCount']} accounts"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['weakPasswordCount']} accounts"
                     },
                     {
                       "title": "♾️ Never-Expiring Passwords",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['hasNeverExpiringPasswordCount']} accounts"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['hasNeverExpiringPasswordCount']} accounts"
                     },
                     {
                       "title": "👤 Duplicate Passwords",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['duplicatePasswordCount']} accounts"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['duplicatePasswordCount']} accounts"
                     },
                     {
                       "title": "💤 Inactive Privileged",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['inactiveCount']} accounts"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['inactiveCount']} accounts"
                     },
                     {
                       "title": "⚫ Disabled (Still Privileged)",
-                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['disabledPrivilegedCount']} accounts"
+                      "value": "@{body('6_Parse_Identity_Metrics')?['data']?['disabledPrivilegedCount']} accounts"
                     }
                   ]
                 }
@@ -1302,19 +1302,19 @@ Content-Type: application/json
                   "facts": [
                     {
                       "title": "🔴 Open Incidents",
-                      "value": "@{length(body('10_Parse_Open_Incidents')?['data']?['incidents']?['nodes'])} new incidents"
+                      "value": "@{length(body('8_Parse_Open_Incidents')?['data']?['incidents']?['nodes'])} new incidents"
                     },
                     {
                       "title": "🔓 Exposed Passwords",
-                      "value": "@{body('12_Parse_Additional_Metrics')?['data']?['exposedPasswordCount']} accounts (CRITICAL)"
+                      "value": "@{body('10_Parse_Additional_Metrics')?['data']?['exposedPasswordCount']} accounts (CRITICAL)"
                     },
                     {
                       "title": "🎯 Attack Paths",
-                      "value": "@{body('12_Parse_Additional_Metrics')?['data']?['attackPathCount']} entities at risk"
+                      "value": "@{body('10_Parse_Additional_Metrics')?['data']?['attackPathCount']} entities at risk"
                     },
                     {
                       "title": "📅 New Privileged (30d)",
-                      "value": "@{body('12_Parse_Additional_Metrics')?['data']?['newPrivilegedCount']} accounts"
+                      "value": "@{body('10_Parse_Additional_Metrics')?['data']?['newPrivilegedCount']} accounts"
                     }
                   ]
                 }
@@ -1331,49 +1331,34 @@ Content-Type: application/json
                   "size": "Medium"
                 },
                 {
-                  "type": "Table",
-                  "columns": [
-                    { "width": "stretch" },
-                    { "width": "auto" },
-                    { "width": "auto" }
-                  ],
-                  "rows": [
-                    {
-                      "cells": [
-                        {
-                          "type": "TableCell",
-                          "items": [
-                            {
-                              "type": "TextBlock",
-                              "text": "Risk Factor",
-                              "weight": "Bolder"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "TableCell",
-                          "items": [
-                            {
-                              "type": "TextBlock",
-                              "text": "Likelihood",
-                              "weight": "Bolder"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "TableCell",
-                          "items": [
-                            {
-                              "type": "TextBlock",
-                              "text": "Severity",
-                              "weight": "Bolder"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    "@{json(concat('[', join(array(select(take(body('6_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors'], 5), 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''riskFactorType''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''likelihood''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''severity''], \"\\\"}]}]}\")')), ','), ']'))}"
-                  ]
+                  "type": "TextBlock",
+                  "text": "@{if(greater(length(body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 0), concat('**', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['riskFactorType'], '** | Likelihood: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['likelihood'], ' | Severity: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['severity']), 'No assessment factors available')}",
+                  "wrap": true,
+                  "spacing": "Small"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "@{if(greater(length(body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 1), concat('**', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['riskFactorType'], '** | Likelihood: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['likelihood'], ' | Severity: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['severity']), '')}",
+                  "wrap": true,
+                  "spacing": "Small"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "@{if(greater(length(body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 2), concat('**', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['riskFactorType'], '** | Likelihood: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['likelihood'], ' | Severity: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['severity']), '')}",
+                  "wrap": true,
+                  "spacing": "Small"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "@{if(greater(length(body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 3), concat('**', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['riskFactorType'], '** | Likelihood: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['likelihood'], ' | Severity: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['severity']), '')}",
+                  "wrap": true,
+                  "spacing": "Small"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "@{if(greater(length(body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 4), concat('**', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['riskFactorType'], '** | Likelihood: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['likelihood'], ' | Severity: ', body('4_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['severity']), '')}",
+                  "wrap": true,
+                  "spacing": "Small"
                 }
               ]
             },
@@ -1395,10 +1380,10 @@ Content-Type: application/json
           ]
         },
         "runAfter": {
-          "12_Parse_Additional_Metrics": ["Succeeded"]
+          "10_Parse_Additional_Metrics": ["Succeeded"]
         }
       },
-      "14_Post_to_Teams": {
+      "12_Post_to_Teams": {
         "type": "ApiConnection",
         "inputs": {
           "host": {
@@ -1410,11 +1395,11 @@ Content-Type: application/json
           "path": "/v1.0/teams/@{encodeURIComponent('TEAM_ID')}/channels/@{encodeURIComponent('CHANNEL_ID')}/messages",
           "body": {
             "messageType": "AdaptiveCard",
-            "content": "@{outputs('13_Build_Adaptive_Card')}"
+            "content": "@{outputs('11_Build_Adaptive_Card')}"
           }
         },
         "runAfter": {
-          "13_Build_Adaptive_Card": ["Succeeded"]
+          "11_Build_Adaptive_Card": ["Succeeded"]
         }
       }
     }
