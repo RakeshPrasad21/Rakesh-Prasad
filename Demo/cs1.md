@@ -299,7 +299,7 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
     archived: false
   ),
   
-  lowRiskCount: countEntities(
+  normalRiskCount: countEntities(
     roles: [AdminAccountRole]
     maxRiskScoreSeverity: NORMAL
     enabled: true
@@ -321,7 +321,7 @@ Authorization: Bearer {{ACCESS_TOKEN}}
 Content-Type: application/json
 
 {
-  "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
+  "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
 }
 ```
 
@@ -798,7 +798,7 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
+            "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
           }
         },
         "runAfter": {
