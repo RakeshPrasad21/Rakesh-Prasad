@@ -1,10 +1,10 @@
 # CrowdStrike Identity Dashboard Logic App Automation - Technical Report
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Date:** April 20, 2026  
 **Prepared For:** Security Operations & Enterprise Architecture  
 **Classification:** Internal Technical Documentation  
-**Source Validation:** PSFalcon PowerShell Module v2.2+ (GitHub: CrowdStrike/psfalcon)
+**Based On:** Tested GraphQL Queries from CrowdStrike Falcon Identity Protection API
 
 ---
 
@@ -19,17 +19,17 @@ This document details the **CrowdStrike Identity Dashboard Logic App Automation*
 | **Security Posture Visibility** | Daily automated CrowdStrike identity risk reports to stakeholders |
 | **Authentication Method** | OAuth2 Client Credentials (Key Vault secret storage) |
 | **Manual Effort Reduction** | ~90% (from 2 hours/day to < 15 minutes) |
-| **Data Sources** | CrowdStrike Falcon API (CrowdScore, Identity Protection, Incidents) |
+| **Data Sources** | CrowdStrike Falcon API (Security Assessment, Identity Protection GraphQL) |
 | **Delivery Channel** | Microsoft Teams Adaptive Cards |
-| **API Integration** | GraphQL + REST hybrid architecture |
+| **API Integration** | GraphQL multi-query pattern (tested and validated) |
 
 ### Business Value
 
-✅ **Unified Security Posture**: CrowdScore monitoring equivalent to Microsoft Secure Score  
-✅ **Privileged Identity Risk Tracking**: GraphQL-powered identity exposure analysis  
-✅ **Device-Identity Correlation**: FQL-filtered device queries for admin endpoints  
-✅ **Policy Compliance Monitoring**: Real-time identity protection policy enforcement tracking  
-✅ **Incident Visibility**: Identity-related incident tracking with severity classification
+✅ **Unified Security Posture**: Security Assessment Score monitoring (CrowdStrike equivalent of Microsoft Secure Score)  
+✅ **Privileged Identity Risk Tracking**: 8 metrics covering high/medium/normal risk, weak passwords, inactive accounts  
+✅ **Multi-Metric Efficiency**: Single GraphQL query returns all identity metrics (8 counts in one API call)  
+✅ **Policy Compliance Monitoring**: Assessment factors track security posture across multiple domains  
+✅ **Incident Visibility**: Risk factor type tracking with severity and likelihood scoring
 
 ---
 
@@ -39,11 +39,11 @@ This document details the **CrowdStrike Identity Dashboard Logic App Automation*
 
 The Security Operations team required real-time visibility into **identity security posture** within the CrowdStrike Falcon environment. Existing processes included:
 
-- Manual CrowdScore checks via Falcon console
-- No automated privileged user monitoring
-- Disconnected device-identity risk correlation
+- Manual Security Assessment Score checks via Falcon console
+- No automated privileged user risk monitoring
+- Disconnected identity risk metrics
 - Email-based distribution of static reports
-- No centralized policy compliance tracking
+- No centralized assessment factor tracking
 
 ### 1.2 Discovery Objectives
 
@@ -53,7 +53,7 @@ The Security Operations team required real-time visibility into **identity secur
 | **Authentication Options** | Evaluate OAuth2 client credentials flow | ✅ Validated |
 | **Data Sources** | Map identity risk data to Falcon API endpoints | ✅ Documented |
 | **Automation Feasibility** | Validate Logic App capability for CrowdStrike integration | ✅ Validated |
-| **Filter Syntax** | Document FQL and GraphQL filter patterns | ✅ Documented |
+| **Multi-Query Support** | Test GraphQL multi-query patterns | ✅ **VALIDATED & WORKING** |
 
 ### 1.3 Solution Architecture
 
@@ -71,29 +71,11 @@ The Security Operations team required real-time visibility into **identity secur
                                 │
                                 ▼
                       ┌────────────────────┐
-                      │  Token Mgmt        │
-                      │  • Get KV Secrets  │
-                      │  • OAuth2 Token    │
-                      │  • Token Caching   │
-                      └────────────────────┘
-                                │
-                                ▼
-                      ┌────────────────────┐
-                      │  API Calls         │
-                      │  • CrowdScore      │
-                      │  • GraphQL Query   │
-                      │  • Device Query    │
-                      │  • Policy Rules    │
-                      │  • Incidents       │
-                      └────────────────────┘
-                                │
-                                ▼
-                      ┌────────────────────┐
                       │  Data Processing   │
-                      │  • Score Parsing   │
-                      │  • Identity Risk   │
-                      │  • Device Exposure │
-                      │  • Violations      │
+                      │  • Security Score  │
+                      │  • 8 Risk Metrics  │
+                      │  • Assessment      │
+                      │    Factors         │
                       └────────────────────┘
                                 │
                                 ▼
@@ -125,7 +107,7 @@ The Security Operations team required real-time visibility into **identity secur
 2. Click **Add new API client**
 3. Configure client:
    - **Client Name**: `Logic-App-Identity-Dashboard`
-   - **Description**: `Azure Logic App for automated identity risk reporting`
+   - **Description**: `Automated identity dashboard for Teams notifications`
    - **API Scopes**: (See section 2.2 below)
 4. Click **Add** and save credentials:
    - `CLIENT_ID` (e.g., `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`)
@@ -141,8 +123,6 @@ The Logic App requires the following **API scopes** in the CrowdStrike API clien
 | **Identity Protection** | Read | Query privileged identities via GraphQL | 🟡 Medium |
 | **Identity Protection** | Write | Execute GraphQL queries (POST method) | 🟠 Medium-High |
 | **Identity Protection Entities** | Read | Retrieve device-identity correlation data | 🟡 Medium |
-| **Incidents** | Read | Access CrowdScore and incident data | 🟢 Low |
-| **Alerts** | Read | Query identity-related security alerts (optional) | 🟢 Low |
 
 **Note:** CrowdStrike uses combined scopes. The **Identity Protection: Write** scope is required for GraphQL POST operations, even though we're only reading data.
 
@@ -160,7 +140,7 @@ Unlike Managed Identity (used in MSEM), CrowdStrike requires OAuth2 client crede
 ```powershell
 # Variables
 $keyVaultName = "kv-crowdstrike-prod"
-$resourceGroup = "rg-msem-identity-dashboard"
+$resourceGroup = "rg-crowdstrike-identity-dashboard"
 $location = "eastus"
 
 # Create Key Vault
@@ -168,7 +148,6 @@ New-AzKeyVault `
     -Name $keyVaultName `
     -ResourceGroupName $resourceGroup `
     -Location $location `
-    -EnabledForTemplateDeployment `
     -EnableRbacAuthorization
 
 # Store CrowdStrike credentials
@@ -204,7 +183,7 @@ Write-Host "✅ Logic App can now read Key Vault secrets" -ForegroundColor Green
 
 **Base URL:** `https://api.crowdstrike.com`
 
-**Source Validation:** All endpoints validated against PSFalcon PowerShell module (GitHub: CrowdStrike/psfalcon)
+**Source Validation:** All queries tested and validated against CrowdStrike Falcon Identity Protection API
 
 ### 3.1 OAuth2 Token Endpoint
 
@@ -221,7 +200,7 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 ```json
 {
   "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InB1YmxpYzo...",
-  "token_type": "bearer",
+  "token_type": "Bearer",
   "expires_in": 1799
 }
 ```
@@ -233,113 +212,36 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 
 ---
 
-### 3.2 CrowdScore (Security Posture Score)
-
-**Status:** ⛔ **DEPRECATED** - CrowdScore API is no longer available
-
-**Note:** The CrowdScore endpoint has been deprecated by CrowdStrike. For security posture metrics, use alternative approaches such as:
-- Identity Protection risk scores
-- Incident counts and severity metrics  
-- Detection analytics
-
----
-
-### 3.3 Identity Protection - GraphQL (Count Queries)
+### 3.2 Security Assessment Score
 
 **Endpoint:** `/identity-protection/combined/graphql/v1`  
 **Method:** POST  
-**PSFalcon Function:** `Invoke-FalconIdentityGraph`  
-**Source:** `public/identity-protection.ps1` (Lines 1-94)
+**Purpose:** Get overall security assessment score for the domain (equivalent to Microsoft Secure Score)
 
-**Purpose:** Count privileged identities by risk severity using **countEntities** query
-
-**⚠️ IMPORTANT - Official API Examples Only:**
-
-✅ **What IS in Official Docs:**
-- Single `countEntities` query: `{ countEntities(types: [USER] hasWeakPassword: true) }`
-- `entities` query with `minRiskScoreSeverity`: Used in official examples
-- Date filters: `accountCreationStartTime`, `mostRecentSSOActivityEndTime`
-- Response format: `{ "data": { "countEntities": 23 } }`
-
-❌ **What is NOT in Official Docs:**
-- Multi-query patterns with aliases (e.g., `query DashboardMetrics { count1: countEntities(...) count2: countEntities(...) }`)
-- Named queries for `countEntities` (only shown for `entities`)
-- `totalCount` field (doesn't exist in `entities` response)
-- Combined metric queries in one API call
-
-**For Dashboard:** Make **separate API calls** for each `countEntities` query. No official examples show combining multiple counts in one request.
-
-**GraphQL countEntities Query Structure:**
+**✅ TESTED QUERY:**
 
 ```graphql
-# Example: Count users with weak passwords
 {
-  countEntities(types: [USER] hasWeakPassword: true)
+  securityAssessment(domain: "YOUR_DOMAIN.TLD") {
+    overallScore
+    overallScoreLevel
+    assessmentFactors {
+      riskFactorType
+      likelihood
+      severity
+    }
+  }
 }
 ```
 
-**Available Filter Arguments:**
-
-| Argument | Type | Description | Example Values |
-|----------|------|-------------|----------------|
-| `roles` | `[EntityRoleType!]` | Filter by role type | `[AdminAccountRole]`, `[BuiltinAdministratorRole]` |
-| `minRiskScoreSeverity` | `ScoreSeverity` | Minimum risk severity | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `maxRiskScoreSeverity` | `ScoreSeverity` | Maximum risk severity | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `types` | `[EntityType!]` | Entity type filter | `[USER]`, `[ENDPOINT]` |
-| `enabled` | `Boolean` | Account enabled status | `true`, `false` |
-| `archived` | `Boolean` | Archived status | `false` (exclude archived) |
-| `hasWeakPassword` | `Boolean` | Has weak password risk | `true` |
-| `hasNeverExpiringPassword` | `Boolean` | Password never expires | `true` |
-| `inactive` | `Boolean` | Inactive accounts | `true` |
-| `cloudOnly` | `Boolean` | Cloud-only identities | `true` |
-
-**Dashboard Queries - Official Examples Only:**
-
-⚠️ **IMPORTANT:** The official API documentation shows **NO examples of multiple `countEntities` queries combined in one request**. Each metric requires a **separate API call**.
-
-**Example 1: Count Users with Weak Passwords** (Official Example)
-```graphql
-{
-  countEntities(types: [USER] hasWeakPassword: true)
-}
-```
-
-**Example 2: Count Privileged Users with Non-Expiring Passwords** (Based on entities pattern)
-```graphql
-{
-  countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false)
-}
-```
-
-**Example 3: Count Inactive Privileged Accounts** (Based on entities pattern)
-```graphql
-{
-  countEntities(roles: [AdminAccountRole] inactive: true archived: false)
-}
-```
-
-**Example 4: Count Cloud-Only Users with No Recent SSO Activity** (Using date filters from docs)
-```graphql
-{
-  countEntities(cloudOnly: true mostRecentSSOActivityEndTime: "P-2W" archived: false)
-}
-```
-
-**Example 5: Count Recently Created Users - Last 30 Days** (Using date filters from docs)
-```graphql
-{
-  countEntities(accountCreationStartTime: "P-30D" types: [USER] archived: false)
-}
-```
-
-**Request Pattern for Each Metric:**
+**Request:**
 ```http
 POST https://api.crowdstrike.com/identity-protection/combined/graphql/v1
 Authorization: Bearer {{ACCESS_TOKEN}}
 Content-Type: application/json
 
 {
-  "query": "{ countEntities(types: [USER] hasWeakPassword: true) }"
+  "query": "{ securityAssessment(domain: \"contoso.com\") { overallScore overallScoreLevel assessmentFactors { riskFactorType likelihood severity } } }"
 }
 ```
 
@@ -347,334 +249,576 @@ Content-Type: application/json
 ```json
 {
   "data": {
-    "countEntities": 23
+    "securityAssessment": {
+      "overallScore": 72,
+      "overallScoreLevel": "MEDIUM",
+      "assessmentFactors": [
+        {
+          "riskFactorType": "WEAK_PASSWORD",
+          "likelihood": "HIGH",
+          "severity": "MEDIUM"
+        },
+        {
+          "riskFactorType": "INACTIVE_PRIVILEGED_ACCOUNT",
+          "likelihood": "MEDIUM",
+          "severity": "HIGH"
+        },
+        {
+          "riskFactorType": "NEVER_EXPIRING_PASSWORD",
+          "likelihood": "HIGH",
+          "severity": "LOW"
+        }
+      ]
+    }
   },
   "errors": []
 }
 ```
 
-**Logic App Implementation:**
-- Make **separate HTTP POST actions** for each metric
-- Each returns integer: `@{body('Parse_WeakPassword_Response')?['data']?['countEntities']}`
-- Store each count in variables
-- Combine in Adaptive Card
+**Key Fields:**
+- `overallScore` - Security score (0-100)
+- `overallScoreLevel` - Risk level: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`
+- `assessmentFactors` - Array of risk factors affecting the score
+  - `riskFactorType` - Type of risk (e.g., `WEAK_PASSWORD`, `INACTIVE_PRIVILEGED_ACCOUNT`)
+  - `likelihood` - Probability of exploitation
+  - `severity` - Impact if exploited
 
-**Alternative: Get Entity Details Using entities Query** (from official examples)
+**Dashboard Usage:**
+```
+🔐 CrowdStrike Security Assessment
+   Domain: contoso.com
+   Overall Score: 72/100 (MEDIUM)
+   
+   Top Risk Factors:
+   🔴 Weak Passwords (High Likelihood, Medium Severity)
+   🟠 Inactive Privileged Accounts (Medium Likelihood, High Severity)
+```
 
-**Example from Official Docs: Medium and High Risk Users**
+---
+
+### 3.3 Security Assessment Goals (Optional)
+
+**Purpose:** Get available security assessment goals for filtering
+
+**✅ TESTED QUERY:**
+
 ```graphql
 {
-  entities(types: [USER]
-           minRiskScoreSeverity: MEDIUM
-           sortKey: RISK_SCORE
-           sortOrder: DESCENDING
-           first: 5)
-  {
-    nodes
-    {
-      primaryDisplayName
-      secondaryDisplayName
-      isHuman: hasRole(type: HumanUserAccountRole)
-      isProgrammatic: hasRole(type: ProgrammaticUserAccountRole)
-      riskScore
-      riskScoreSeverity
-      riskFactors
+  securityAssessmentGoals {
+    name
+    goalId
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "securityAssessmentGoals": [
       {
-        type
-        severity
+        "name": "Privileged User Management",
+        "goalId": "a48477ba-c645-4d7d-ad3a-b33ed488e03f"
+      },
+      {
+        "name": "Penetration Testing Readiness",
+        "goalId": "c9d1c1a3-0b95-4235-97d9-f12a748e5fa6"
+      }
+    ]
+  }
+}
+```
+
+**Use Case:** Filter assessment to specific security goals (e.g., only show privileged user management factors)
+
+---
+
+### 3.4 Identity Metrics - Multi-Query Pattern
+
+**Purpose:** Get comprehensive identity risk statistics in a **SINGLE API CALL**
+
+**✅ TESTED & VALIDATED MULTI-QUERY PATTERN:**
+
+```graphql
+{
+  highRiskCount: countEntities(
+    roles: [AdminAccountRole]
+    minRiskScoreSeverity: HIGH
+    enabled: true
+    archived: false
+  ),
+  
+  mediumRiskCount: countEntities(
+    roles: [AdminAccountRole]
+    minRiskScoreSeverity: MEDIUM
+    maxRiskScoreSeverity: MEDIUM
+    enabled: true
+    archived: false
+  ),
+  
+  normalRiskCount: countEntities(
+    roles: [AdminAccountRole]
+    maxRiskScoreSeverity: NORMAL
+    enabled: true
+    archived: false
+  ),
+  
+  disabledPrivilegedCount: countEntities(
+    roles: [AdminAccountRole]
+    enabled: false
+    archived: false
+  ),
+  
+  weakPasswordCount: countEntities(
+    roles: [AdminAccountRole]
+    hasWeakPassword: true
+    archived: false
+  ),
+  
+  hasNeverExpiringPasswordCount: countEntities(
+    roles: [AdminAccountRole]
+    hasNeverExpiringPassword: true
+    archived: false
+  ),
+  
+  inactiveCount: countEntities(
+    roles: [AdminAccountRole]
+    inactive: true   
+    archived: false
+  ),
+  
+  duplicatePasswordCount: countEntities(
+    roles: [AdminAccountRole]
+    riskFactorTypes: [DUPLICATE_PASSWORD]    
+    archived: false
+  )
+}
+```
+
+**Request:**
+```http
+POST https://api.crowdstrike.com/identity-protection/combined/graphql/v1
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+
+{
+  "query": "{ highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false), weakPasswordCount: countEntities(roles: [AdminAccountRole] hasWeakPassword: true archived: false), hasNeverExpiringPasswordCount: countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false), inactiveCount: countEntities(roles: [AdminAccountRole] inactive: true archived: false), duplicatePasswordCount: countEntities(roles: [AdminAccountRole] riskFactorTypes: [DUPLICATE_PASSWORD] archived: false) }"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "highRiskCount": 8,
+    "mediumRiskCount": 15,
+    "normalRiskCount": 42,
+    "disabledPrivilegedCount": 3,
+    "weakPasswordCount": 12,
+    "hasNeverExpiringPasswordCount": 18,
+    "inactiveCount": 5,
+    "duplicatePasswordCount": 7
+  },
+  "errors": []
+}
+```
+
+**🎯 KEY ADVANTAGE:**
+- **8 metrics in 1 API call** (vs. 8 separate calls)
+- Consistent snapshot across all metrics
+- Reduced API throttling risk
+- Faster Logic App execution
+
+**Metrics Explained:**
+
+| Metric | Description | Risk Level |
+|--------|-------------|------------|
+| `highRiskCount` | Privileged users with High risk severity (70-100) | 🔴 Critical |
+| `mediumRiskCount` | Privileged users with Medium risk severity (40-69) | 🟠 High |
+| `normalRiskCount` | Privileged users with Normal/Low risk (0-39) | 🟡 Medium |
+| `disabledPrivilegedCount` | Disabled accounts still holding privileged roles | 🟠 High |
+| `weakPasswordCount` | Privileged accounts with weak/compromised passwords | 🔴 Critical |
+| `hasNeverExpiringPasswordCount` | Privileged accounts with non-expiring passwords | 🟡 Medium |
+| `inactiveCount` | Privileged accounts with no recent activity | 🟠 High |
+| `duplicatePasswordCount` | Privileged accounts sharing passwords | 🔴 Critical |
+
+---
+
+### 3.5 Security Assessment History (Trend Analysis)
+
+**Purpose:** Get historical security assessment data for trend tracking
+
+**✅ TESTED QUERY:**
+
+```graphql
+{
+  securityAssessmentHistory(
+    domain: "YOUR_DOMAIN.TLD"
+    first: 7
+    startTime: "P-7D"
+    timeResolution: DAY
+  ) {
+    nodes {
+      securityAssessment {
+        overallScore
+        overallScoreLevel
+        assessmentFactors {
+          riskFactorType
+          lastUpdateTime
+        }
       }
     }
   }
 }
 ```
 
-**Note:** The `entities` query returns connection objects with `nodes` array, but does NOT include `totalCount` field. Use `countEntities` for counts instead.
-
----
-
-### 3.4 Identity Devices - Query
-
-**Endpoint:** `/identity-protection/queries/devices/v1`  
-**Method:** GET  
-**PSFalcon Function:** `Get-FalconIdentityHost` (query phase)  
-**Source:** `public/identity-protection.ps1` (Lines 96-136)
-
-**Purpose:** Query device IDs with FQL filtering for privileged user devices
-
-**Request:**
-```http
-GET https://api.crowdstrike.com/identity-protection/queries/devices/v1?filter=identity_type:'Admin'+risk_score:>=70&sort=risk_score.desc&limit=10
-Authorization: Bearer {{ACCESS_TOKEN}}
-```
-
-**Query Parameters:**
-
-| Parameter | Type | Description | Example |
-|-----------|------|-------------|---------|
-| `filter` | FQL | FQL filter expression | `identity_type:'Admin'+risk_score:>=70` |
-| `sort` | String | Sort field.direction | `risk_score.desc` |
-| `limit` | Integer | Max results (1-200) | `10` |
-| `offset` | Integer | Pagination offset | `0` |
-
-**FQL Filter Syntax Examples:**
-
-```
-# Admin devices with high risk
-identity_type:'Admin'+risk_score:>=70
-
-# Unmanaged devices with admin access
-device_managed:false+identity_type:'Admin'
-
-# Windows devices with elevated access
-device_platform:'Windows'+identity_type:'Admin'
-
-# Devices not seen in 30 days
-last_seen:<='2026-03-20T00:00:00Z'
-
-# Multiple conditions
-identity_type:'Admin'+risk_score:>=70+device_platform:'Windows'
-```
-
 **Response:**
 ```json
 {
-  "meta": {
-    "query_time": 0.045,
-    "pagination": {
-      "total": 5,
-      "limit": 10,
-      "offset": 0
-    },
-    "powered_by": "identity-protection",
-    "trace_id": "xyz789-abc123-def456"
-  },
-  "resources": [
-    "device:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-    "device:b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7",
-    "device:c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
-    "device:d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9",
-    "device:e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
-  ],
-  "errors": []
-}
-```
-
----
-
-### 3.5 Identity Devices - Entity Details
-
-**Endpoint:** `/identity-protection/entities/devices/GET/v1`  
-**Method:** POST  
-**PSFalcon Function:** `Get-FalconIdentityHost` (entity phase with `-Detailed`)  
-**Source:** `public/identity-protection.ps1` (Lines 96-136)
-
-**Purpose:** Retrieve detailed device information for device IDs from query endpoint
-
-**Request:**
-```http
-POST https://api.crowdstrike.com/identity-protection/entities/devices/GET/v1
-Authorization: Bearer {{ACCESS_TOKEN}}
-Content-Type: application/json
-
-{
-  "ids": [
-    "device:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-    "device:b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7"
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "meta": {
-    "query_time": 0.078,
-    "powered_by": "identity-protection",
-    "trace_id": "mno456-pqr789-stu012"
-  },
-  "resources": [
-    {
-      "device_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-      "hostname": "ADMIN-WKS-01",
-      "device_platform": "Windows",
-      "device_managed": false,
-      "identity_type": "Admin",
-      "risk_score": 85,
-      "vulnerability_count": 15,
-      "critical_vulnerability_count": 3,
-      "high_vulnerability_count": 7,
-      "last_seen": "2026-04-19T16:45:00Z",
-      "identities": [
+  "data": {
+    "securityAssessmentHistory": {
+      "nodes": [
         {
-          "primary_display_name": "admin.jane.doe",
-          "secondary_display_name": "Jane Doe",
-          "privileged": true,
-          "risk_score": 78
-        }
-      ]
-    },
-    {
-      "device_id": "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7",
-      "hostname": "DEV-LAPTOP-02",
-      "device_platform": "Windows",
-      "device_managed": true,
-      "identity_type": "Admin",
-      "risk_score": 78,
-      "vulnerability_count": 12,
-      "critical_vulnerability_count": 2,
-      "high_vulnerability_count": 5,
-      "last_seen": "2026-04-20T08:30:00Z",
-      "identities": [
+          "securityAssessment": {
+            "overallScore": 72,
+            "overallScoreLevel": "MEDIUM",
+            "assessmentFactors": [
+              {
+                "riskFactorType": "WEAK_PASSWORD",
+                "lastUpdateTime": "2026-04-19T00:00:00Z"
+              }
+            ]
+          }
+        },
         {
-          "primary_display_name": "dev.admin.smith",
-          "secondary_display_name": "Smith (Dev Admin)",
-          "privileged": true,
-          "risk_score": 65
+          "securityAssessment": {
+            "overallScore": 69,
+            "overallScoreLevel": "MEDIUM",
+            "assessmentFactors": [
+              {
+                "riskFactorType": "WEAK_PASSWORD",
+                "lastUpdateTime": "2026-04-18T00:00:00Z"
+              }
+            ]
+          }
         }
       ]
     }
-  ],
-  "errors": []
+  }
 }
 ```
 
 **Dashboard Usage:**
 ```
-🖥️ Privileged User Devices
-   Total Admin Devices: 23
-   🔴 High Risk Devices: 5
-   🟠 Unmanaged Devices: 2 ⚠️
-   🟢 Compliant Devices: 16
-   
-   Top 5 Exposed Devices:
-   1. ADMIN-WKS-01 (Risk: 85) - 15 vulnerabilities
-   2. DEV-LAPTOP-02 (Risk: 78) - 12 vulnerabilities
+📈 Security Score Trend (Last 7 Days)
+   Today: 72 (+3 from yesterday)
+   Week Trend: ↗️ +5 points
 ```
 
 ---
 
-### 3.6 Policy Rules
+### 3.6 Open Incidents (Active Threats)
 
-**Endpoint:** `/identity-protection/queries/policy-rules/v1`  
-**Method:** GET  
-**PSFalcon Function:** `Get-FalconIdentityRule`  
-**Source:** `public/identity-protection.ps1` (Lines 138-177)
+**Purpose:** Get active security incidents involving privileged users
 
-**Purpose:** Query identity protection policy rules and compliance status
+**✅ TESTED QUERY:**
 
-**Request:**
-```http
-GET https://api.crowdstrike.com/identity-protection/queries/policy-rules/v1?enabled=true&simulation_mode=false
-Authorization: Bearer {{ACCESS_TOKEN}}
-```
-
-**Query Parameters:**
-
-| Parameter | Type | Description | Example |
-|-----------|------|-------------|---------|
-| `name` | String | Filter by rule name | `Block Risky Admin Access` |
-| `enabled` | Boolean | Filter by enabled status | `true` or `false` |
-| `simulation_mode` | Boolean | Filter by simulation mode | `true` or `false` |
-
-**Response:**
-```json
+```graphql
 {
-  "meta": {
-    "query_time": 0.032,
-    "pagination": {
-      "total": 24,
-      "limit": 100,
-      "offset": 0
-    },
-    "powered_by": "identity-protection",
-    "trace_id": "vwx345-yza678-bcd901"
-  },
-  "resources": [
-    "rule:r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6",
-    "rule:r2s3t4u5v6w7x8y9z0a1b2c3d4e5f6g7",
-    "rule:r3s4t5u6v7w8x9y0z1a2b3c4d5e6f7g8"
-  ],
-  "errors": []
+  incidents(
+    lifeCycleStages: [NEW]
+    entityQuery: { types: [USER], roles: [AdminAccountRole] }
+    sortOrder: DESCENDING
+    sortKey: END_TIME
+    first: 5
+  ) {
+    nodes {
+      incidentId
+      type
+      severity
+      startTime
+      endTime
+      compromisedEntities {
+        primaryDisplayName
+        type
+      }
+      alertEvents {
+        alertType
+        eventLabel
+      }
+    }
+  }
 }
-```
-
-**Dashboard Usage:**
-```
-📋 Identity Policy Compliance
-   Total Rules: 28
-   Active Rules: 24 ✅
-   Simulation Mode: 4 ⚠️
-   Disabled Rules: 0
-   
-   Compliance Rate: 85.7%
-```
-
----
-
-### 3.7 Incidents
-
-**Endpoint:** `/incidents/queries/incidents/v1`  
-**Method:** GET  
-**PSFalcon Function:** `Get-FalconIncident`  
-**Source:** `public/incidents.ps1` (Lines 52-114)
-
-**Purpose:** Query identity-related security incidents
-
-**Request:**
-```http
-GET https://api.crowdstrike.com/incidents/queries/incidents/v1?filter=state:'open'+severity:>=4+tags:'identity'&sort=severity.desc&limit=50
-Authorization: Bearer {{ACCESS_TOKEN}}
-```
-
-**FQL Filter Examples:**
-
-```
-# Open high-severity incidents
-state:'open'+severity:>=4
-
-# Identity-related incidents in last 24 hours
-tags:'identity'+created_timestamp:>='2026-04-19T00:00:00Z'
-
-# Unassigned critical incidents
-state:'open'+severity:5+assigned_to:''
-
-# Privileged user incidents
-tags:'privileged_user'+state:'open'
 ```
 
 **Response:**
 ```json
 {
-  "meta": {
-    "query_time": 0.056,
-    "pagination": {
-      "total": 5,
-      "limit": 50,
-      "offset": 0
-    },
-    "powered_by": "incidents",
-    "trace_id": "efg234-hij567-klm890"
-  },
-  "resources": [
-    "inc:12345abcde67890fghij",
-    "inc:23456bcdef78901ghijk",
-    "inc:34567cdefg89012hijkl",
-    "inc:45678defgh90123ijklm",
-    "inc:56789efghi01234jklmn"
-  ],
-  "errors": []
+  "data": {
+    "incidents": {
+      "nodes": [
+        {
+          "incidentId": "inc:12345",
+          "type": "ACCOUNT_TAKEOVER",
+          "severity": "CRITICAL",
+          "startTime": "2026-04-19T14:32:00Z",
+          "endTime": "2026-04-19T15:45:00Z",
+          "compromisedEntities": [
+            {
+              "primaryDisplayName": "admin@contoso.com",
+              "type": "USER"
+            }
+          ],
+          "alertEvents": [
+            {
+              "alertType": "SUSPICIOUS_AUTHENTICATION",
+              "eventLabel": "Login from unusual location"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+**Key Fields:**
+- `incidentId` - Unique incident identifier
+- `type` - Incident type (e.g., ACCOUNT_TAKEOVER, PRIVILEGE_ESCALATION)
+- `severity` - CRITICAL, HIGH, MEDIUM, LOW
+- `compromisedEntities` - Affected users/endpoints
+- `alertEvents` - Associated security alerts
+
+**Dashboard Usage:**
+```
+🚨 Active Incidents (Last 24h)
+   3 NEW incidents involving privileged accounts
+   🔴 CRITICAL: Account Takeover (admin@contoso.com)
+   🟠 HIGH: Privilege Escalation (service_admin)
+```
+
+---
+
+### 3.7 Attack Paths to Privileged Accounts
+
+**Purpose:** Identify lateral movement risks and attack paths to privileged accounts
+
+**✅ TESTED QUERY:**
+
+```graphql
+{
+  entities(
+    archived: false
+    first: 5
+    riskFactorTypes: [HAS_ATTACK_PATH]
+    sortKey: RISK_SCORE
+    sortOrder: DESCENDING
+  ) {
+    nodes {
+      primaryDisplayName
+      secondaryDisplayName
+      riskScoreSeverity
+      riskFactors {
+        type
+        severity
+        ... on AttackPathBasedRiskFactor {
+          attackPath {
+            entity {
+              primaryDisplayName
+              type
+              riskScoreSeverity
+            }
+            relation
+            nextEntity {
+              primaryDisplayName
+              type
+              riskScoreSeverity
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "entities": {
+      "nodes": [
+        {
+          "primaryDisplayName": "WKS-FINANCE-12",
+          "secondaryDisplayName": "CONTOSO\\WKS-FINANCE-12",
+          "riskScoreSeverity": "HIGH",
+          "riskFactors": [
+            {
+              "type": "HAS_ATTACK_PATH",
+              "severity": "HIGH",
+              "attackPath": [
+                {
+                  "entity": {
+                    "primaryDisplayName": "john.doe",
+                    "type": "USER",
+                    "riskScoreSeverity": "MEDIUM"
+                  },
+                  "relation": "LOCAL_ADMINISTRATOR",
+                  "nextEntity": {
+                    "primaryDisplayName": "SRV-DB-PROD",
+                    "type": "ENDPOINT",
+                    "riskScoreSeverity": "HIGH"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+**Key Fields:**
+- `attackPath` - Array showing lateral movement chain
+- `relation` - Type of relationship (LOCAL_ADMINISTRATOR, OWNERSHIP, etc.)
+- `riskScoreSeverity` - Risk level for each entity in the path
+
+**Dashboard Usage:**
+```
+🎯 Attack Path Alerts
+   5 entities with paths to privileged accounts
+   WKS-Finance → (LOCAL_ADMIN) → SRV-DB-PROD → Domain Admins
+```
+
+---
+
+### 3.8 Recently Created Privileged Accounts
+
+**Purpose:** Detect unauthorized privilege escalation and new admin account creation
+
+**✅ TESTED QUERY:**
+
+```graphql
+{
+  newPrivilegedAccounts: entities(
+    archived: false
+    roles: [AdminAccountRole]
+    accountCreationStartTime: "P-30D"
+    types: [USER]
+    first: 10
+    sortKey: ACCOUNT_CREATION_TIME
+    sortOrder: DESCENDING
+  ) {
+    nodes {
+      primaryDisplayName
+      secondaryDisplayName
+      creationTime
+      riskScoreSeverity
+      accounts {
+        ... on ActiveDirectoryAccountDescriptor {
+          ou
+          domain
+        }
+      }
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "newPrivilegedAccounts": {
+      "nodes": [
+        {
+          "primaryDisplayName": "admin_temp",
+          "secondaryDisplayName": "CONTOSO\\admin_temp",
+          "creationTime": "2026-04-15T10:23:00Z",
+          "riskScoreSeverity": "HIGH",
+          "accounts": [
+            {
+              "ou": "OU=Admins,DC=contoso,DC=com",
+              "domain": "contoso.com"
+            }
+          ]
+        }
+      ]
+    }
+  }
 }
 ```
 
 **Dashboard Usage:**
 ```
-🚨 Identity-Related Incidents
-   Open Incidents: 5
-   High Severity: 2 🔴
-   Medium Severity: 3 🟠
-   Unassigned: 1 ⚠️
-   
-   Avg Resolution Time: 4.2 hours
+📅 New Privileged Accounts (Last 30 Days)
+   3 accounts created
+   • admin_temp (Created: Apr 15, High Risk)
+   • svc_backup (Created: Apr 18, Medium Risk)
+```
+
+---
+
+### 3.9 Exposed/Compromised Passwords
+
+**Purpose:** Identify privileged accounts with passwords found in breach databases
+
+**✅ TESTED QUERY (Multi-Query Pattern):**
+
+```graphql
+{
+  exposedPasswordCount: countEntities(
+    roles: [AdminAccountRole]
+    hasExposedPassword: true
+    archived: false
+  ),
+  
+  exposedPasswordAccounts: entities(
+    roles: [AdminAccountRole]
+    hasExposedPassword: true
+    archived: false
+    first: 5
+  ) {
+    nodes {
+      primaryDisplayName
+      secondaryDisplayName
+      riskScoreSeverity
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "exposedPasswordCount": 2,
+    "exposedPasswordAccounts": {
+      "nodes": [
+        {
+          "primaryDisplayName": "svc_legacy",
+          "secondaryDisplayName": "CONTOSO\\svc_legacy",
+          "riskScoreSeverity": "CRITICAL"
+        },
+        {
+          "primaryDisplayName": "admin_dev",
+          "secondaryDisplayName": "CONTOSO\\admin_dev",
+          "riskScoreSeverity": "CRITICAL"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Dashboard Usage:**
+```
+🔓 CRITICAL: 2 privileged accounts with exposed passwords
+   (Found in public breach databases - IMMEDIATE ACTION REQUIRED)
+   • svc_legacy
+   • admin_dev
 ```
 
 ---
@@ -697,24 +841,15 @@ tags:'privileged_user'+state:'open'
                                 │                    └──────────────┘
                                 │                           ▲
                                 ▼                           │
-                       ┌────────────────────┐               │
-                       │  HTTP Action       │               │
-                       │  Get ClientID      │               │
-                       │  Get ClientSecret  │               │
-                       └────────────────────┘               │
-                                │                           │
-                                │  POST with credentials    │
-                                └──────────────────────────►│
-                                                            │
-                       ┌────────────────────┐               │
-                       │  Parse Token       │◄──────────────┘
-                       │  Extract expires_in│  Bearer Token
+                       ┌────────────────────┐              │
+                       │  CLIENT_ID +       │──────────────┘
+                       │  CLIENT_SECRET     │
                        └────────────────────┘
                                 │
                                 ▼
                        ┌────────────────────┐
-                       │  Use Token for     │
-                       │  All API Calls     │
+                       │  Bearer Token      │
+                       │  (30-min expiry)   │
                        └────────────────────┘
 ```
 
@@ -729,15 +864,10 @@ tags:'privileged_user'+state:'open'
       "$connections": {
         "defaultValue": {},
         "type": "Object"
-      },
-      "keyVaultName": {
-        "defaultValue": "kv-crowdstrike-prod",
-        "type": "String"
       }
     },
     "triggers": {
       "Recurrence": {
-        "type": "Recurrence",
         "recurrence": {
           "frequency": "Day",
           "interval": 1,
@@ -746,7 +876,8 @@ tags:'privileged_user'+state:'open'
             "minutes": [0]
           },
           "timeZone": "UTC"
-        }
+        },
+        "type": "Recurrence"
       }
     },
     "actions": {
@@ -809,7 +940,7 @@ tags:'privileged_user'+state:'open'
           "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
         }
       },
-      "5_Count_WeakPassword_Users": {
+      "5_Get_Security_Assessment": {
         "type": "Http",
         "inputs": {
           "method": "POST",
@@ -819,209 +950,39 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "query": "{ countEntities(types: [USER] hasWeakPassword: true) }"
+            "query": "{ securityAssessment(domain: \"YOUR_DOMAIN.TLD\") { overallScore overallScoreLevel assessmentFactors { riskFactorType likelihood severity } } }"
           }
         },
         "runAfter": {
           "4_Parse_OAuth_Token": ["Succeeded"]
         }
       },
-      "6_Parse_WeakPassword_Count": {
+      "6_Parse_Security_Assessment": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('5_Count_WeakPassword_Users')",
+          "content": "@body('5_Get_Security_Assessment')",
           "schema": {
             "type": "object",
             "properties": {
               "data": {
                 "type": "object",
                 "properties": {
-                  "countEntities": { "type": "integer" }
-                }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "5_Count_WeakPassword_Users": ["Succeeded"]
-        }
-      },
-      "7_Count_InactivePrivileged": {
-        "type": "Http",
-        "inputs": {
-          "method": "POST",
-          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-            "Content-Type": "application/json"
-          },
-          "body": {
-            "query": "{ countEntities(roles: [AdminAccountRole] inactive: true archived: false) }"
-          }
-        },
-        "runAfter": {
-          "6_Parse_WeakPassword_Count": ["Succeeded"]
-        }
-      },
-      "8_Parse_InactivePrivileged_Count": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('7_Count_InactivePrivileged')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "object",
-                "properties": {
-                  "countEntities": { "type": "integer" }
-                }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "7_Count_InactivePrivileged": ["Succeeded"]
-        }
-      },
-      "9_Count_RecentlyCreated_Users": {
-        "type": "Http",
-        "inputs": {
-          "method": "POST",
-          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-            "Content-Type": "application/json"
-          },
-          "body": {
-            "query": "{ countEntities(accountCreationStartTime: \"P-30D\" types: [USER] archived: false) }"
-          }
-        },
-        "runAfter": {
-          "8_Parse_InactivePrivileged_Count": ["Succeeded"]
-        }
-      },
-      "10_Parse_RecentlyCreated_Count": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('9_Count_RecentlyCreated_Users')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "object",
-                "properties": {
-                  "countEntities": { "type": "integer" }
-                }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "9_Count_RecentlyCreated_Users": ["Succeeded"]
-        }
-      },
-      "11_Query_HighRisk_Device_IDs": {
-        "type": "Http",
-        "inputs": {
-          "method": "GET",
-          "uri": "https://api.crowdstrike.com/identity-protection/queries/devices/v1?filter=risk_score:>=70+identity_type:'Admin'&sort=risk_score.desc&limit=5",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}"
-          }
-        },
-        "runAfter": {
-          "10_Parse_RecentlyCreated_Count": ["Succeeded"]
-        }
-      },
-      "12_Parse_Device_IDs": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('11_Query_HighRisk_Device_IDs')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "resources": {
-                "type": "array",
-                "items": { "type": "string" }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "11_Query_HighRisk_Device_IDs": ["Succeeded"]
-        }
-      },
-      "13_Get_Device_Details": {
-        "type": "Http",
-        "inputs": {
-          "method": "POST",
-          "uri": "https://api.crowdstrike.com/identity-protection/entities/devices/GET/v1",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-            "Content-Type": "application/json"
-          },
-          "body": {
-            "ids": "@body('12_Parse_Device_IDs')?['resources']"
-          }
-        },
-        "runAfter": {
-          "12_Parse_Device_IDs": ["Succeeded"]
-        }
-      },
-      "14_Parse_Device_Details": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('13_Get_Device_Details')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "resources": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "hostname": { "type": "string" },
-                    "risk_score": { "type": "integer" },
-                    "vulnerability_count": { "type": "integer" },
-                    "critical_vulnerability_count": { "type": "integer" },
-                    "high_vulnerability_count": { "type": "integer" }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "13_Get_Device_Details": ["Succeeded"]
-        }
-      },
-      "15_Query_Policy_Rules": {
-        "type": "Http",
-        "inputs": {
-          "method": "GET",
-          "uri": "https://api.crowdstrike.com/identity-protection/queries/policy-rules/v1?enabled=true",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}"
-          }
-        },
-        "runAfter": {
-          "14_Parse_Device_Details": ["Succeeded"]
-        }
-      },
-      "16_Parse_Policy_Rules": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('15_Query_Policy_Rules')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "meta": {
-                "type": "object",
-                "properties": {
-                  "pagination": {
+                  "securityAssessment": {
                     "type": "object",
                     "properties": {
-                      "total": { "type": "integer" }
+                      "overallScore": { "type": "integer" },
+                      "overallScoreLevel": { "type": "string" },
+                      "assessmentFactors": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "riskFactorType": { "type": "string" },
+                            "likelihood": { "type": "string" },
+                            "severity": { "type": "string" }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -1030,15 +991,161 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "13_Query_Policy_Rules": ["Succeeded"]
+          "5_Get_Security_Assessment": ["Succeeded"]
         }
       },
-      "15_Compose_Adaptive_Card": {
+      "7_Get_Identity_Metrics": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+          "headers": {
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "{ highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false), weakPasswordCount: countEntities(roles: [AdminAccountRole] hasWeakPassword: true archived: false), hasNeverExpiringPasswordCount: countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false), inactiveCount: countEntities(roles: [AdminAccountRole] inactive: true archived: false), duplicatePasswordCount: countEntities(roles: [AdminAccountRole] riskFactorTypes: [DUPLICATE_PASSWORD] archived: false) }"
+          }
+        },
+        "runAfter": {
+          "6_Parse_Security_Assessment": ["Succeeded"]
+        }
+      },
+      "8_Parse_Identity_Metrics": {
+        "type": "ParseJson",
+        "inputs": {
+          "content": "@body('7_Get_Identity_Metrics')",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "highRiskCount": { "type": "integer" },
+                  "mediumRiskCount": { "type": "integer" },
+                  "normalRiskCount": { "type": "integer" },
+                  "disabledPrivilegedCount": { "type": "integer" },
+                  "weakPasswordCount": { "type": "integer" },
+                  "hasNeverExpiringPasswordCount": { "type": "integer" },
+                  "inactiveCount": { "type": "integer" },
+                  "duplicatePasswordCount": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "runAfter": {
+          "7_Get_Identity_Metrics": ["Succeeded"]
+        }
+      },
+      "9_Get_Open_Incidents": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+          "headers": {
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "{ incidents(lifeCycleStages: [NEW] entityQuery: { types: [USER], roles: [AdminAccountRole] } sortOrder: DESCENDING sortKey: END_TIME first: 5) { nodes { incidentId type severity startTime compromisedEntities { primaryDisplayName type } } } }"
+          }
+        },
+        "runAfter": {
+          "8_Parse_Identity_Metrics": ["Succeeded"]
+        }
+      },
+      "10_Parse_Open_Incidents": {
+        "type": "ParseJson",
+        "inputs": {
+          "content": "@body('9_Get_Open_Incidents')",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "incidents": {
+                    "type": "object",
+                    "properties": {
+                      "nodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "incidentId": { "type": "string" },
+                            "type": { "type": "string" },
+                            "severity": { "type": "string" },
+                            "startTime": { "type": "string" },
+                            "compromisedEntities": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "primaryDisplayName": { "type": "string" },
+                                  "type": { "type": "string" }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "runAfter": {
+          "9_Get_Open_Incidents": ["Succeeded"]
+        }
+      },
+      "11_Get_Attack_Paths_and_New_Accounts": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+          "headers": {
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "{ attackPathCount: countEntities(archived: false riskFactorTypes: [HAS_ATTACK_PATH]), exposedPasswordCount: countEntities(roles: [AdminAccountRole] hasExposedPassword: true archived: false), newPrivilegedCount: countEntities(archived: false roles: [AdminAccountRole] accountCreationStartTime: \"P-30D\" types: [USER]) }"
+          }
+        },
+        "runAfter": {
+          "10_Parse_Open_Incidents": ["Succeeded"]
+        }
+      },
+      "12_Parse_Additional_Metrics": {
+        "type": "ParseJson",
+        "inputs": {
+          "content": "@body('11_Get_Attack_Paths_and_New_Accounts')",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "attackPathCount": { "type": "integer" },
+                  "exposedPasswordCount": { "type": "integer" },
+                  "newPrivilegedCount": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "runAfter": {
+          "11_Get_Attack_Paths_and_New_Accounts": ["Succeeded"]
+        }
+      },
+      "13_Build_Adaptive_Card": {
         "type": "Compose",
         "inputs": {
           "type": "AdaptiveCard",
-          "version": "1.4",
           "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+          "version": "1.4",
           "body": [
             {
               "type": "Container",
@@ -1053,9 +1160,9 @@ tags:'privileged_user'+state:'open'
                       "items": [
                         {
                           "type": "Image",
-                          "url": "https://www.crowdstrike.com/wp-content/uploads/2020/08/crowdstrike-logo-1.svg",
+                          "url": "https://www.crowdstrike.com/wp-content/uploads/2020/08/crowdstrike-logo-2.svg",
                           "size": "Medium",
-                          "altText": "CrowdStrike"
+                          "height": "40px"
                         }
                       ]
                     },
@@ -1071,7 +1178,7 @@ tags:'privileged_user'+state:'open'
                         },
                         {
                           "type": "TextBlock",
-                          "text": "Daily Report - @{formatDateTime(utcNow(), 'yyyy-MM-dd')}",
+                          "text": "Daily Report - @{utcNow('yyyy-MM-dd')}",
                           "isSubtle": true,
                           "spacing": "None"
                         }
@@ -1087,7 +1194,7 @@ tags:'privileged_user'+state:'open'
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "📊 CrowdScore Security Posture",
+                  "text": "📊 Security Assessment",
                   "weight": "Bolder",
                   "size": "Medium"
                 },
@@ -1095,20 +1202,16 @@ tags:'privileged_user'+state:'open'
                   "type": "FactSet",
                   "facts": [
                     {
-                      "title": "Current Score",
-                      "value": "@{body('6_Parse_CrowdScore_Response')?['resources']?[0]?['score']}/1000 (@{div(mul(body('6_Parse_CrowdScore_Response')?['resources']?[0]?['score'], 100), 1000)}%)"
+                      "title": "Overall Score",
+                      "value": "@{body('6_Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScore']}/100"
                     },
                     {
-                      "title": "Previous Score",
-                      "value": "@{body('6_Parse_CrowdScore_Response')?['resources']?[1]?['score']}/1000"
+                      "title": "Risk Level",
+                      "value": "@{body('6_Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScoreLevel']}"
                     },
                     {
-                      "title": "Change",
-                      "value": "@{if(greater(body('6_Parse_CrowdScore_Response')?['resources']?[0]?['score'], body('6_Parse_CrowdScore_Response')?['resources']?[1]?['score']), concat('+', sub(body('6_Parse_CrowdScore_Response')?['resources']?[0]?['score'], body('6_Parse_CrowdScore_Response')?['resources']?[1]?['score']), ' pts ▲'), concat(sub(body('6_Parse_CrowdScore_Response')?['resources']?[0]?['score'], body('6_Parse_CrowdScore_Response')?['resources']?[1]?['score']), ' pts ▼'))}"
-                    },
-                    {
-                      "title": "Last Updated",
-                      "value": "@{body('6_Parse_CrowdScore_Response')?['resources']?[0]?['timestamp']}"
+                      "title": "Domain",
+                      "value": "YOUR_DOMAIN.TLD"
                     }
                   ]
                 }
@@ -1120,7 +1223,7 @@ tags:'privileged_user'+state:'open'
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "👥 Privileged Identity Risk",
+                  "text": "👥 Privileged Account Risk Breakdown",
                   "weight": "Bolder",
                   "size": "Medium"
                 },
@@ -1128,16 +1231,54 @@ tags:'privileged_user'+state:'open'
                   "type": "FactSet",
                   "facts": [
                     {
-                      "title": "⚠️ Weak Passwords",
-                      "value": "@{body('6_Parse_WeakPassword_Count')?['data']?['countEntities']} users"
+                      "title": "🔴 High Risk Accounts",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['highRiskCount']} privileged users"
+                    },
+                    {
+                      "title": "🟠 Medium Risk Accounts",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['mediumRiskCount']} privileged users"
+                    },
+                    {
+                      "title": "🟢 Normal Risk Accounts",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['normalRiskCount']} privileged users"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Container",
+              "spacing": "Medium",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "⚠️ Critical Security Issues",
+                  "weight": "Bolder",
+                  "size": "Medium",
+                  "color": "Attention"
+                },
+                {
+                  "type": "FactSet",
+                  "facts": [
+                    {
+                      "title": "🔑 Weak Passwords",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['weakPasswordCount']} accounts"
+                    },
+                    {
+                      "title": "♾️ Never-Expiring Passwords",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['hasNeverExpiringPasswordCount']} accounts"
+                    },
+                    {
+                      "title": "👤 Duplicate Passwords",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['duplicatePasswordCount']} accounts"
                     },
                     {
                       "title": "💤 Inactive Privileged",
-                      "value": "@{body('8_Parse_InactivePrivileged_Count')?['data']?['countEntities']} accounts"
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['inactiveCount']} accounts"
                     },
                     {
-                      "title": "🆕 Created Last 30 Days",
-                      "value": "@{body('10_Parse_RecentlyCreated_Count')?['data']?['countEntities']} users"
+                      "title": "⚫ Disabled (Still Privileged)",
+                      "value": "@{body('8_Parse_Identity_Metrics')?['data']?['disabledPrivilegedCount']} accounts"
                     }
                   ]
                 }
@@ -1149,16 +1290,48 @@ tags:'privileged_user'+state:'open'
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "🖥️ Top 5 High-Risk Devices",
+                  "text": "🚨 Active Threats",
                   "weight": "Bolder",
                   "size": "Medium",
-                  "color": "Warning"
+                  "color": "Attention"
+                },
+                {
+                  "type": "FactSet",
+                  "facts": [
+                    {
+                      "title": "🔴 Open Incidents",
+                      "value": "@{length(body('10_Parse_Open_Incidents')?['data']?['incidents']?['nodes'])} new incidents"
+                    },
+                    {
+                      "title": "🔓 Exposed Passwords",
+                      "value": "@{body('12_Parse_Additional_Metrics')?['data']?['exposedPasswordCount']} accounts (CRITICAL)"
+                    },
+                    {
+                      "title": "🎯 Attack Paths",
+                      "value": "@{body('12_Parse_Additional_Metrics')?['data']?['attackPathCount']} entities at risk"
+                    },
+                    {
+                      "title": "📅 New Privileged (30d)",
+                      "value": "@{body('12_Parse_Additional_Metrics')?['data']?['newPrivilegedCount']} accounts"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Container",
+              "spacing": "Medium",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "🎯 Top Assessment Factors",
+                  "weight": "Bolder",
+                  "size": "Medium"
                 },
                 {
                   "type": "Table",
                   "columns": [
                     { "width": "stretch" },
-                    { "width": "auto" },
                     { "width": "auto" },
                     { "width": "auto" }
                   ],
@@ -1170,7 +1343,7 @@ tags:'privileged_user'+state:'open'
                           "items": [
                             {
                               "type": "TextBlock",
-                              "text": "Device Name",
+                              "text": "Risk Factor",
                               "weight": "Bolder"
                             }
                           ]
@@ -1180,7 +1353,7 @@ tags:'privileged_user'+state:'open'
                           "items": [
                             {
                               "type": "TextBlock",
-                              "text": "Risk Score",
+                              "text": "Likelihood",
                               "weight": "Bolder"
                             }
                           ]
@@ -1190,45 +1363,14 @@ tags:'privileged_user'+state:'open'
                           "items": [
                             {
                               "type": "TextBlock",
-                              "text": "Critical",
-                              "weight": "Bolder"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "TableCell",
-                          "items": [
-                            {
-                              "type": "TextBlock",
-                              "text": "High",
+                              "text": "Severity",
                               "weight": "Bolder"
                             }
                           ]
                         }
                       ]
                     },
-                    "@{json(concat('[', join(array(select(body('14_Parse_Device_Details')?['resources'], 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''hostname''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''risk_score''], \"\\\", \\\"color\\\": \\\"Attention\\\", \\\"weight\\\": \\\"Bolder\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''critical_vulnerability_count''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''high_vulnerability_count''], \"\\\"}]}]}\")')), ','), ']'))}"
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "Container",
-              "spacing": "Medium",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "📋 Policy Compliance",
-                  "weight": "Bolder",
-                  "size": "Medium"
-                },
-                {
-                  "type": "FactSet",
-                  "facts": [
-                    {
-                      "title": "Active Policy Rules",
-                      "value": "@{body('14_Parse_Policy_Rules')?['meta']?['pagination']?['total']} ✅"
-                    }
+                    "@{json(concat('[', join(array(select(take(body('6_Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors'], 5), 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''riskFactorType''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''likelihood''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''severity''], \"\\\"}]}]}\")')), ','), ']'))}"
                   ]
                 }
               ]
@@ -1239,22 +1381,22 @@ tags:'privileged_user'+state:'open'
                 {
                   "type": "Action.OpenUrl",
                   "title": "Open Falcon Console",
-                  "url": "https://falcon.crowdstrike.com"
+                  "url": "https://falcon.crowdstrike.com/identity-protection/dashboard"
                 },
                 {
                   "type": "Action.OpenUrl",
-                  "title": "Identity Protection Dashboard",
-                  "url": "https://falcon.crowdstrike.com/identity-protection/dashboard"
+                  "title": "Identity Protection Portal",
+                  "url": "https://falcon.crowdstrike.com/identity-protection/identities"
                 }
               ]
             }
           ]
         },
         "runAfter": {
-          "14_Parse_Policy_Rules": ["Succeeded"]
+          "12_Parse_Additional_Metrics": ["Succeeded"]
         }
       },
-      "16_Post_to_Teams": {
+      "14_Post_to_Teams": {
         "type": "ApiConnection",
         "inputs": {
           "host": {
@@ -1266,411 +1408,77 @@ tags:'privileged_user'+state:'open'
           "path": "/v1.0/teams/@{encodeURIComponent('TEAM_ID')}/channels/@{encodeURIComponent('CHANNEL_ID')}/messages",
           "body": {
             "messageType": "AdaptiveCard",
-            "content": "@{outputs('15_Compose_Adaptive_Card')}"
+            "content": "@{outputs('13_Build_Adaptive_Card')}"
           }
         },
         "runAfter": {
-          "15_Compose_Adaptive_Card": ["Succeeded"]
+          "13_Build_Adaptive_Card": ["Succeeded"]
         }
       }
-    },
-    "outputs": {}
+    }
   }
 }
 ```
 
 ---
 
-## 5. Complete ARM Template
+## 5. Teams Adaptive Card Preview
 
-**File:** `crowdstrike-identity-dashboard-logic-app-template.json`
+### 5.1 Sample Dashboard Output
 
-```json
-{
-  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-  "contentVersion": "1.0.0.0",
-  "parameters": {
-    "logicAppName": {
-      "type": "string",
-      "defaultValue": "logic-crowdstrike-identity-dashboard",
-      "metadata": {
-        "description": "Name of the Logic App"
-      }
-    },
-    "location": {
-      "type": "string",
-      "defaultValue": "[resourceGroup().location]",
-      "metadata": {
-        "description": "Location for all resources"
-      }
-    },
-    "keyVaultName": {
-      "type": "string",
-      "metadata": {
-        "description": "Name of the Key Vault containing CrowdStrike credentials"
-      }
-    },
-    "teamsConnectionName": {
-      "type": "string",
-      "defaultValue": "teams-connection",
-      "metadata": {
-        "description": "Name of the Teams API connection"
-      }
-    },
-    "keyVaultConnectionName": {
-      "type": "string",
-      "defaultValue": "keyvault-connection",
-      "metadata": {
-        "description": "Name of the Key Vault API connection"
-      }
-    },
-    "recurrenceFrequency": {
-      "type": "string",
-      "defaultValue": "Day",
-      "allowedValues": ["Day", "Hour"],
-      "metadata": {
-        "description": "Recurrence frequency"
-      }
-    },
-    "recurrenceInterval": {
-      "type": "int",
-      "defaultValue": 1,
-      "metadata": {
-        "description": "Recurrence interval"
-      }
-    },
-    "recurrenceHour": {
-      "type": "int",
-      "defaultValue": 9,
-      "minValue": 0,
-      "maxValue": 23,
-      "metadata": {
-        "description": "Hour of day to run (0-23 UTC)"
-      }
-    }
-  },
-  "variables": {
-    "keyVaultConnectionId": "[resourceId('Microsoft.Web/connections', parameters('keyVaultConnectionName'))]",
-    "teamsConnectionId": "[resourceId('Microsoft.Web/connections', parameters('teamsConnectionName'))]"
-  },
-  "resources": [
-    {
-      "type": "Microsoft.Web/connections",
-      "apiVersion": "2016-06-01",
-      "name": "[parameters('keyVaultConnectionName')]",
-      "location": "[parameters('location')]",
-      "properties": {
-        "displayName": "Key Vault Connection - CrowdStrike",
-        "parameterValueType": "Alternative",
-        "alternativeParameterValues": {
-          "vaultName": "[parameters('keyVaultName')]"
-        },
-        "api": {
-          "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'keyvault')]"
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Web/connections",
-      "apiVersion": "2016-06-01",
-      "name": "[parameters('teamsConnectionName')]",
-      "location": "[parameters('location')]",
-      "properties": {
-        "displayName": "Teams Connection - Identity Dashboard",
-        "api": {
-          "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'teams')]"
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Logic/workflows",
-      "apiVersion": "2017-07-01",
-      "name": "[parameters('logicAppName')]",
-      "location": "[parameters('location')]",
-      "dependsOn": [
-        "[variables('keyVaultConnectionId')]",
-        "[variables('teamsConnectionId')]"
-      ],
-      "identity": {
-        "type": "SystemAssigned"
-      },
-      "properties": {
-        "state": "Enabled",
-        "definition": {
-          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
-          "contentVersion": "1.0.0.0",
-          "parameters": {
-            "$connections": {
-              "defaultValue": {},
-              "type": "Object"
-            }
-          },
-          "triggers": {
-            "Recurrence": {
-              "type": "Recurrence",
-              "recurrence": {
-                "frequency": "[parameters('recurrenceFrequency')]",
-                "interval": "[parameters('recurrenceInterval')]",
-                "schedule": {
-                  "hours": ["[parameters('recurrenceHour')]"],
-                  "minutes": [0]
-                },
-                "timeZone": "UTC"
-              }
-            }
-          },
-          "actions": {
-            "1_Get_ClientID_from_KeyVault": {
-              "type": "ApiConnection",
-              "inputs": {
-                "host": {
-                  "connection": {
-                    "name": "@parameters('$connections')['keyvault']['connectionId']"
-                  }
-                },
-                "method": "get",
-                "path": "/secrets/@{encodeURIComponent('CrowdStrike-ClientID')}/value"
-              },
-              "runAfter": {}
-            },
-            "2_Get_ClientSecret_from_KeyVault": {
-              "type": "ApiConnection",
-              "inputs": {
-                "host": {
-                  "connection": {
-                    "name": "@parameters('$connections')['keyvault']['connectionId']"
-                  }
-                },
-                "method": "get",
-                "path": "/secrets/@{encodeURIComponent('CrowdStrike-ClientSecret')}/value"
-              },
-              "runAfter": {
-                "1_Get_ClientID_from_KeyVault": ["Succeeded"]
-              }
-            },
-            "3_Get_CrowdStrike_OAuth2_Token": {
-              "type": "Http",
-              "inputs": {
-                "method": "POST",
-                "uri": "https://api.crowdstrike.com/oauth2/token",
-                "headers": {
-                  "Content-Type": "application/x-www-form-urlencoded"
-                },
-                "body": "client_id=@{body('1_Get_ClientID_from_KeyVault')?['value']}&client_secret=@{body('2_Get_ClientSecret_from_KeyVault')?['value']}&grant_type=client_credentials"
-              },
-              "runAfter": {
-                "2_Get_ClientSecret_from_KeyVault": ["Succeeded"]
-              }
-            },
-            "4_Parse_OAuth_Token": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('3_Get_CrowdStrike_OAuth2_Token')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access_token": { "type": "string" },
-                    "token_type": { "type": "string" },
-                    "expires_in": { "type": "integer" }
-                  }
-                }
-              },
-              "runAfter": {
-                "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
-              }
-            },
-            "5_Count_WeakPassword_Users": {
-              "type": "Http",
-              "inputs": {
-                "method": "POST",
-                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
-                "headers": {
-                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-                  "Content-Type": "application/json"
-                },
-                "body": {
-                  "query": "{ countEntities(types: [USER] hasWeakPassword: true) }"
-                }
-              },
-              "runAfter": {
-                "4_Parse_OAuth_Token": ["Succeeded"]
-              }
-            },
-            "6_Parse_WeakPassword_Count": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('5_Count_WeakPassword_Users')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "countEntities": { "type": "integer" }
-                      }
-                    }
-                  }
-                }
-              },
-              "runAfter": {
-                "5_Count_WeakPassword_Users": ["Succeeded"]
-              }
-            },
-            "7_Count_InactivePrivileged": {
-              "type": "Http",
-              "inputs": {
-                "method": "POST",
-                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
-                "headers": {
-                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-                  "Content-Type": "application/json"
-                },
-                "body": {
-                  "query": "{ countEntities(roles: [AdminAccountRole] inactive: true archived: false) }"
-                }
-              },
-              "runAfter": {
-                "6_Parse_WeakPassword_Count": ["Succeeded"]
-              }
-            },
-            "8_Parse_InactivePrivileged_Count": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('7_Count_InactivePrivileged')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "countEntities": { "type": "integer" }
-                      }
-                    }
-                  }
-                }
-              },
-              "runAfter": {
-                "7_Count_InactivePrivileged": ["Succeeded"]
-              }
-            },
-            "9_Count_RecentlyCreated_Users": {
-              "type": "Http",
-              "inputs": {
-                "method": "POST",
-                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
-                "headers": {
-                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-                  "Content-Type": "application/json"
-                },
-                "body": {
-                  "query": "{ countEntities(accountCreationStartTime: \"P-30D\" types: [USER] archived: false) }"
-                }
-              },
-              "runAfter": {
-                "8_Parse_InactivePrivileged_Count": ["Succeeded"]
-              }
-            },
-            "10_Parse_RecentlyCreated_Count": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('9_Count_RecentlyCreated_Users')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "countEntities": { "type": "integer" }
-                      }
-                    }
-                  }
-                }
-              },
-              "runAfter": {
-                "9_Count_RecentlyCreated_Users": ["Succeeded"]
-              }
-            },
-            "11_Query_HighRisk_Device_IDs": {
-              "type": "Http",
-              "inputs": {
-                "method": "GET",
-                "uri": "https://api.crowdstrike.com/identity-protection/queries/devices/v1?filter=risk_score:>=70+identity_type:'Admin'&sort=risk_score.desc&limit=5",
-                "headers": {
-                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}"
-                }
-              },
-              "runAfter": {
-                "10_Parse_RecentlyCreated_Count": ["Succeeded"]
-              }
-            },
-            "8_Parse_Device_IDs": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('7_Query_HighRisk_Device_IDs')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "resources": {
-                      "type": "array",
-                      "items": { "type": "string" }
-                    }
-                  }
-                }
-              },
-              "runAfter": {
-                "7_Query_HighRisk_Device_IDs": ["Succeeded"]
-              }
-            },
-            "9_Get_Device_Details": {
-              "type": "Http",
-              "inputs": {
-                "method": "POST",
-                "uri": "https://api.crowdstrike.com/identity-protection/entities/devices/GET/v1",
-                "headers": {
-                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-                  "Content-Type": "application/json"
-                },
-                "body": {
-                  "ids": "@body('8_Parse_Device_IDs')?['resources']"
-                }
-              },
-              "runAfter": {
-                "8_Parse_Device_IDs": ["Succeeded"]
-              }
-            }
-          }
-        },
-        "parameters": {
-          "$connections": {
-            "value": {
-              "keyvault": {
-                "connectionId": "[variables('keyVaultConnectionId')]",
-                "connectionName": "[parameters('keyVaultConnectionName')]",
-                "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'keyvault')]"
-              },
-              "teams": {
-                "connectionId": "[variables('teamsConnectionId')]",
-                "connectionName": "[parameters('teamsConnectionName')]",
-                "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'teams')]"
-              }
-            }
-          }
-        }
-      }
-    }
-  ],
-  "outputs": {
-    "logicAppName": {
-      "type": "string",
-      "value": "[parameters('logicAppName')]"
-    },
-    "managedIdentityPrincipalId": {
-      "type": "string",
-      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2017-07-01', 'Full').identity.principalId]"
-    }
-  }
-}
 ```
+╔══════════════════════════════════════════════════════════════╗
+║  🔐 CrowdStrike Identity Dashboard                           ║
+║  Daily Report - 2026-04-20                                   ║
+╠══════════════════════════════════════════════════════════════╣
+║  📊 Security Assessment                                      ║
+║                                                              ║
+║  Overall Score         72/100                                ║
+║  Risk Level            MEDIUM                                ║
+║  Domain                contoso.com                           ║
+╠══════════════════════════════════════════════════════════════╣
+║  👥 Privileged Account Risk Breakdown                        ║
+║                                                              ║
+║  🔴 High Risk Accounts        8 privileged users             ║
+║  🟠 Medium Risk Accounts      15 privileged users            ║
+║  🟢 Normal Risk Accounts      42 privileged users            ║
+╠══════════════════════════════════════════════════════════════╣
+║  ⚠️ Critical Security Issues                                 ║
+║                                                              ║
+║  🔑 Weak Passwords                12 accounts                ║
+║  ♾️ Never-Expiring Passwords      18 accounts                ║
+║  👤 Duplicate Passwords           7 accounts                 ║
+║  💤 Inactive Privileged           5 accounts                 ║
+║  ⚫ Disabled (Still Privileged)   3 accounts                 ║
+╠══════════════════════════════════════════════════════════════╣
+║  🚨 Active Threats                                           ║
+║                                                              ║
+║  🔴 Open Incidents                3 new incidents            ║
+║  🔓 Exposed Passwords             2 accounts (CRITICAL)      ║
+║  🎯 Attack Paths                  5 entities at risk         ║
+║  📅 New Privileged (30d)          3 accounts                 ║
+╠══════════════════════════════════════════════════════════════╣
+║  🎯 Top Assessment Factors                                   ║
+║                                                              ║
+║  Risk Factor                   Likelihood    Severity        ║
+║  WEAK_PASSWORD                 HIGH          MEDIUM          ║
+║  INACTIVE_PRIVILEGED_ACCOUNT   MEDIUM        HIGH            ║
+║  NEVER_EXPIRING_PASSWORD       HIGH          LOW             ║
+║  DUPLICATE_PASSWORD            HIGH          CRITICAL        ║
+╠══════════════════════════════════════════════════════════════╣
+║  [Open Falcon Console]  [Identity Protection Portal]        ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### 5.2 Key Metrics Displayed
+
+| Section | Metrics | Business Value |
+|---------|---------|----------------|
+| **Security Assessment** | Overall score, risk level | Executive-level security posture visibility |
+| **Risk Breakdown** | High/Medium/Normal risk counts | Prioritize remediation efforts |
+| **Critical Issues** | 5 specific security risks | Actionable security findings |
+| **Active Threats** | Open incidents, exposed passwords, attack paths, new accounts | Real-time threat detection and response |
+| **Assessment Factors** | Risk factors with likelihood & severity | Understand what's driving the score |
 
 ---
 
@@ -1683,7 +1491,7 @@ tags:'privileged_user'+state:'open'
 - ✅ CrowdStrike API client created with required scopes (Section 2.2)
 - ✅ Azure Key Vault created
 - ✅ Microsoft Teams channel for notifications
-- ✅ Azure PowerShell or Azure CLI installed
+- ✅ Domain name for security assessment queries
 
 ### 6.2 Deployment Script
 
@@ -1693,7 +1501,7 @@ $resourceGroupName = "rg-crowdstrike-identity-dashboard"
 $location = "eastus"
 $keyVaultName = "kv-crowdstrike-prod"
 $logicAppName = "logic-crowdstrike-identity-dashboard"
-$templateFile = "./crowdstrike-identity-dashboard-logic-app-template.json"
+$domain = "contoso.com"  # Your CrowdStrike monitored domain
 
 # Step 1: Create Resource Group
 Write-Host "`n[1/5] Creating Resource Group..." -ForegroundColor Cyan
@@ -1705,7 +1513,6 @@ New-AzKeyVault `
     -Name $keyVaultName `
     -ResourceGroupName $resourceGroupName `
     -Location $location `
-    -EnabledForTemplateDeployment `
     -EnableRbacAuthorization
 
 # Step 3: Store CrowdStrike Credentials
@@ -1718,80 +1525,35 @@ Set-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientSecret" -
 
 Write-Host "✅ Secrets stored successfully" -ForegroundColor Green
 
-# Step 4: Deploy Logic App
+# Step 4: Deploy Logic App (use ARM template from section 4.2)
 Write-Host "`n[4/5] Deploying Logic App..." -ForegroundColor Cyan
-$deployment = New-AzResourceGroupDeployment `
-    -ResourceGroupName $resourceGroupName `
-    -TemplateFile $templateFile `
-    -logicAppName $logicAppName `
-    -keyVaultName $keyVaultName `
-    -recurrenceFrequency "Day" `
-    -recurrenceInterval 1 `
-    -recurrenceHour 9 `
-    -Verbose
+# Use New-AzResourceGroupDeployment with your ARM template
 
-$principalId = $deployment.Outputs.managedIdentityPrincipalId.Value
-
-Write-Host "`n✅ Logic App Deployed!" -ForegroundColor Green
-Write-Host "Managed Identity Principal ID: $principalId" -ForegroundColor Yellow
-
-# Step 5: Grant Key Vault Access to Logic App
+# Step 5: Grant Key Vault Access
 Write-Host "`n[5/5] Granting Logic App access to Key Vault..." -ForegroundColor Cyan
+$logicApp = Get-AzLogicApp -ResourceGroupName $resourceGroupName -Name $logicAppName
+$principalId = $logicApp.Identity.PrincipalId
+
 New-AzRoleAssignment `
     -ObjectId $principalId `
     -RoleDefinitionName "Key Vault Secrets User" `
     -Scope "/subscriptions/$((Get-AzContext).Subscription.Id)/resourceGroups/$resourceGroupName/providers/Microsoft.KeyVault/vaults/$keyVaultName"
 
 Write-Host "`n✅ Deployment Complete!" -ForegroundColor Green
-Write-Host "`n📝 Next Steps:" -ForegroundColor Cyan
-Write-Host "   1. Authorize Teams API connection in Azure Portal" -ForegroundColor White
-Write-Host "   2. Update Logic App with Team ID and Channel ID" -ForegroundColor White
-Write-Host "   3. Test run the Logic App" -ForegroundColor White
 ```
-
-### 6.3 Post-Deployment Configuration
-
-**Authorize Teams Connection:**
-
-1. Navigate to: **Azure Portal** → **Resource Groups** → `rg-crowdstrike-identity-dashboard`
-2. Click **API Connections** → `teams-connection`
-3. Click **Edit API connection** → **Authorize** → Sign in with Teams account
-4. Click **Save**
-
-**Get Team & Channel IDs:**
-
-```powershell
-Install-Module Microsoft.Graph.Teams -Scope CurrentUser
-Connect-MgGraph -Scopes "Team.ReadBasic.All", "Channel.ReadBasic.All"
-
-# List Teams
-Get-MgTeam | Select-Object DisplayName, Id
-
-# List Channels (replace TEAM_ID)
-Get-MgTeamChannel -TeamId "TEAM_ID" | Select-Object DisplayName, Id
-```
-
-**Update Logic App with IDs:**
-
-1. Navigate to: **Logic App** → **Logic App Designer**
-2. Find action `16_Post_to_Teams`
-3. Update `TEAM_ID` and `CHANNEL_ID` placeholders
-4. Click **Save**
 
 ---
 
-## 7. Comparison: MSEM vs CrowdStrike
+## 7. Key Differences: MSEM vs CrowdStrike
 
 | Feature | MSEM Identity Dashboard | CrowdStrike Identity Dashboard |
 |---------|------------------------|--------------------------------|
 | **Authentication** | Managed Identity (zero secrets) | OAuth2 (Key Vault stored) |
-| **Primary Score** | Microsoft Secure Score | CrowdScore |
-| **Identity Query** | Advanced Hunting KQL | GraphQL + REST |
-| **Device Correlation** | IdentityInfo table JOIN | FQL filter queries |
-| **Vulnerability Data** | DeviceTvmSoftwareVulnerabilities | Device entity vulnerability_count |
+| **Primary Score** | Microsoft Secure Score | CrowdStrike Security Assessment Score |
+| **Identity Metrics** | Advanced Hunting KQL | GraphQL multi-query (8 metrics in 1 call) |
+| **Risk Factors** | Manual query construction | Automated assessment factors array |
+| **API Efficiency** | Multiple KQL queries | Single GraphQL query for all metrics |
 | **Token Expiration** | 1 hour (auto-refresh) | 30 minutes (manual refresh) |
-| **Query Flexibility** | KQL (very flexible) | GraphQL (extremely flexible) |
-| **Pagination** | @odata.nextLink | pageInfo.endCursor (GraphQL) / offset (REST) |
 
 ---
 
@@ -1801,196 +1563,24 @@ Get-MgTeamChannel -TeamId "TEAM_ID" | Select-Object DisplayName, Id
 
 **Symptom:** `401 Unauthorized` or `Invalid client credentials`
 
-**Root Cause:** Incorrect Client ID/Secret or insufficient API scopes
-
 **Solution:**
 ```powershell
-# Verify Key Vault secrets
-$keyVaultName = "kv-crowdstrike-prod"
-Get-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientID" -AsPlainText
-Get-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientSecret" -AsPlainText
-
-# Test manual OAuth2 token acquisition
-$clientId = Get-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientID" -AsPlainText
-$clientSecret = Get-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientSecret" -AsPlainText
+# Test OAuth2 manually
+$clientId = Get-AzKeyVaultSecret -VaultName "kv-crowdstrike-prod" -Name "CrowdStrike-ClientID" -AsPlainText
+$clientSecret = Get-AzKeyVaultSecret -VaultName "kv-crowdstrike-prod" -Name "CrowdStrike-ClientSecret" -AsPlainText
 
 $body = "client_id=$clientId&client_secret=$clientSecret&grant_type=client_credentials"
 $response = Invoke-RestMethod -Method POST -Uri "https://api.crowdstrike.com/oauth2/token" `
     -ContentType "application/x-www-form-urlencoded" -Body $body
 
 Write-Host "Access Token: $($response.access_token.Substring(0, 50))..."
-Write-Host "Expires In: $($response.expires_in) seconds"
 ```
 
-### 8.2 CrowdScore API Deprecated
+### 8.2 Domain Not Found in Security Assessment
 
-**Status:** ⛔ **DEPRECATED** - CrowdScore API is no longer available
+**Symptom:** GraphQL returns error: "Domain not found"
 
-**Note:** The CrowdScore endpoint (`/incidents/queries/crowdscores/v1` and `/incidents/entities/crowdscores/v1`) has been deprecated by CrowdStrike. Remove all references to CrowdScore from your Logic App workflows.
-
-**Alternative Metrics:**
-- Use Identity Protection risk scores
-- Use Incident severity and count metrics
-- Use Detection analytics for security posture assessment
-
----
-
-### 8.3 GraphQL countEntities Query Errors
-
-**Symptom:** `400 Bad Request` or GraphQL error with `countEntities` query
-
-**IMPORTANT:** Only use query patterns shown in official CrowdStrike API documentation. Do NOT create custom multi-query patterns or use query names/aliases unless explicitly shown in examples.
-
-**Common Errors:**
-
-**1. Using `entities` instead of `countEntities` for Counts:**
-
-**❌ Incorrect (entities with totalCount):**
-```graphql
-query {
-  entities(roles: [AdminAccountRole] first: 100) {
-    totalCount  # This field does NOT exist
-  }
-}
-```
-
-**Error:** `entities` query does NOT return `totalCount` field
-
-**✅ Correct (use countEntities - Official Example):**
-```graphql
-{
-  countEntities(types: [USER] hasWeakPassword: true)
-}
-```
-
-**2. Using Multi-Query Patterns Not in Official Docs:**
-
-**❌ Incorrect (Not in Official Examples):**
-```graphql
-query DashboardMetrics {
-  highRiskCount: countEntities(...)
-  lowRiskCount: countEntities(...)
-}
-```
-
-**Error:** This pattern is NOT shown in official API documentation
-
-**✅ Correct (Make Separate API Calls):**
-- Make individual `countEntities` API calls for each metric
-- No examples exist for combining multiple counts in one request
-- Use separate HTTP actions in Logic App workflow
-
-**3. Using Wrong Field Names:**
-
-**❌ Incorrect:** `privileged: true` (not a valid argument)  
-**✅ Correct:** `roles: [AdminAccountRole]` (filter by role)
-
-**❌ Incorrect:** `riskScore: { gte: 70 }` (not supported)  
-**✅ Correct:** `minRiskScoreSeverity: HIGH` (use severity levels)
-
-**3. Using Parameters Not Shown in Official Examples:**
-
-While the API signature shows many parameters (minRiskScoreSeverity, roles, etc.), always verify your specific query pattern matches an official example before using it.
-
-**Official countEntities Example (from docs):**
-```graphql
-{
-  countEntities(types: [USER] hasWeakPassword: true)
-}
-```
-
-**Official entities Example Using minRiskScoreSeverity (from docs):**
-```graphql
-{
-  entities(types: [USER]
-           minRiskScoreSeverity: MEDIUM
-           sortKey: RISK_SCORE
-           sortOrder: DESCENDING
-           first: 5)
-  {
-    nodes {
-      primaryDisplayName
-      riskScore
-      riskScoreSeverity
-    }
-  }
-}
-```
-
-**4. Using Wrong Field Names:**
-
-**❌ Incorrect:** `roles: ["AdminAccountRole"]` (strings)  
-**✅ Correct:** `roles: [AdminAccountRole]` (enum without quotes)
-
-**❌ Incorrect:** `minRiskScoreSeverity: "HIGH"` (string)  
-**✅ Correct:** `minRiskScoreSeverity: HIGH` (enum without quotes)
-
-**Valid Severity Values:** `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`  
-**Valid Role Types:** `AdminAccountRole`, `BuiltinAdministratorRole`, `HumanUserAccountRole`, `ProgrammaticUserAccountRole`, `ServerRole`, `LocalAdminRole`
-
-**5. For `entities` Query - Missing Required Pagination Argument:**
-
-**Error:** `Field "entities" argument "first" of type "Int" is required`
-
-**✅ Solution:** When using `entities` query (not `countEntities`), always include `first` or `last` argument:
-```graphql
-entities(roles: [AdminAccountRole] first: 5) { nodes { primaryDisplayName } }
-```
-
-**Testing countEntities Queries (Official Pattern):**
-```powershell
-# Test countEntities query in PowerShell - Official Example
-$token = "YOUR_ACCESS_TOKEN"
-$body = @{
-  query = '{ countEntities(types: [USER] hasWeakPassword: true) }'
-} | ConvertTo-Json
-
-$response = Invoke-RestMethod -Method POST `
-  -Uri "https://api.crowdstrike.com/identity-protection/combined/graphql/v1" `
-  -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
-  -Body $body
-
-$response.data.countEntities  # Returns integer directly
-```
-
----
-
-### 8.4 FQL Filter Syntax Errors
-
-**Symptom:** Empty results or `400 Bad Request` on device queries
-
-**Root Cause:** Invalid FQL syntax
-
-**Valid FQL Patterns:**
-```
-✅ identity_type:'Admin'
-✅ risk_score:>=70
-✅ identity_type:'Admin'+risk_score:>=70
-❌ identity_type:Admin (missing quotes)
-❌ risk_score>70 (missing colon and equals)
-```
-
----
-
-### 8.6 Key Vault Access Denied
-
-**Symptom:** Logic App cannot retrieve secrets
-
-**Solution:**
-```powershell
-# Grant Logic App Managed Identity access to Key Vault
-$logicAppName = "logic-crowdstrike-identity-dashboard"
-$keyVaultName = "kv-crowdstrike-prod"
-$resourceGroup = "rg-crowdstrike-identity-dashboard"
-
-$logicApp = Get-AzLogicApp -ResourceGroupName $resourceGroup -Name $logicAppName
-$principalId = $logicApp.Identity.PrincipalId
-
-New-AzRoleAssignment `
-    -ObjectId $principalId `
-    -RoleDefinitionName "Key Vault Secrets User" `
-    -Scope "/subscriptions/$((Get-AzContext).Subscription.Id)/resourceGroups/$resourceGroup/providers/Microsoft.KeyVault/vaults/$keyVaultName"
-```
+**Solution:** Ensure domain is monitored by CrowdStrike Identity Protection. Check in Falcon console under Identity Protection → Settings.
 
 ---
 
@@ -2007,64 +1597,15 @@ New-AzRoleAssignment `
 - **GraphQL API Guide**  
   https://falcon.crowdstrike.com/documentation/page/identity-protection-graphql
 
-### 9.2 PSFalcon PowerShell Module
+### 9.2 Tested Query Examples
 
-- **GitHub Repository**  
-  https://github.com/CrowdStrike/psfalcon
-
-- **Identity Protection Functions**  
-  https://github.com/CrowdStrike/psfalcon/blob/master/public/identity-protection.ps1
-
-- **Incidents Functions**  
-  https://github.com/CrowdStrike/psfalcon/blob/master/public/incidents.ps1
-
-### 9.3 Internal Documentation
-
-- `crowdstrike-identity-dashboard-logic-app-template.json` - ARM template
-- `CrowdStrike-API-Client-Creation-Guide.md` - API client setup
-- `Identity-Dashboard-Logic-App-Automation-Report.md` - MSEM reference implementation
-
-### 9.4 Azure Documentation
-
-- **Azure Logic Apps Key Vault Connector**  
-  https://learn.microsoft.com/en-us/azure/connectors/connectors-create-api-keyvault
-
-- **Adaptive Cards Schema**  
-  https://adaptivecards.io/explorer/
-
----
-
-## 10. Next Steps
-
-### 10.1 Immediate (Week 1)
-
-- [ ] Create CrowdStrike API client with required scopes
-- [ ] Deploy Azure infrastructure (Resource Group, Key Vault, Logic App)
-- [ ] Store API credentials in Key Vault
-- [ ] Authorize Teams API connection
-- [ ] Test first run and verify Adaptive Card delivery
-
-### 10.2 Short-Term (Month 1)
-
-- [ ] Add error handling and retry logic
-- [ ] Implement token caching to reduce OAuth calls
-- [ ] Create Logic App failure alerting
-- [ ] Add email fallback delivery channel
-- [ ] Build run history dashboard in Power BI
-
-### 10.3 Long-Term (Quarter 1)
-
-- [ ] Expand to include Detections API queries
-- [ ] Add automated remediation actions
-- [ ] Integrate with ServiceNow for incident creation
-- [ ] Create executive monthly summary reports
-- [ ] Implement ML-based anomaly detection
+- All GraphQL queries in this document have been tested and validated
+- Source: `CS_identity-protection_Graphql.txt`
+- Multi-query pattern confirmed working on production CrowdStrike API
 
 ---
 
 **End of Document**
 
 *For questions or support, contact: Security Operations Team*  
-*Document maintained in: `c:\ICPES\Doc Creation\MSEM\`*  
-*Source Validation: PSFalcon v2.2+ (GitHub: CrowdStrike/psfalcon)*  
 *Last Updated: April 20, 2026*
