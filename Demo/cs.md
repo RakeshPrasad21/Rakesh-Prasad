@@ -235,147 +235,32 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 
 ### 3.2 CrowdScore (Security Posture Score)
 
-**Endpoint:** `/incidents/queries/crowdscores/v1` (Query IDs) + `/incidents/entities/crowdscores/v1` (Get Details)  
-**Method:** GET (query) + POST (entities)  
-**PSFalcon Function:** `Get-FalconScore`  
-**Source:** `public/incidents.ps1` (Lines 116-145)
+**Status:** ⛔ **DEPRECATED** - CrowdScore API is no longer available
 
-**Purpose:** Equivalent to Microsoft Secure Score - primary security posture metric
-
-**⚠️ IMPORTANT:** CrowdScore uses a two-step process (query IDs, then get entities), not a combined endpoint.
-
-**Request (Step 1 - Query CrowdScore IDs):**
-```http
-GET https://api.crowdstrike.com/incidents/queries/crowdscores/v1?filter=timestamp:>'2026-04-01T00:00:00Z'&sort=timestamp.desc&limit=100
-Authorization: Bearer {{ACCESS_TOKEN}}
-```
-
-**Response (Step 1):**
-```json
-{
-  "meta": {
-    "query_time": 0.045,
-    "pagination": {
-      "total": 30,
-      "limit": 100,
-      "offset": 0
-    },
-    "powered_by": "crowdscores",
-    "trace_id": "abc123-def456-ghi789"
-  },
-  "resources": [
-    "score:6358dbdd28c246d1a7477142dbbf6906:1745390400",
-    "score:6358dbdd28c246d1a7477142dbbf6906:1745304000"
-  ],
-  "errors": []
-}
-```
-
-**Request (Step 2 - Get CrowdScore Details):**
-```http
-POST https://api.crowdstrike.com/incidents/entities/crowdscores/v1
-Authorization: Bearer {{ACCESS_TOKEN}}
-Content-Type: application/json
-
-{
-  "ids": [
-    "score:6358dbdd28c246d1a7477142dbbf6906:1745390400",
-    "score:6358dbdd28c246d1a7477142dbbf6906:1745304000"
-  ]
-}
-```
-
-**Query Parameters:**
-
-| Parameter | Type | Description | Example |
-|-----------|------|-------------|---------|
-| `filter` | FQL | Filter by timestamp or score | `timestamp:>'2026-04-01T00:00:00Z'` |
-| `sort` | String | Sort field and direction | `score.desc`, `timestamp.desc` |
-| `limit` | Integer | Max results (1-2500) | `100` |
-| `offset` | Integer | Pagination offset | `0` |
-
-**Response (Step 2):**
-```json
-{
-  "meta": {
-    "query_time": 0.123,
-    "powered_by": "crowdscores",
-    "trace_id": "xyz789-abc123-def456"
-  },
-  "resources": [
-    {
-      "id": "score:6358dbdd28c246d1a7477142dbbf6906:1745390400",
-      "cid": "6358dbdd28c246d1a7477142dbbf6906",
-      "score": 850,
-      "adjusted_score": 8.5,
-      "timestamp": "2026-04-20T09:00:00Z"
-    },
-    {
-      "id": "score:6358dbdd28c246d1a7477142dbbf6906:1745304000",
-      "cid": "6358dbdd28c246d1a7477142dbbf6906",
-      "score": 835,
-      "adjusted_score": 8.35,
-      "timestamp": "2026-04-19T09:00:00Z"
-    }
-  ],
-  "errors": []
-}
-```
-
-**Key Fields:**
-- `score`: Raw CrowdScore (0-1000 scale, normalized)
-- `adjusted_score`: Decimal representation (0-10)
-- `timestamp`: Score calculation timestamp (UTC)
-
-**Dashboard Usage:**
-```
-Current Score: 850/1000 (85.0%)
-Previous Score: 835/1000 (83.5%)
-Change: +15 pts (+1.8%) ▲
-```
+**Note:** The CrowdScore endpoint has been deprecated by CrowdStrike. For security posture metrics, use alternative approaches such as:
+- Identity Protection risk scores
+- Incident counts and severity metrics  
+- Detection analytics
 
 ---
 
-### 3.3 Identity Protection - GraphQL
+### 3.3 Identity Protection - GraphQL (Count Queries)
 
 **Endpoint:** `/identity-protection/combined/graphql/v1`  
 **Method:** POST  
 **PSFalcon Function:** `Invoke-FalconIdentityGraph`  
 **Source:** `public/identity-protection.ps1` (Lines 1-94)
 
-**Purpose:** Flexible querying of privileged identities, risk scores, and identity exposure with **native filtering support**
+**Purpose:** Count privileged identities by risk severity using **countEntities** query
 
-**✅ KEY FEATURE:** CrowdStrike GraphQL API **SUPPORTS filtering** through direct query arguments (NOT nested filter objects)
+**✅ KEY FEATURE:** Use `countEntities` query to get integer counts directly (returns `Int!`, not complex objects)
 
-**GraphQL Query Structure with Filtering:**
+**GraphQL countEntities Query Structure:**
 
 ```graphql
-# Query high-risk privileged identities
-query GetHighRiskAdmins {
-  entities(
-    roles: [AdminAccountRole]
-    minRiskScoreSeverity: HIGH
-    archived: false
-    enabled: true
-    first: 100
-  ) {
-    nodes {
-      primaryDisplayName
-      secondaryDisplayName
-      riskScore
-      riskScoreSeverity
-      ... on UserEntity {
-        emailAddresses
-      }
-      ... on UserOrEndpointEntity {
-        riskFactors {
-          type
-          severity
-        }
-      }
-    }
-    totalCount
-  }
+# Example: Count users with weak passwords
+{
+  countEntities(types: [USER] hasWeakPassword: true)
 }
 ```
 
@@ -386,85 +271,46 @@ query GetHighRiskAdmins {
 | `roles` | `[EntityRoleType!]` | Filter by role type | `[AdminAccountRole]`, `[BuiltinAdministratorRole]` |
 | `minRiskScoreSeverity` | `ScoreSeverity` | Minimum risk severity | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `maxRiskScoreSeverity` | `ScoreSeverity` | Maximum risk severity | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `types` | `[EntityType!]` | Entity type filter | `[USER]`, `[ENDPOINT]`, `[ENTITY_CONTAINER]` |
+| `types` | `[EntityType!]` | Entity type filter | `[USER]`, `[ENDPOINT]` |
 | `enabled` | `Boolean` | Account enabled status | `true`, `false` |
 | `archived` | `Boolean` | Archived status | `false` (exclude archived) |
 | `hasWeakPassword` | `Boolean` | Has weak password risk | `true` |
 | `hasNeverExpiringPassword` | `Boolean` | Password never expires | `true` |
 | `inactive` | `Boolean` | Inactive accounts | `true` |
 | `cloudOnly` | `Boolean` | Cloud-only identities | `true` |
-| `sortKey` | `EntitySortKey` | Sort field | `RISK_SCORE`, `PRIMARY_DISPLAY_NAME` |
-| `sortOrder` | `SortOrder` | Sort direction | `ASCENDING`, `DESCENDING` |
-| `first` | `Int` | Max results (pagination) | `100` (max 1000) |
-| `after` | `Cursor` | Pagination cursor | From `pageInfo.endCursor` |
 
-**Example Queries for Dashboard:**
+**Dashboard Queries (Multi-Query Pattern):**
 
-**1. High-Risk Privileged Identities (Risk Score 70-100):**
+**Combined Query for All Risk Counts:**
 ```graphql
-query {
-  highRisk: entities(
+query DashboardMetrics {
+  highRiskCount: countEntities(
     roles: [AdminAccountRole]
     minRiskScoreSeverity: HIGH
-    archived: false
     enabled: true
-    first: 100
-  ) {
-    totalCount
-    nodes {
-      primaryDisplayName
-      secondaryDisplayName
-      riskScore
-    }
-  }
-}
-```
-
-**2. Medium-Risk Privileged Identities (Risk Score 40-69):**
-```graphql
-query {
-  mediumRisk: entities(
+    archived: false
+  )
+  
+  mediumRiskCount: countEntities(
     roles: [AdminAccountRole]
     minRiskScoreSeverity: MEDIUM
     maxRiskScoreSeverity: MEDIUM
-    archived: false
     enabled: true
-    first: 100
-  ) {
-    totalCount
-  }
-}
-```
-
-**3. Disabled Privileged Accounts:**
-```graphql
-query {
-  disabledPrivileged: entities(
+    archived: false
+  )
+  
+  lowRiskCount: countEntities(
+    roles: [AdminAccountRole]
+    maxRiskScoreSeverity: LOW
+    enabled: true
+    archived: false
+  )
+  
+  disabledPrivilegedCount: countEntities(
     roles: [AdminAccountRole]
     enabled: false
     archived: false
-    first: 100
-  ) {
-    totalCount
-  }
-}
-```
-
-**4. Combined Multi-Query Request:**
-```graphql
-query GetDashboardMetrics {
-  highRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH archived: false enabled: true first: 100) {
-    totalCount
-  }
-  mediumRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM archived: false enabled: true first: 100) {
-    totalCount
-  }
-  lowRisk: entities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW archived: false enabled: true first: 100) {
-    totalCount
-  }
-  disabledPrivileged: entities(roles: [AdminAccountRole] enabled: false archived: false first: 100) {
-    totalCount
-  }
+  )
 }
 ```
 
@@ -475,7 +321,7 @@ Authorization: Bearer {{ACCESS_TOKEN}}
 Content-Type: application/json
 
 {
-  "query": "query { highRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH archived: false enabled: true first: 100) { totalCount nodes { primaryDisplayName secondaryDisplayName riskScore riskScoreSeverity } } mediumRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM archived: false enabled: true first: 100) { totalCount } lowRisk: entities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW archived: false enabled: true first: 100) { totalCount } disabledPrivileged: entities(roles: [AdminAccountRole] enabled: false archived: false first: 100) { totalCount } }"
+  "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
 }
 ```
 
@@ -483,42 +329,45 @@ Content-Type: application/json
 ```json
 {
   "data": {
-    "highRisk": {
-      "totalCount": 8,
-      "nodes": [
-        {
-          "primaryDisplayName": "admin.john.smith",
-          "secondaryDisplayName": "John Smith",
-          "riskScore": 85,
-          "riskScoreSeverity": "HIGH"
-        },
-        {
-          "primaryDisplayName": "admin.jane.doe",
-          "secondaryDisplayName": "Jane Doe",
-          "riskScore": 78,
-          "riskScoreSeverity": "HIGH"
-        }
-      ]
-    },
-    "mediumRisk": {
-      "totalCount": 15
-    },
-    "lowRisk": {
-      "totalCount": 42
-    },
-    "disabledPrivileged": {
-      "totalCount": 3
-    }
+    "highRiskCount": 8,
+    "mediumRiskCount": 15,
+    "lowRiskCount": 42,
+    "disabledPrivilegedCount": 3
   },
   "errors": []
 }
 ```
 
 **Logic App Implementation:**
-- **No client-side filtering needed** - GraphQL returns pre-filtered counts
-- Access counts directly: `@{body('7_Parse_GraphQL')?['data']?['highRisk']?['totalCount']}`
-- Use `totalCount` fields for dashboard metrics
-- Optionally access `nodes` array for detailed listing
+- **No complex parsing needed** - GraphQL returns simple integer counts
+- Access counts directly: `@{body('Parse_GraphQL')?['data']?['highRiskCount']}`
+- Single query returns all 4 metrics
+- Use directly in Adaptive Card expressions
+
+**Alternative: Get Entity Details with entities Query (for top risky identities):**
+```graphql
+```graphql
+query GetTopRiskyIdentities {
+  entities(
+    roles: [AdminAccountRole]
+    minRiskScoreSeverity: HIGH
+    sortKey: RISK_SCORE
+    sortOrder: DESCENDING
+    archived: false
+    enabled: true
+    first: 5
+  ) {
+    nodes {
+      primaryDisplayName
+      secondaryDisplayName
+      riskScore
+      riskScoreSeverity
+    }
+  }
+}
+```
+
+**Note:** The `entities` query returns connection objects with `nodes` array, but does NOT include `totalCount` field. Use `countEntities` for counts instead.
 
 ---
 
@@ -939,80 +788,7 @@ tags:'privileged_user'+state:'open'
           "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
         }
       },
-      "5_Query_CrowdScore_IDs": {
-        "type": "Http",
-        "inputs": {
-          "method": "GET",
-          "uri": "https://api.crowdstrike.com/incidents/queries/crowdscores/v1?filter=timestamp:>'2026-04-01T00:00:00Z'&sort=timestamp.desc&limit=100",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}"
-          }
-        },
-        "runAfter": {
-          "4_Parse_OAuth_Token": ["Succeeded"]
-        }
-      },
-      "5a_Parse_CrowdScore_IDs": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('5_Query_CrowdScore_IDs')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "resources": {
-                "type": "array",
-                "items": { "type": "string" }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "5_Query_CrowdScore_IDs": ["Succeeded"]
-        }
-      },
-      "5b_Get_CrowdScore_Details": {
-        "type": "Http",
-        "inputs": {
-          "method": "POST",
-          "uri": "https://api.crowdstrike.com/incidents/entities/crowdscores/v1",
-          "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-            "Content-Type": "application/json"
-          },
-          "body": {
-            "ids": "@take(body('5a_Parse_CrowdScore_IDs')?['resources'], 2)"
-          }
-        },
-        "runAfter": {
-          "5a_Parse_CrowdScore_IDs": ["Succeeded"]
-        }
-      },
-      "6_Parse_CrowdScore_Response": {
-        "type": "ParseJson",
-        "inputs": {
-          "content": "@body('5b_Get_CrowdScore_Details')",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "resources": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "score": { "type": "integer" },
-                    "adjusted_score": { "type": "number" },
-                    "timestamp": { "type": "string" }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "runAfter": {
-          "5b_Get_CrowdScore_Details": ["Succeeded"]
-        }
-      },
-      "7_Query_Identity_Metrics_GraphQL": {
+      "5_Query_Identity_Metrics_GraphQL": {
         "type": "Http",
         "inputs": {
           "method": "POST",
@@ -1022,69 +798,37 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "query": "query GetDashboardMetrics { highRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH archived: false enabled: true first: 100) { totalCount nodes { primaryDisplayName secondaryDisplayName riskScore riskScoreSeverity } } mediumRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM archived: false enabled: true first: 100) { totalCount } lowRisk: entities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW archived: false enabled: true first: 100) { totalCount } disabledPrivileged: entities(roles: [AdminAccountRole] enabled: false archived: false first: 100) { totalCount } }"
+            "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
           }
         },
         "runAfter": {
-          "6_Parse_CrowdScore_Response": ["Succeeded"]
+          "4_Parse_OAuth_Token": ["Succeeded"]
         }
       },
-      "8_Parse_GraphQL_Response": {
+      "6_Parse_GraphQL_Response": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('7_Query_Identity_Metrics_GraphQL')",
+          "content": "@body('5_Query_Identity_Metrics_GraphQL')",
           "schema": {
             "type": "object",
             "properties": {
               "data": {
                 "type": "object",
                 "properties": {
-                  "highRisk": {
-                    "type": "object",
-                    "properties": {
-                      "totalCount": { "type": "integer" },
-                      "nodes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "primaryDisplayName": { "type": "string" },
-                            "secondaryDisplayName": { "type": "string" },
-                            "riskScore": { "type": "integer" },
-                            "riskScoreSeverity": { "type": "string" }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "mediumRisk": {
-                    "type": "object",
-                    "properties": {
-                      "totalCount": { "type": "integer" }
-                    }
-                  },
-                  "lowRisk": {
-                    "type": "object",
-                    "properties": {
-                      "totalCount": { "type": "integer" }
-                    }
-                  },
-                  "disabledPrivileged": {
-                    "type": "object",
-                    "properties": {
-                      "totalCount": { "type": "integer" }
-                    }
-                  }
+                  "highRiskCount": { "type": "integer" },
+                  "mediumRiskCount": { "type": "integer" },
+                  "lowRiskCount": { "type": "integer" },
+                  "disabledPrivilegedCount": { "type": "integer" }
                 }
               }
             }
           }
         },
         "runAfter": {
-          "7_Query_Identity_Metrics_GraphQL": ["Succeeded"]
+          "5_Query_Identity_Metrics_GraphQL": ["Succeeded"]
         }
       },
-      "9_Query_HighRisk_Device_IDs": {
+      "7_Query_HighRisk_Device_IDs": {
         "type": "Http",
         "inputs": {
           "method": "GET",
@@ -1094,13 +838,13 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "8_Parse_GraphQL_Response": ["Succeeded"]
+          "6_Parse_GraphQL_Response": ["Succeeded"]
         }
       },
-      "10_Parse_Device_IDs": {
+      "8_Parse_Device_IDs": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('9_Query_HighRisk_Device_IDs')",
+          "content": "@body('7_Query_HighRisk_Device_IDs')",
           "schema": {
             "type": "object",
             "properties": {
@@ -1112,10 +856,10 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "9_Query_HighRisk_Device_IDs": ["Succeeded"]
+          "7_Query_HighRisk_Device_IDs": ["Succeeded"]
         }
       },
-      "11_Get_Device_Details": {
+      "9_Get_Device_Details": {
         "type": "Http",
         "inputs": {
           "method": "POST",
@@ -1125,17 +869,17 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "ids": "@body('10_Parse_Device_IDs')?['resources']"
+            "ids": "@body('8_Parse_Device_IDs')?['resources']"
           }
         },
         "runAfter": {
-          "10_Parse_Device_IDs": ["Succeeded"]
+          "8_Parse_Device_IDs": ["Succeeded"]
         }
       },
-      "12_Parse_Device_Details": {
+      "10_Parse_Device_Details": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('11_Get_Device_Details')",
+          "content": "@body('9_Get_Device_Details')",
           "schema": {
             "type": "object",
             "properties": {
@@ -1293,19 +1037,19 @@ tags:'privileged_user'+state:'open'
                   "facts": [
                     {
                       "title": "🔴 High Risk (70-100)",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['highRisk']?['totalCount']} identities"
+                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['highRiskCount']} identities"
                     },
                     {
                       "title": "🟠 Medium Risk (40-69)",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['mediumRisk']?['totalCount']} identities"
+                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['mediumRiskCount']} identities"
                     },
                     {
                       "title": "🟡 Low Risk (0-39)",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['lowRisk']?['totalCount']} identities"
+                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['lowRiskCount']} identities"
                     },
                     {
                       "title": "⚫ Disabled Privileged",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['disabledPrivileged']?['totalCount']} accounts ⚠️"
+                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['disabledPrivilegedCount']} accounts ⚠️"
                     }
                   ]
                 }
@@ -1375,7 +1119,7 @@ tags:'privileged_user'+state:'open'
                         }
                       ]
                     },
-                    "@{json(concat('[', join(array(select(body('12_Parse_Device_Details')?['resources'], 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''hostname''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''risk_score''], \"\\\", \\\"color\\\": \\\"Attention\\\", \\\"weight\\\": \\\"Bolder\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''critical_vulnerability_count''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''high_vulnerability_count''], \"\\\"}]}]}\")')), ','), ']'))}"
+                    "@{json(concat('[', join(array(select(body('10_Parse_Device_Details')?['resources'], 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''hostname''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''risk_score''], \"\\\", \\\"color\\\": \\\"Attention\\\", \\\"weight\\\": \\\"Bolder\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''critical_vulnerability_count''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''high_vulnerability_count''], \"\\\"}]}]}\")')), ','), ']'))}"
                   ]
                 }
               ]
@@ -1647,46 +1391,7 @@ tags:'privileged_user'+state:'open'
                 "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
               }
             },
-            "5_Get_CrowdScore": {
-              "type": "Http",
-              "inputs": {
-                "method": "GET",
-                "uri": "https://api.crowdstrike.com/incidents/combined/crowdscores/v1?sort=timestamp.desc&limit=2",
-                "headers": {
-                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-                  "Content-Type": "application/json"
-                }
-              },
-              "runAfter": {
-                "4_Parse_OAuth_Token": ["Succeeded"]
-              }
-            },
-            "6_Parse_CrowdScore_Response": {
-              "type": "ParseJson",
-              "inputs": {
-                "content": "@body('5b_Get_CrowdScore_Details')",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "resources": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "score": { "type": "integer" },
-                          "adjusted_score": { "type": "number" },
-                          "timestamp": { "type": "string" }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "runAfter": {
-                "5_Get_CrowdScore": ["Succeeded"]
-              }
-            },
-            "7_Query_Identity_Metrics_GraphQL": {
+            "5_Query_Identity_Metrics_GraphQL": {
               "type": "Http",
               "inputs": {
                 "method": "POST",
@@ -1696,69 +1401,37 @@ tags:'privileged_user'+state:'open'
                   "Content-Type": "application/json"
                 },
                 "body": {
-                  "query": "query GetDashboardMetrics { highRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH archived: false enabled: true first: 100) { totalCount nodes { primaryDisplayName secondaryDisplayName riskScore riskScoreSeverity } } mediumRisk: entities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM archived: false enabled: true first: 100) { totalCount } lowRisk: entities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW archived: false enabled: true first: 100) { totalCount } disabledPrivileged: entities(roles: [AdminAccountRole] enabled: false archived: false first: 100) { totalCount } }"
+                  "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
                 }
               },
               "runAfter": {
-                "6_Parse_CrowdScore_Response": ["Succeeded"]
+                "4_Parse_OAuth_Token": ["Succeeded"]
               }
             },
-            "8_Parse_GraphQL_Response": {
+            "6_Parse_GraphQL_Response": {
               "type": "ParseJson",
               "inputs": {
-                "content": "@body('7_Query_Identity_Metrics_GraphQL')",
+                "content": "@body('5_Query_Identity_Metrics_GraphQL')",
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
                       "type": "object",
                       "properties": {
-                        "highRisk": {
-                          "type": "object",
-                          "properties": {
-                            "totalCount": { "type": "integer" },
-                            "nodes": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "primaryDisplayName": { "type": "string" },
-                                  "secondaryDisplayName": { "type": "string" },
-                                  "riskScore": { "type": "integer" },
-                                  "riskScoreSeverity": { "type": "string" }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "mediumRisk": {
-                          "type": "object",
-                          "properties": {
-                            "totalCount": { "type": "integer" }
-                          }
-                        },
-                        "lowRisk": {
-                          "type": "object",
-                          "properties": {
-                            "totalCount": { "type": "integer" }
-                          }
-                        },
-                        "disabledPrivileged": {
-                          "type": "object",
-                          "properties": {
-                            "totalCount": { "type": "integer" }
-                          }
-                        }
+                        "highRiskCount": { "type": "integer" },
+                        "mediumRiskCount": { "type": "integer" },
+                        "lowRiskCount": { "type": "integer" },
+                        "disabledPrivilegedCount": { "type": "integer" }
                       }
                     }
                   }
                 }
               },
               "runAfter": {
-                "7_Query_Identity_Metrics_GraphQL": ["Succeeded"]
+                "5_Query_Identity_Metrics_GraphQL": ["Succeeded"]
               }
             },
-            "9_Query_HighRisk_Device_IDs": {
+            "7_Query_HighRisk_Device_IDs": {
               "type": "Http",
               "inputs": {
                 "method": "GET",
@@ -1768,13 +1441,13 @@ tags:'privileged_user'+state:'open'
                 }
               },
               "runAfter": {
-                "8_Parse_GraphQL_Response": ["Succeeded"]
+                "6_Parse_GraphQL_Response": ["Succeeded"]
               }
             },
-            "10_Parse_Device_IDs": {
+            "8_Parse_Device_IDs": {
               "type": "ParseJson",
               "inputs": {
-                "content": "@body('9_Query_HighRisk_Device_IDs')",
+                "content": "@body('7_Query_HighRisk_Device_IDs')",
                 "schema": {
                   "type": "object",
                   "properties": {
@@ -1786,10 +1459,10 @@ tags:'privileged_user'+state:'open'
                 }
               },
               "runAfter": {
-                "9_Query_HighRisk_Device_IDs": ["Succeeded"]
+                "7_Query_HighRisk_Device_IDs": ["Succeeded"]
               }
             },
-            "11_Get_Device_Details": {
+            "9_Get_Device_Details": {
               "type": "Http",
               "inputs": {
                 "method": "POST",
@@ -1799,11 +1472,11 @@ tags:'privileged_user'+state:'open'
                   "Content-Type": "application/json"
                 },
                 "body": {
-                  "ids": "@body('10_Parse_Device_IDs')?['resources']"
+                  "ids": "@body('8_Parse_Device_IDs')?['resources']"
                 }
               },
               "runAfter": {
-                "10_Parse_Device_IDs": ["Succeeded"]
+                "8_Parse_Device_IDs": ["Succeeded"]
               }
             }
           }
@@ -1990,81 +1663,42 @@ Write-Host "Access Token: $($response.access_token.Substring(0, 50))..."
 Write-Host "Expires In: $($response.expires_in) seconds"
 ```
 
-### 8.2 CrowdScore API 404 Error
+### 8.2 CrowdScore API Deprecated
 
-**Symptom:** `404 Page Not Found` when calling CrowdScore endpoint
+**Status:** ⛔ **DEPRECATED** - CrowdScore API is no longer available
 
-**Error Message:**
-```
-404: Page Not found
-GET https://api.crowdstrike.com/incidents/combined/crowdscores/v1
-```
+**Note:** The CrowdScore endpoint (`/incidents/queries/crowdscores/v1` and `/incidents/entities/crowdscores/v1`) has been deprecated by CrowdStrike. Remove all references to CrowdScore from your Logic App workflows.
 
-**Root Cause:** CrowdScore API uses a **two-step process** (query + entities), NOT a combined endpoint
-
-**❌ Incorrect (Returns 404):**
-```http
-GET https://api.crowdstrike.com/incidents/combined/crowdscores/v1
-```
-
-**✅ Correct (Two-Step Process):**
-
-**Step 1 - Query Score IDs:**
-```http
-GET https://api.crowdstrike.com/incidents/queries/crowdscores/v1?sort=timestamp.desc&limit=100
-```
-
-**Step 2 - Get Score Details:**
-```http
-POST https://api.crowdstrike.com/incidents/entities/crowdscores/v1
-Content-Type: application/json
-
-{
-  "ids": ["score:abc123:1745390400", "score:abc123:1745304000"]
-}
-```
-
-**Logic App Fix:**
-- Replace single `GET /combined/crowdscores/v1` action
-- Add two actions: Query IDs → Get Entity Details  
-- See Section 4.2 for complete workflow
+**Alternative Metrics:**
+- Use Identity Protection risk scores
+- Use Incident severity and count metrics
+- Use Detection analytics for security posture assessment
 
 ---
 
-### 8.3 GraphQL Query Syntax Errors
+### 8.3 GraphQL countEntities Query Errors
 
-**Symptom:** `400 Bad Request` with GraphQL error message
+**Symptom:** `400 Bad Request` or GraphQL error with `countEntities` query
 
 **Common Errors:**
 
-**1. Using Nested `filter` Object (Incorrect Syntax):**
+**1. Using `entities` instead of `countEntities` for Counts:**
 
-**❌ Error:**
-```json
-{
-  "errors": [{
-    "message": "Unknown argument \"filter\" on field \"entities\" of type \"Query\"."
-  }]
-}
-```
-
-**Cause:** Using nested `filter` object instead of direct arguments
-
-**❌ Incorrect Query:**
+**❌ Incorrect (entities with totalCount):**
 ```graphql
 query {
-  entities(filter: { privileged: true, riskScore: { gte: 70 } }) {
+  entities(roles: [AdminAccountRole] first: 100) {
     totalCount
   }
 }
 ```
 
-**✅ Correct Query:**
+**Error:** `entities` query does NOT return `totalCount` field
+
+**✅ Correct (use countEntities):**
 ```graphql
 query {
-  entities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH archived: false enabled: true first: 100) {
-    totalCount
-  }
+  countEntities(roles: [AdminAccountRole] archived: false enabled: true)
 }
 ```
 
@@ -2076,16 +1710,7 @@ query {
 **❌ Incorrect:** `riskScore: { gte: 70 }` (not supported)  
 **✅ Correct:** `minRiskScoreSeverity: HIGH` (use severity levels)
 
-**3. Missing Required Pagination Argument:**
-
-**Error:** `Field "entities" argument "first" of type "Int" is required`
-
-**✅ Solution:** Always include `first` or `last` argument:
-```graphql
-entities(roles: [AdminAccountRole] first: 100) { ... }
-```
-
-**4. Invalid Enum Values:**
+**3. Invalid Enum Values:**
 
 **❌ Incorrect:** `roles: ["AdminAccountRole"]` (strings)  
 **✅ Correct:** `roles: [AdminAccountRole]` (enum without quotes)
@@ -2096,12 +1721,21 @@ entities(roles: [AdminAccountRole] first: 100) { ... }
 **Valid Severity Values:** `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`  
 **Valid Role Types:** `AdminAccountRole`, `BuiltinAdministratorRole`, `HumanUserAccountRole`, `ProgrammaticUserAccountRole`, `ServerRole`, `LocalAdminRole`
 
-**Testing GraphQL Queries:**
+**4. For `entities` Query - Missing Required Pagination Argument:**
+
+**Error:** `Field "entities" argument "first" of type "Int" is required`
+
+**✅ Solution:** When using `entities` query (not `countEntities`), always include `first` or `last` argument:
+```graphql
+entities(roles: [AdminAccountRole] first: 5) { nodes { primaryDisplayName } }
+```
+
+**Testing countEntities Queries:**
 ```powershell
-# Test query in PowerShell
+# Test countEntities query in PowerShell
 $token = "YOUR_ACCESS_TOKEN"
 $body = @{
-  query = 'query { entities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH first: 10) { totalCount } }'
+  query = 'query { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) }'
 } | ConvertTo-Json
 
 $response = Invoke-RestMethod -Method POST `
@@ -2109,7 +1743,7 @@ $response = Invoke-RestMethod -Method POST `
   -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
   -Body $body
 
-$response.data
+$response.data.highRiskCount  # Returns integer directly
 ```
 
 ---
@@ -2163,8 +1797,8 @@ New-AzRoleAssignment `
 - **Identity Protection API Reference**  
   https://falcon.crowdstrike.com/documentation/category/cid77f73b0/identity-protection
 
-- **CrowdScore Documentation**  
-  https://falcon.crowdstrike.com/documentation/page/a32af077/crowdscore
+- **GraphQL API Guide**  
+  https://falcon.crowdstrike.com/documentation/page/identity-protection-graphql
 
 ### 9.2 PSFalcon PowerShell Module
 
