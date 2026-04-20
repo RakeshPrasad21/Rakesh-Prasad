@@ -242,6 +242,70 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 - Incident counts and severity metrics  
 - Detection analytics
 
+```
+#### Get the the latest security assessment
+{
+    securityAssessment(domain: "DOMAIN.TLD") # fill your domain here
+    {
+        overallScore
+        overallScoreLevel
+        assessmentFactors
+        {
+            riskFactorType
+            likelihood
+            severity
+        }
+    }
+}
+
+
+
+#### Utilizing security assessment goals 
+{
+    securityAssessmentGoals
+    {
+        name
+        goalId
+    }
+
+
+    # These goals can be used for restrict the assessed factors in both current and historical data APIs
+    # To see the results, please fill the domain query argument
+    pumCurrent:
+    securityAssessment(domain: "DOMAIN.TLD" # fill your domain here
+        goalIds: ["a48477ba-c645-4d7d-ad3a-b33ed488e03f"]) {
+        overallScore
+        overallScoreLevel
+        assessmentFactors
+        {
+            riskFactorType
+        }
+    }
+
+    penTetstingHistory:
+    securityAssessmentHistory(domain: "DOMAIN.TLD" # fill your domain here
+        goalIds: ["c9d1c1a3-0b95-4235-97d9-f12a748e5fa6"]
+        first: 7
+        startTime: "P-7D"
+        timeResolution: DAY)
+    {
+        nodes
+        {
+            securityAssessment
+            {
+                overallScore
+                overallScoreLevel
+                assessmentFactors
+                {
+                    riskFactorType
+                    lastUpdateTime
+                }
+            }
+        }
+    }
+}
+```
+
 ---
 
 ### 3.3 Identity Protection - GraphQL (Count Queries)
