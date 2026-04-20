@@ -312,16 +312,24 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
     archived: false
   ),
   weakPasswordCount: countEntities(
-    types: [USER] 
+    roles: [AdminAccountRole]
     hasWeakPassword: true
+    archived: false
   ),
   hasNeverExpiringPasswordCount: countEntities(
-    types: [USER] 
+    roles: [AdminAccountRole]
     hasNeverExpiringPassword: true
+    archived: false
   ),
   inactiveCount: countEntities(
-    types: [USER] 
-    inactive: true
+    roles: [AdminAccountRole]
+    inactive: true   
+    archived: false
+  ),
+  duplicatePasswordCount: countEntities(
+    roles: [AdminAccountRole]
+    riskFactorTypes: [DUPLICATE_PASSWORD]    
+    archived: false
   )
 }
 ```
