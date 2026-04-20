@@ -269,8 +269,8 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 | Argument | Type | Description | Example Values |
 |----------|------|-------------|----------------|
 | `roles` | `[EntityRoleType!]` | Filter by role type | `[AdminAccountRole]`, `[BuiltinAdministratorRole]` |
-| `minRiskScoreSeverity` | `ScoreSeverity` | Minimum risk severity | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `maxRiskScoreSeverity` | `ScoreSeverity` | Maximum risk severity | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `minRiskScoreSeverity` | `ScoreSeverity` | Minimum risk severity | `NORMAL`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `maxRiskScoreSeverity` | `ScoreSeverity` | Maximum risk severity | `NORMAL`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `types` | `[EntityType!]` | Entity type filter | `[USER]`, `[ENDPOINT]` |
 | `enabled` | `Boolean` | Account enabled status | `true`, `false` |
 | `archived` | `Boolean` | Archived status | `false` (exclude archived) |
