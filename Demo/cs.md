@@ -17,7 +17,7 @@ This document details the **CrowdStrike Identity Dashboard Logic App Automation*
 | Metric | Result |
 |--------|--------|
 | **Security Posture Visibility** | Daily automated CrowdStrike identity risk reports to stakeholders |
-| **Authentication Method** | OAuth2 Client Credentials (Key Vault secret storage) |
+| **Authentication Method** | OAuth2 Client Credentials (Secure ARM template parameters) |
 | **Manual Effort Reduction** | ~90% (from 2 hours/day to < 15 minutes) |
 | **Data Sources** | CrowdStrike Falcon API (Security Assessment, Identity Protection GraphQL) |
 | **Delivery Channel** | Microsoft Teams Adaptive Cards |
@@ -112,7 +112,7 @@ The Security Operations team required real-time visibility into **identity secur
 4. Click **Add** and save credentials:
    - `CLIENT_ID` (e.g., `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`)
    - `CLIENT_SECRET` (e.g., `X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L5M6N7O8P9Q0`)
-5. Store in Azure Key Vault (see section 2.3)
+5. Store securely and provide during ARM template deployment (see section 6)
 
 ### 2.2 Required API Scopes
 
@@ -126,55 +126,46 @@ The Logic App requires the following **API scopes** in the CrowdStrike API clien
 
 **Note:** CrowdStrike uses combined scopes. The **Identity Protection: Write** scope is required for GraphQL POST operations, even though we're only reading data.
 
-### 2.3 Azure Key Vault Storage
+### 2.3 Credential Storage
 
-**Why Key Vault?**  
-Unlike Managed Identity (used in MSEM), CrowdStrike requires OAuth2 client credentials. Key Vault provides:
-- Secure secret storage with encryption at rest
-- Access auditing and logging
-- Secret rotation capabilities
-- RBAC-controlled access
+**Security Approach:**  
+The ARM template uses **securestring parameters** to handle CrowdStrike credentials. This approach:
+- ✅ Eliminates Key Vault dependency
+- ✅ Credentials never stored in ARM template files
+- ✅ Provided at deployment time only
+- ✅ Stored encrypted in Logic App workflow definition
+- ✅ Never exposed in logs or run history
 
-**PowerShell Setup:**
+**Deployment Security:**
 
 ```powershell
-# Variables
-$keyVaultName = "kv-crowdstrike-prod"
-$resourceGroup = "rg-crowdstrike-identity-dashboard"
-$location = "eastus"
-
-# Create Key Vault
-New-AzKeyVault `
-    -Name $keyVaultName `
-    -ResourceGroupName $resourceGroup `
-    -Location $location `
-    -EnableRbacAuthorization
-
-# Store CrowdStrike credentials
+# Credentials are prompted securely at deployment
 $clientId = Read-Host "Enter CrowdStrike Client ID" -AsSecureString
 $clientSecret = Read-Host "Enter CrowdStrike Client Secret" -AsSecureString
 
-Set-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientID" -SecretValue $clientId
-Set-AzKeyVaultSecret -VaultName $keyVaultName -Name "CrowdStrike-ClientSecret" -SecretValue $clientSecret
-
-Write-Host "✅ Secrets stored in Key Vault: $keyVaultName" -ForegroundColor Green
+# Passed as secure parameters (never logged)
+New-AzResourceGroupDeployment `
+    -crowdStrikeClientId $clientId `
+    -crowdStrikeClientSecret $clientSecret
 ```
 
-### 2.4 Grant Logic App Access to Key Vault
+**ARM Template Parameters:**
 
-```powershell
-# Get Logic App Managed Identity Principal ID (for Key Vault access)
-$logicAppName = "logic-crowdstrike-identity-dashboard"
-$logicApp = Get-AzLogicApp -ResourceGroupName $resourceGroup -Name $logicAppName
-$principalId = $logicApp.Identity.PrincipalId
-
-# Grant Key Vault Secrets User role
-New-AzRoleAssignment `
-    -ObjectId $principalId `
-    -RoleDefinitionName "Key Vault Secrets User" `
-    -Scope "/subscriptions/YOUR_SUB_ID/resourceGroups/$resourceGroup/providers/Microsoft.KeyVault/vaults/$keyVaultName"
-
-Write-Host "✅ Logic App can now read Key Vault secrets" -ForegroundColor Green
+```json
+{
+  "crowdStrikeClientId": {
+    "type": "securestring",
+    "metadata": {
+      "description": "CrowdStrike API Client ID"
+    }
+  },
+  "crowdStrikeClientSecret": {
+    "type": "securestring",
+    "metadata": {
+      "description": "CrowdStrike API Client Secret"
+    }
+  }
+}
 ```
 
 ---
@@ -830,7 +821,7 @@ Content-Type: application/json
 
 ### 4.1 Authentication Flow (OAuth2)
 
-**Key Difference from MSEM:** CrowdStrike uses OAuth2 client credentials, not Managed Identity.
+**Key Difference from MSEM:** CrowdStrike uses OAuth2 client credentials passed as secure parameters.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -838,8 +829,8 @@ Content-Type: application/json
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────┐       ┌────────────────────┐       ┌──────────────┐
-│  Logic App   │──────►│  Azure Key Vault   │       │ CrowdStrike  │
-│  Starts      │       │  Get Secrets       │       │ OAuth2       │
+│  Logic App   │──────►│  ARM Parameters    │       │ CrowdStrike  │
+│  Starts      │       │  (securestring)    │       │ OAuth2       │
 └──────────────┘       └────────────────────┘       │ Endpoint     │
                                 │                    └──────────────┘
                                 │                           ▲
@@ -856,7 +847,15 @@ Content-Type: application/json
                        └────────────────────┘
 ```
 
+**Total Actions:** 12 (reduced from 14 - Key Vault actions removed)
+
 ### 4.2 Complete Logic App Workflow
+
+**⚠️ IMPORTANT: This section shows the original 14-action workflow with Key Vault.**  
+**For the current deployment-ready workflow (12 actions, no Key Vault), see Section 6.3.**
+
+<details>
+<summary>Click to view original 14-action workflow (deprecated)</summary>
 
 ```json
 {
@@ -1423,6 +1422,10 @@ Content-Type: application/json
 }
 ```
 
+</details>
+
+**Use the ARM template in Section 6.3 for deployment.** It contains the updated 12-action workflow without Key Vault dependency.
+
 ---
 
 ## 5. Teams Adaptive Card Preview
@@ -1545,13 +1548,445 @@ New-AzRoleAssignment `
 Write-Host "`n✅ Deployment Complete!" -ForegroundColor Green
 ```
 
+### 6.3 Complete ARM Template for Custom Deployment
+
+**Status: ✅ READY FOR AZURE PORTAL CUSTOM DEPLOYMENT**
+
+This ARM template includes all 12 actions and is deployment-ready.  
+**Note:** Key Vault has been removed. Credentials are passed as secure parameters during deployment.
+
+**File: `crowdstrike-identity-dashboard.json`**
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "logic-crowdstrike-identity-dashboard",
+      "metadata": {
+        "description": "Name of the Logic App"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources"
+      }
+    },
+    "crowdStrikeDomain": {
+      "type": "string",
+      "metadata": {
+        "description": "Your CrowdStrike monitored domain (e.g., contoso.com)"
+      }
+    },
+    "crowdStrikeClientId": {
+      "type": "securestring",
+      "metadata": {
+        "description": "CrowdStrike API Client ID"
+      }
+    },
+    "crowdStrikeClientSecret": {
+      "type": "securestring",
+      "metadata": {
+        "description": "CrowdStrike API Client Secret"
+      }
+    },
+    "recurrenceHour": {
+      "type": "int",
+      "defaultValue": 9,
+      "minValue": 0,
+      "maxValue": 23,
+      "metadata": {
+        "description": "Hour to run daily (0-23 UTC)"
+      }
+    }
+  },
+  "variables": {
+    "teamsConnectionName": "teams-crowdstrike",
+    "teamsConnectionId": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/teams')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[variables('teamsConnectionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Teams - CrowdStrike Dashboard",
+        "api": {
+          "id": "[variables('teamsConnectionId')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2017-07-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', variables('teamsConnectionName'))]"
+      ],
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "Recurrence": {
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "schedule": {
+                  "hours": ["[parameters('recurrenceHour')]"],
+                  "minutes": [0]
+                },
+                "timeZone": "UTC"
+              },
+              "type": "Recurrence"
+            }
+          },
+          "actions": {
+            "1_Get_OAuth2_Token": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/oauth2/token",
+                "headers": {
+                  "Content-Type": "application/x-www-form-urlencoded"
+                },
+                "body": "[concat('client_id=', parameters('crowdStrikeClientId'), '&client_secret=', parameters('crowdStrikeClientSecret'), '&grant_type=client_credentials')]"
+              },
+              "runAfter": {}
+            },
+            "2_Parse_OAuth_Token": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('1_Get_OAuth2_Token')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" },
+                    "token_type": { "type": "string" },
+                    "expires_in": { "type": "integer" }
+                  }
+                }
+              },
+              "runAfter": {
+                "1_Get_OAuth2_Token": ["Succeeded"]
+              }
+            },
+            "3_Get_Security_Assessment": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+                "headers": {
+                  "Authorization": "Bearer @{body('2_Parse_OAuth_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "[concat('{ securityAssessment(domain: \"', parameters('crowdStrikeDomain'), '\") { overallScore overallScoreLevel assessmentFactors { riskFactorType likelihood severity } } }')]"
+                }
+              },
+              "runAfter": {
+                "2_Parse_OAuth_Token": ["Succeeded"]
+              }
+            },
+            "4_Parse_Security_Assessment": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('3_Get_Security_Assessment')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "securityAssessment": {
+                          "type": "object",
+                          "properties": {
+                            "overallScore": { "type": "integer" },
+                            "overallScoreLevel": { "type": "string" },
+                            "assessmentFactors": {
+                              "type": "array"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "3_Get_Security_Assessment": ["Succeeded"]
+              }
+            },
+            "5_Get_Identity_Metrics": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+                "headers": {
+                  "Authorization": "Bearer @{body('2_Parse_OAuth_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "{ highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false), weakPasswordCount: countEntities(roles: [AdminAccountRole] hasWeakPassword: true archived: false), hasNeverExpiringPasswordCount: countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false), inactiveCount: countEntities(roles: [AdminAccountRole] inactive: true archived: false), duplicatePasswordCount: countEntities(roles: [AdminAccountRole] riskFactorTypes: [DUPLICATE_PASSWORD] archived: false) }"
+                }
+              },
+              "runAfter": {
+                "4_Parse_Security_Assessment": ["Succeeded"]
+              }
+            },
+            "6_Parse_Identity_Metrics": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('5_Get_Identity_Metrics')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "highRiskCount": { "type": "integer" },
+                        "mediumRiskCount": { "type": "integer" },
+                        "normalRiskCount": { "type": "integer" },
+                        "disabledPrivilegedCount": { "type": "integer" },
+                        "weakPasswordCount": { "type": "integer" },
+                        "hasNeverExpiringPasswordCount": { "type": "integer" },
+                        "inactiveCount": { "type": "integer" },
+                        "duplicatePasswordCount": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "5_Get_Identity_Metrics": ["Succeeded"]
+              }
+            },
+            "7_Get_Open_Incidents": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+                "headers": {
+                  "Authorization": "Bearer @{body('2_Parse_OAuth_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "{ incidents(lifeCycleStages: [NEW] entityQuery: { types: [USER], roles: [AdminAccountRole] } sortOrder: DESCENDING sortKey: END_TIME first: 5) { nodes { incidentId type severity startTime compromisedEntities { primaryDisplayName type } } } }"
+                }
+              },
+              "runAfter": {
+                "6_Parse_Identity_Metrics": ["Succeeded"]
+              }
+            },
+            "8_Parse_Open_Incidents": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('7_Get_Open_Incidents')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "incidents": {
+                          "type": "object",
+                          "properties": {
+                            "nodes": {
+                              "type": "array"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "7_Get_Open_Incidents": ["Succeeded"]
+              }
+            },
+            "9_Get_Attack_Paths_and_New_Accounts": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+                "headers": {
+                  "Authorization": "Bearer @{body('2_Parse_OAuth_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "{ attackPathCount: countEntities(archived: false riskFactorTypes: [HAS_ATTACK_PATH]), exposedPasswordCount: countEntities(roles: [AdminAccountRole] hasExposedPassword: true archived: false), newPrivilegedCount: countEntities(archived: false roles: [AdminAccountRole] accountCreationStartTime: \"P-30D\" types: [USER]) }"
+                }
+              },
+              "runAfter": {
+                "8_Parse_Open_Incidents": ["Succeeded"]
+              }
+            },
+            "10_Parse_Additional_Metrics": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('9_Get_Attack_Paths_and_New_Accounts')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "attackPathCount": { "type": "integer" },
+                        "exposedPasswordCount": { "type": "integer" },
+                        "newPrivilegedCount": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "9_Get_Attack_Paths_and_New_Accounts": ["Succeeded"]
+              }
+            },
+            "11_Build_Adaptive_Card": {
+              "type": "Compose",
+              "inputs": "PLACEHOLDER - Configure Adaptive Card in Logic App Designer after deployment",
+              "runAfter": {
+                "10_Parse_Additional_Metrics": ["Succeeded"]
+              }
+            },
+            "14_Post_to_Teams": {
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['teams']['connectionId']"
+                  }
+                },
+                "method": "POST",
+                "path": "/v1.0/teams/@{encodeURIComponent('TEAM_ID')}/channels/@{encodeURIComponent('CHANNEL_ID')}/messages",
+                "body": {
+                  "messageType": "AdaptiveCard",
+                  "content": "@outputs('11_Build_Adaptive_Card')"
+                }
+              },
+              "runAfter": {
+                "11_Build_Adaptive_Card": ["Succeeded"]
+              }
+            }
+          }
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "teams": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('teamsConnectionName'))]",
+                "connectionName": "[variables('teamsConnectionName')]",
+                "id": "[variables('teamsConnectionId')]"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppName": {
+      "type": "string",
+      "value": "[parameters('logicAppName')]"
+    },
+    "managedIdentityPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2017-07-01', 'full').identity.principalId]"
+    }
+  }
+}
+```
+
+### 6.4 Deployment Steps
+
+**Option 1: Azure Portal Custom Deployment**
+
+1. Go to https://portal.azure.com
+2. Search **"Deploy a custom template"**
+3. Click **"Build your own template in the editor"**
+4. Copy/paste the ARM template JSON from section 6.3
+5. Click **"Save"**
+6. Fill in parameters:
+   - Subscription
+   - Resource Group (create new)
+   - Region (e.g., East US)
+   - Logic App Name
+   - **CrowdStrike Domain** (your domain, e.g., contoso.com)
+   - **CrowdStrike Client ID** (from CrowdStrike Falcon API client)
+   - **CrowdStrike Client Secret** (from CrowdStrike Falcon API client)
+   - Recurrence Hour (0-23 UTC)
+7. Click **"Review + create"** → **"Create"**
+
+**Option 2: PowerShell Deployment**
+
+```powershell
+# Save ARM template to file
+$template = @"
+<PASTE ARM TEMPLATE JSON HERE>
+"@
+$template | Out-File -FilePath ".\crowdstrike-dashboard.json" -Encoding UTF8
+
+# Deploy
+$resourceGroupName = "rg-crowdstrike-dashboard"
+$location = "eastus"
+
+New-AzResourceGroup -Name $resourceGroupName -Location $location -Force
+
+New-AzResourceGroupDeployment `
+    -ResourceGroupName $resourceGroupName `
+    -TemplateFile ".\crowdstrike-dashboard.json" `
+    -crowdStrikeDomain "contoso.com" `
+    -keyVaultName "kv-crowdstrike-prod" `
+    -Verbose
+```
+
+### 6.5 Post-Deployment Configuration
+
+**After ARM deployment completes, you must:**
+
+1. **Authorize Teams API Connection**
+   - Navigate to: Resource Group → API Connections → teams-crowdstrike
+   - Click **"Edit API connection"**
+   - Click **"Authorize"** → Sign in
+   - Click **"Save"**
+
+2. **Configure Adaptive Card in Logic App Designer**
+   - Open Logic App → Logic App Designer
+   - Click action **11_Build_Adaptive_Card**
+   - Replace placeholder with full Adaptive Card JSON from section 4.2
+   - Update **12_Post_to_Teams** with your Team ID and Channel ID
+   - Click **"Save"**
+
+3. **Test the Logic App**
+   - Click **"Run Trigger"** → **"Run"**
+   - Check run history for errors
+   - Verify Teams message delivery
+
 ---
 
 ## 7. Key Differences: MSEM vs CrowdStrike
 
 | Feature | MSEM Identity Dashboard | CrowdStrike Identity Dashboard |
 |---------|------------------------|--------------------------------|
-| **Authentication** | Managed Identity (zero secrets) | OAuth2 (Key Vault stored) |
+| **Authentication** | Managed Identity (zero secrets) | OAuth2 (Client credentials as secure parameters) |
 | **Primary Score** | Microsoft Secure Score | CrowdStrike Security Assessment Score |
 | **Identity Metrics** | Advanced Hunting KQL | GraphQL multi-query (8 metrics in 1 call) |
 | **Risk Factors** | Manual query construction | Automated assessment factors array |
