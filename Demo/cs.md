@@ -253,7 +253,21 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 
 **Purpose:** Count privileged identities by risk severity using **countEntities** query
 
-**✅ KEY FEATURE:** Use `countEntities` query to get integer counts directly (returns `Int!`, not complex objects)
+**⚠️ IMPORTANT - Official API Examples Only:**
+
+✅ **What IS in Official Docs:**
+- Single `countEntities` query: `{ countEntities(types: [USER] hasWeakPassword: true) }`
+- `entities` query with `minRiskScoreSeverity`: Used in official examples
+- Date filters: `accountCreationStartTime`, `mostRecentSSOActivityEndTime`
+- Response format: `{ "data": { "countEntities": 23 } }`
+
+❌ **What is NOT in Official Docs:**
+- Multi-query patterns with aliases (e.g., `query DashboardMetrics { count1: countEntities(...) count2: countEntities(...) }`)
+- Named queries for `countEntities` (only shown for `entities`)
+- `totalCount` field (doesn't exist in `entities` response)
+- Combined metric queries in one API call
+
+**For Dashboard:** Make **separate API calls** for each `countEntities` query. No official examples show combining multiple counts in one request.
 
 **GraphQL countEntities Query Structure:**
 
@@ -279,49 +293,53 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 | `inactive` | `Boolean` | Inactive accounts | `true` |
 | `cloudOnly` | `Boolean` | Cloud-only identities | `true` |
 
-**Dashboard Queries (Multi-Query Pattern):**
+**Dashboard Queries - Official Examples Only:**
 
-**Combined Query for All Risk Counts:**
+⚠️ **IMPORTANT:** The official API documentation shows **NO examples of multiple `countEntities` queries combined in one request**. Each metric requires a **separate API call**.
+
+**Example 1: Count Users with Weak Passwords** (Official Example)
 ```graphql
-query DashboardMetrics {
-  highRiskCount: countEntities(
-    roles: [AdminAccountRole]
-    minRiskScoreSeverity: HIGH
-    enabled: true
-    archived: false
-  )
-  
-  mediumRiskCount: countEntities(
-    roles: [AdminAccountRole]
-    minRiskScoreSeverity: MEDIUM
-    maxRiskScoreSeverity: MEDIUM
-    enabled: true
-    archived: false
-  )
-  
-  lowRiskCount: countEntities(
-    roles: [AdminAccountRole]
-    maxRiskScoreSeverity: LOW
-    enabled: true
-    archived: false
-  )
-  
-  disabledPrivilegedCount: countEntities(
-    roles: [AdminAccountRole]
-    enabled: false
-    archived: false
-  )
+{
+  countEntities(types: [USER] hasWeakPassword: true)
 }
 ```
 
-**Request:**
+**Example 2: Count Privileged Users with Non-Expiring Passwords** (Based on entities pattern)
+```graphql
+{
+  countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false)
+}
+```
+
+**Example 3: Count Inactive Privileged Accounts** (Based on entities pattern)
+```graphql
+{
+  countEntities(roles: [AdminAccountRole] inactive: true archived: false)
+}
+```
+
+**Example 4: Count Cloud-Only Users with No Recent SSO Activity** (Using date filters from docs)
+```graphql
+{
+  countEntities(cloudOnly: true mostRecentSSOActivityEndTime: "P-2W" archived: false)
+}
+```
+
+**Example 5: Count Recently Created Users - Last 30 Days** (Using date filters from docs)
+```graphql
+{
+  countEntities(accountCreationStartTime: "P-30D" types: [USER] archived: false)
+}
+```
+
+**Request Pattern for Each Metric:**
 ```http
 POST https://api.crowdstrike.com/identity-protection/combined/graphql/v1
 Authorization: Bearer {{ACCESS_TOKEN}}
 Content-Type: application/json
 
 {
-  "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
+  "query": "{ countEntities(types: [USER] hasWeakPassword: true) }"
 }
 ```
 
@@ -329,39 +347,42 @@ Content-Type: application/json
 ```json
 {
   "data": {
-    "highRiskCount": 8,
-    "mediumRiskCount": 15,
-    "lowRiskCount": 42,
-    "disabledPrivilegedCount": 3
+    "countEntities": 23
   },
   "errors": []
 }
 ```
 
 **Logic App Implementation:**
-- **No complex parsing needed** - GraphQL returns simple integer counts
-- Access counts directly: `@{body('Parse_GraphQL')?['data']?['highRiskCount']}`
-- Single query returns all 4 metrics
-- Use directly in Adaptive Card expressions
+- Make **separate HTTP POST actions** for each metric
+- Each returns integer: `@{body('Parse_WeakPassword_Response')?['data']?['countEntities']}`
+- Store each count in variables
+- Combine in Adaptive Card
 
-**Alternative: Get Entity Details with entities Query (for top risky identities):**
+**Alternative: Get Entity Details Using entities Query** (from official examples)
+
+**Example from Official Docs: Medium and High Risk Users**
 ```graphql
-```graphql
-query GetTopRiskyIdentities {
-  entities(
-    roles: [AdminAccountRole]
-    minRiskScoreSeverity: HIGH
-    sortKey: RISK_SCORE
-    sortOrder: DESCENDING
-    archived: false
-    enabled: true
-    first: 5
-  ) {
-    nodes {
+{
+  entities(types: [USER]
+           minRiskScoreSeverity: MEDIUM
+           sortKey: RISK_SCORE
+           sortOrder: DESCENDING
+           first: 5)
+  {
+    nodes
+    {
       primaryDisplayName
       secondaryDisplayName
+      isHuman: hasRole(type: HumanUserAccountRole)
+      isProgrammatic: hasRole(type: ProgrammaticUserAccountRole)
       riskScore
       riskScoreSeverity
+      riskFactors
+      {
+        type
+        severity
+      }
     }
   }
 }
@@ -788,7 +809,7 @@ tags:'privileged_user'+state:'open'
           "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
         }
       },
-      "5_Query_Identity_Metrics_GraphQL": {
+      "5_Count_WeakPassword_Users": {
         "type": "Http",
         "inputs": {
           "method": "POST",
@@ -798,37 +819,108 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
+            "query": "{ countEntities(types: [USER] hasWeakPassword: true) }"
           }
         },
         "runAfter": {
           "4_Parse_OAuth_Token": ["Succeeded"]
         }
       },
-      "6_Parse_GraphQL_Response": {
+      "6_Parse_WeakPassword_Count": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('5_Query_Identity_Metrics_GraphQL')",
+          "content": "@body('5_Count_WeakPassword_Users')",
           "schema": {
             "type": "object",
             "properties": {
               "data": {
                 "type": "object",
                 "properties": {
-                  "highRiskCount": { "type": "integer" },
-                  "mediumRiskCount": { "type": "integer" },
-                  "lowRiskCount": { "type": "integer" },
-                  "disabledPrivilegedCount": { "type": "integer" }
+                  "countEntities": { "type": "integer" }
                 }
               }
             }
           }
         },
         "runAfter": {
-          "5_Query_Identity_Metrics_GraphQL": ["Succeeded"]
+          "5_Count_WeakPassword_Users": ["Succeeded"]
         }
       },
-      "7_Query_HighRisk_Device_IDs": {
+      "7_Count_InactivePrivileged": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+          "headers": {
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "{ countEntities(roles: [AdminAccountRole] inactive: true archived: false) }"
+          }
+        },
+        "runAfter": {
+          "6_Parse_WeakPassword_Count": ["Succeeded"]
+        }
+      },
+      "8_Parse_InactivePrivileged_Count": {
+        "type": "ParseJson",
+        "inputs": {
+          "content": "@body('7_Count_InactivePrivileged')",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "countEntities": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "runAfter": {
+          "7_Count_InactivePrivileged": ["Succeeded"]
+        }
+      },
+      "9_Count_RecentlyCreated_Users": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+          "headers": {
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "{ countEntities(accountCreationStartTime: \"P-30D\" types: [USER] archived: false) }"
+          }
+        },
+        "runAfter": {
+          "8_Parse_InactivePrivileged_Count": ["Succeeded"]
+        }
+      },
+      "10_Parse_RecentlyCreated_Count": {
+        "type": "ParseJson",
+        "inputs": {
+          "content": "@body('9_Count_RecentlyCreated_Users')",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "countEntities": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "runAfter": {
+          "9_Count_RecentlyCreated_Users": ["Succeeded"]
+        }
+      },
+      "11_Query_HighRisk_Device_IDs": {
         "type": "Http",
         "inputs": {
           "method": "GET",
@@ -838,13 +930,13 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "6_Parse_GraphQL_Response": ["Succeeded"]
+          "10_Parse_RecentlyCreated_Count": ["Succeeded"]
         }
       },
-      "8_Parse_Device_IDs": {
+      "12_Parse_Device_IDs": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('7_Query_HighRisk_Device_IDs')",
+          "content": "@body('11_Query_HighRisk_Device_IDs')",
           "schema": {
             "type": "object",
             "properties": {
@@ -856,10 +948,10 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "7_Query_HighRisk_Device_IDs": ["Succeeded"]
+          "11_Query_HighRisk_Device_IDs": ["Succeeded"]
         }
       },
-      "9_Get_Device_Details": {
+      "13_Get_Device_Details": {
         "type": "Http",
         "inputs": {
           "method": "POST",
@@ -869,17 +961,17 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "ids": "@body('8_Parse_Device_IDs')?['resources']"
+            "ids": "@body('12_Parse_Device_IDs')?['resources']"
           }
         },
         "runAfter": {
-          "8_Parse_Device_IDs": ["Succeeded"]
+          "12_Parse_Device_IDs": ["Succeeded"]
         }
       },
-      "10_Parse_Device_Details": {
+      "14_Parse_Device_Details": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('9_Get_Device_Details')",
+          "content": "@body('13_Get_Device_Details')",
           "schema": {
             "type": "object",
             "properties": {
@@ -900,10 +992,10 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "11_Get_Device_Details": ["Succeeded"]
+          "13_Get_Device_Details": ["Succeeded"]
         }
       },
-      "13_Query_Policy_Rules": {
+      "15_Query_Policy_Rules": {
         "type": "Http",
         "inputs": {
           "method": "GET",
@@ -913,13 +1005,13 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "12_Parse_Device_Details": ["Succeeded"]
+          "14_Parse_Device_Details": ["Succeeded"]
         }
       },
-      "14_Parse_Policy_Rules": {
+      "16_Parse_Policy_Rules": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('13_Query_Policy_Rules')",
+          "content": "@body('15_Query_Policy_Rules')",
           "schema": {
             "type": "object",
             "properties": {
@@ -1036,20 +1128,16 @@ tags:'privileged_user'+state:'open'
                   "type": "FactSet",
                   "facts": [
                     {
-                      "title": "🔴 High Risk (70-100)",
-                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['highRiskCount']} identities"
+                      "title": "⚠️ Weak Passwords",
+                      "value": "@{body('6_Parse_WeakPassword_Count')?['data']?['countEntities']} users"
                     },
                     {
-                      "title": "🟠 Medium Risk (40-69)",
-                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['mediumRiskCount']} identities"
+                      "title": "💤 Inactive Privileged",
+                      "value": "@{body('8_Parse_InactivePrivileged_Count')?['data']?['countEntities']} accounts"
                     },
                     {
-                      "title": "🟡 Low Risk (0-39)",
-                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['lowRiskCount']} identities"
-                    },
-                    {
-                      "title": "⚫ Disabled Privileged",
-                      "value": "@{body('6_Parse_GraphQL_Response')?['data']?['disabledPrivilegedCount']} accounts ⚠️"
+                      "title": "🆕 Created Last 30 Days",
+                      "value": "@{body('10_Parse_RecentlyCreated_Count')?['data']?['countEntities']} users"
                     }
                   ]
                 }
@@ -1119,7 +1207,7 @@ tags:'privileged_user'+state:'open'
                         }
                       ]
                     },
-                    "@{json(concat('[', join(array(select(body('10_Parse_Device_Details')?['resources'], 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''hostname''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''risk_score''], \"\\\", \\\"color\\\": \\\"Attention\\\", \\\"weight\\\": \\\"Bolder\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''critical_vulnerability_count''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''high_vulnerability_count''], \"\\\"}]}]}\")')), ','), ']'))}"
+                    "@{json(concat('[', join(array(select(body('14_Parse_Device_Details')?['resources'], 'concat(\"{\\\"cells\\\": [{\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''hostname''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''risk_score''], \"\\\", \\\"color\\\": \\\"Attention\\\", \\\"weight\\\": \\\"Bolder\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''critical_vulnerability_count''], \"\\\"}]}, {\\\"type\\\": \\\"TableCell\\\", \\\"items\\\": [{\\\"type\\\": \\\"TextBlock\\\", \\\"text\\\": \\\"\", item()?[''high_vulnerability_count''], \"\\\"}]}]}\")')), ','), ']'))}"
                   ]
                 }
               ]
@@ -1391,7 +1479,7 @@ tags:'privileged_user'+state:'open'
                 "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
               }
             },
-            "5_Query_Identity_Metrics_GraphQL": {
+            "5_Count_WeakPassword_Users": {
               "type": "Http",
               "inputs": {
                 "method": "POST",
@@ -1401,37 +1489,108 @@ tags:'privileged_user'+state:'open'
                   "Content-Type": "application/json"
                 },
                 "body": {
-                  "query": "query DashboardMetrics { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false) lowRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: LOW enabled: true archived: false) disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false) }"
+                  "query": "{ countEntities(types: [USER] hasWeakPassword: true) }"
                 }
               },
               "runAfter": {
                 "4_Parse_OAuth_Token": ["Succeeded"]
               }
             },
-            "6_Parse_GraphQL_Response": {
+            "6_Parse_WeakPassword_Count": {
               "type": "ParseJson",
               "inputs": {
-                "content": "@body('5_Query_Identity_Metrics_GraphQL')",
+                "content": "@body('5_Count_WeakPassword_Users')",
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
                       "type": "object",
                       "properties": {
-                        "highRiskCount": { "type": "integer" },
-                        "mediumRiskCount": { "type": "integer" },
-                        "lowRiskCount": { "type": "integer" },
-                        "disabledPrivilegedCount": { "type": "integer" }
+                        "countEntities": { "type": "integer" }
                       }
                     }
                   }
                 }
               },
               "runAfter": {
-                "5_Query_Identity_Metrics_GraphQL": ["Succeeded"]
+                "5_Count_WeakPassword_Users": ["Succeeded"]
               }
             },
-            "7_Query_HighRisk_Device_IDs": {
+            "7_Count_InactivePrivileged": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+                "headers": {
+                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "{ countEntities(roles: [AdminAccountRole] inactive: true archived: false) }"
+                }
+              },
+              "runAfter": {
+                "6_Parse_WeakPassword_Count": ["Succeeded"]
+              }
+            },
+            "8_Parse_InactivePrivileged_Count": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('7_Count_InactivePrivileged')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "countEntities": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "7_Count_InactivePrivileged": ["Succeeded"]
+              }
+            },
+            "9_Count_RecentlyCreated_Users": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.crowdstrike.com/identity-protection/combined/graphql/v1",
+                "headers": {
+                  "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "{ countEntities(accountCreationStartTime: \"P-30D\" types: [USER] archived: false) }"
+                }
+              },
+              "runAfter": {
+                "8_Parse_InactivePrivileged_Count": ["Succeeded"]
+              }
+            },
+            "10_Parse_RecentlyCreated_Count": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('9_Count_RecentlyCreated_Users')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "countEntities": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "9_Count_RecentlyCreated_Users": ["Succeeded"]
+              }
+            },
+            "11_Query_HighRisk_Device_IDs": {
               "type": "Http",
               "inputs": {
                 "method": "GET",
@@ -1441,7 +1600,7 @@ tags:'privileged_user'+state:'open'
                 }
               },
               "runAfter": {
-                "6_Parse_GraphQL_Response": ["Succeeded"]
+                "10_Parse_RecentlyCreated_Count": ["Succeeded"]
               }
             },
             "8_Parse_Device_IDs": {
@@ -1680,6 +1839,8 @@ Write-Host "Expires In: $($response.expires_in) seconds"
 
 **Symptom:** `400 Bad Request` or GraphQL error with `countEntities` query
 
+**IMPORTANT:** Only use query patterns shown in official CrowdStrike API documentation. Do NOT create custom multi-query patterns or use query names/aliases unless explicitly shown in examples.
+
 **Common Errors:**
 
 **1. Using `entities` instead of `countEntities` for Counts:**
@@ -1688,21 +1849,38 @@ Write-Host "Expires In: $($response.expires_in) seconds"
 ```graphql
 query {
   entities(roles: [AdminAccountRole] first: 100) {
-    totalCount
+    totalCount  # This field does NOT exist
   }
 }
 ```
 
 **Error:** `entities` query does NOT return `totalCount` field
 
-**✅ Correct (use countEntities):**
+**✅ Correct (use countEntities - Official Example):**
 ```graphql
-query {
-  countEntities(roles: [AdminAccountRole] archived: false enabled: true)
+{
+  countEntities(types: [USER] hasWeakPassword: true)
 }
 ```
 
-**2. Using Wrong Field Names:**
+**2. Using Multi-Query Patterns Not in Official Docs:**
+
+**❌ Incorrect (Not in Official Examples):**
+```graphql
+query DashboardMetrics {
+  highRiskCount: countEntities(...)
+  lowRiskCount: countEntities(...)
+}
+```
+
+**Error:** This pattern is NOT shown in official API documentation
+
+**✅ Correct (Make Separate API Calls):**
+- Make individual `countEntities` API calls for each metric
+- No examples exist for combining multiple counts in one request
+- Use separate HTTP actions in Logic App workflow
+
+**3. Using Wrong Field Names:**
 
 **❌ Incorrect:** `privileged: true` (not a valid argument)  
 **✅ Correct:** `roles: [AdminAccountRole]` (filter by role)
@@ -1710,7 +1888,36 @@ query {
 **❌ Incorrect:** `riskScore: { gte: 70 }` (not supported)  
 **✅ Correct:** `minRiskScoreSeverity: HIGH` (use severity levels)
 
-**3. Invalid Enum Values:**
+**3. Using Parameters Not Shown in Official Examples:**
+
+While the API signature shows many parameters (minRiskScoreSeverity, roles, etc.), always verify your specific query pattern matches an official example before using it.
+
+**Official countEntities Example (from docs):**
+```graphql
+{
+  countEntities(types: [USER] hasWeakPassword: true)
+}
+```
+
+**Official entities Example Using minRiskScoreSeverity (from docs):**
+```graphql
+{
+  entities(types: [USER]
+           minRiskScoreSeverity: MEDIUM
+           sortKey: RISK_SCORE
+           sortOrder: DESCENDING
+           first: 5)
+  {
+    nodes {
+      primaryDisplayName
+      riskScore
+      riskScoreSeverity
+    }
+  }
+}
+```
+
+**4. Using Wrong Field Names:**
 
 **❌ Incorrect:** `roles: ["AdminAccountRole"]` (strings)  
 **✅ Correct:** `roles: [AdminAccountRole]` (enum without quotes)
@@ -1721,7 +1928,7 @@ query {
 **Valid Severity Values:** `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`  
 **Valid Role Types:** `AdminAccountRole`, `BuiltinAdministratorRole`, `HumanUserAccountRole`, `ProgrammaticUserAccountRole`, `ServerRole`, `LocalAdminRole`
 
-**4. For `entities` Query - Missing Required Pagination Argument:**
+**5. For `entities` Query - Missing Required Pagination Argument:**
 
 **Error:** `Field "entities" argument "first" of type "Int" is required`
 
@@ -1730,12 +1937,12 @@ query {
 entities(roles: [AdminAccountRole] first: 5) { nodes { primaryDisplayName } }
 ```
 
-**Testing countEntities Queries:**
+**Testing countEntities Queries (Official Pattern):**
 ```powershell
-# Test countEntities query in PowerShell
+# Test countEntities query in PowerShell - Official Example
 $token = "YOUR_ACCESS_TOKEN"
 $body = @{
-  query = 'query { highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false) }'
+  query = '{ countEntities(types: [USER] hasWeakPassword: true) }'
 } | ConvertTo-Json
 
 $response = Invoke-RestMethod -Method POST `
@@ -1743,7 +1950,7 @@ $response = Invoke-RestMethod -Method POST `
   -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
   -Body $body
 
-$response.data.highRiskCount  # Returns integer directly
+$response.data.countEntities  # Returns integer directly
 ```
 
 ---
