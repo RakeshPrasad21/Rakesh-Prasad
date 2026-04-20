@@ -310,6 +310,18 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
     roles: [AdminAccountRole]
     enabled: false
     archived: false
+  ),
+  weakPasswordCount: countEntities(
+    types: [USER] 
+    hasWeakPassword: true
+  ),
+  hasNeverExpiringPasswordCount: countEntities(
+    types: [USER] 
+    hasNeverExpiringPassword: true
+  ),
+  inactiveCount: countEntities(
+    types: [USER] 
+    inactive: true
   )
 }
 ```
