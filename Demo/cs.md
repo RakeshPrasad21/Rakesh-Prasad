@@ -235,17 +235,54 @@ client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}&grant_type=client_creden
 
 ### 3.2 CrowdScore (Security Posture Score)
 
-**Endpoint:** `/incidents/combined/crowdscores/v1`  
-**Method:** GET  
+**Endpoint:** `/incidents/queries/crowdscores/v1` (Query IDs) + `/incidents/entities/crowdscores/v1` (Get Details)  
+**Method:** GET (query) + POST (entities)  
 **PSFalcon Function:** `Get-FalconScore`  
 **Source:** `public/incidents.ps1` (Lines 116-145)
 
 **Purpose:** Equivalent to Microsoft Secure Score - primary security posture metric
 
-**Request:**
+**⚠️ IMPORTANT:** CrowdScore uses a two-step process (query IDs, then get entities), not a combined endpoint.
+
+**Request (Step 1 - Query CrowdScore IDs):**
 ```http
-GET https://api.crowdstrike.com/incidents/combined/crowdscores/v1?sort=timestamp.desc&limit=2
+GET https://api.crowdstrike.com/incidents/queries/crowdscores/v1?filter=timestamp:>'2026-04-01T00:00:00Z'&sort=timestamp.desc&limit=100
 Authorization: Bearer {{ACCESS_TOKEN}}
+```
+
+**Response (Step 1):**
+```json
+{
+  "meta": {
+    "query_time": 0.045,
+    "pagination": {
+      "total": 30,
+      "limit": 100,
+      "offset": 0
+    },
+    "powered_by": "crowdscores",
+    "trace_id": "abc123-def456-ghi789"
+  },
+  "resources": [
+    "score:6358dbdd28c246d1a7477142dbbf6906:1745390400",
+    "score:6358dbdd28c246d1a7477142dbbf6906:1745304000"
+  ],
+  "errors": []
+}
+```
+
+**Request (Step 2 - Get CrowdScore Details):**
+```http
+POST https://api.crowdstrike.com/incidents/entities/crowdscores/v1
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+
+{
+  "ids": [
+    "score:6358dbdd28c246d1a7477142dbbf6906:1745390400",
+    "score:6358dbdd28c246d1a7477142dbbf6906:1745304000"
+  ]
+}
 ```
 
 **Query Parameters:**
@@ -257,18 +294,13 @@ Authorization: Bearer {{ACCESS_TOKEN}}
 | `limit` | Integer | Max results (1-2500) | `100` |
 | `offset` | Integer | Pagination offset | `0` |
 
-**Response:**
+**Response (Step 2):**
 ```json
 {
   "meta": {
     "query_time": 0.123,
-    "pagination": {
-      "total": 30,
-      "limit": 2,
-      "offset": 0
-    },
     "powered_by": "crowdscores",
-    "trace_id": "abc123-def456-ghi789"
+    "trace_id": "xyz789-abc123-def456"
   },
   "resources": [
     {
@@ -313,74 +345,15 @@ Change: +15 pts (+1.8%) ▲
 
 **Purpose:** Flexible querying of privileged identities, risk scores, and identity exposure
 
-**Request:**
-```http
-POST https://api.crowdstrike.com/identity-protection/combined/graphql/v1
-Authorization: Bearer {{ACCESS_TOKEN}}
-Content-Type: application/json
+**⚠️ IMPORTANT:** CrowdStrike GraphQL API does NOT support complex `filter` objects. Use separate queries or REST API for filtering.
 
-{
-  "query": "query($cursor: Cursor) { identities(first: 100, after: $cursor, filter: { privileged: true, riskScore: { gte: 50 } }, sort: { field: RISK_SCORE, direction: DESC }) { nodes { primaryDisplayName riskScore riskFactors accountEnabled privileged } totalCount pageInfo { hasNextPage endCursor } } }",
-  "variables": {
-    "cursor": null
-  }
-}
-```
-
-**GraphQL Query - Privileged Identity Risk Breakdown:**
+**Correct GraphQL Query Structure (Without Filters):**
 
 ```graphql
-query GetPrivilegedIdentityRisk {
-  # High Risk Identities (70-100)
-  highRisk: identities(
-    filter: {
-      privileged: true
-      riskScore: { gte: 70 }
-    }
-  ) {
-    totalCount
-  }
-  
-  # Medium Risk Identities (40-69)
-  mediumRisk: identities(
-    filter: {
-      privileged: true
-      riskScore: { gte: 40, lt: 70 }
-    }
-  ) {
-    totalCount
-  }
-  
-  # Low Risk Identities (0-39)
-  lowRisk: identities(
-    filter: {
-      privileged: true
-      riskScore: { lt: 40 }
-    }
-  ) {
-    totalCount
-  }
-  
-  # Disabled Privileged Accounts
-  disabledPrivileged: identities(
-    filter: {
-      privileged: true
-      accountEnabled: false
-    }
-  ) {
-    totalCount
-  }
-  
-  # Top 10 Riskiest Identities
-  topRisky: identities(
-    first: 10
-    filter: {
-      privileged: true
-    }
-    sort: {
-      field: RISK_SCORE
-      direction: DESC
-    }
+query GetAllIdentities($cursor: Cursor) {
+  entities(
+    first: 100
+    after: $cursor
   ) {
     nodes {
       primaryDisplayName
@@ -397,6 +370,7 @@ query GetPrivilegedIdentityRisk {
       privileged
       lastSeenTimestamp
     }
+    totalCount
     pageInfo {
       hasNextPage
       endCursor
@@ -405,48 +379,88 @@ query GetPrivilegedIdentityRisk {
 }
 ```
 
-**Response:**
+**Request:**
+```http
+POST https://api.crowdstrike.com/identity-protection/combined/graphql/v1
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+
+{
+  "query": "query($cursor: Cursor) { entities(first: 100, after: $cursor) { nodes { primaryDisplayName riskScore privileged accountEnabled } totalCount pageInfo { hasNextPage endCursor } } }",
+  "variables": {
+    "cursor": null
+  }
+}
+```
+
+**Alternative: Use REST API for Filtered Queries**
+
+Since GraphQL doesn't support filtering, use the REST endpoints instead:
+
+**Query Privileged Identities (REST API):**
+```http
+GET https://api.crowdstrike.com/identity-protection/queries/identities/v1?limit=100
+Authorization: Bearer {{ACCESS_TOKEN}}
+```
+
+Then retrieve entity details:
+```http
+POST https://api.crowdstrike.com/identity-protection/entities/identities/v1
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+
+{
+  "ids": ["identity-id-1", "identity-id-2"]
+}
+```
+
+**Client-Side Filtering Required:**
+
+For privileged identity risk breakdown, fetch all identities via GraphQL/REST, then filter in Logic App:
+
+```javascript
+// Logic App: Filter High Risk (70-100)
+var highRisk = entities.filter(e => e.privileged && e.riskScore >= 70).length;
+
+// Filter Medium Risk (40-69)
+var mediumRisk = entities.filter(e => e.privileged && e.riskScore >= 40 && e.riskScore < 70).length;
+
+// Filter Low Risk (0-39)
+var lowRisk = entities.filter(e => e.privileged && e.riskScore < 40).length;
+
+// Filter Disabled Privileged
+var disabled = entities.filter(e => e.privileged && !e.accountEnabled).length;
+```
+
+**Response (Sample):**
 ```json
 {
   "data": {
-    "highRisk": {
-      "totalCount": 3
-    },
-    "mediumRisk": {
-      "totalCount": 12
-    },
-    "lowRisk": {
-      "totalCount": 45
-    },
-    "disabledPrivileged": {
-      "totalCount": 2
-    },
-    "topRisky": {
+    "entities": {
       "nodes": [
         {
           "primaryDisplayName": "admin.john.smith",
-          "secondaryDisplayName": "John Smith",
-          "emailAddresses": ["john.smith@contoso.com"],
           "riskScore": 85,
-          "riskFactors": [
-            "Dormant Account",
-            "Unmanaged Device Access",
-            "Weak Authentication"
-          ],
-          "riskFactorScores": [
-            { "name": "Dormant Account", "score": 30 },
-            { "name": "Unmanaged Device Access", "score": 35 },
-            { "name": "Weak Authentication", "score": 20 }
-          ],
-          "accountType": "user",
-          "accountEnabled": true,
           "privileged": true,
-          "lastSeenTimestamp": "2026-04-15T14:32:00Z"
+          "accountEnabled": true
+        },
+        {
+          "primaryDisplayName": "user.jane.doe",
+          "riskScore": 45,
+          "privileged": true,
+          "accountEnabled": true
+        },
+        {
+          "primaryDisplayName": "disabled.admin",
+          "riskScore": 65,
+          "privileged": true,
+          "accountEnabled": false
         }
       ],
+      "totalCount": 60,
       "pageInfo": {
-        "hasNextPage": false,
-        "endCursor": null
+        "hasNextPage": true,
+        "endCursor": "cursor_abc123def456"
       }
     }
   },
@@ -454,22 +468,11 @@ query GetPrivilegedIdentityRisk {
 }
 ```
 
-**GraphQL Filter Options:**
-
-| Filter | Type | Description | Example |
-|--------|------|-------------|---------|
-| `privileged` | Boolean | Filter by privilege status | `privileged: true` |
-| `riskScore` | Range | Score range (0-100) | `riskScore: { gte: 70 }` |
-| `riskScore.gte` | Integer | Greater than or equal | `{ gte: 70 }` |
-| `riskScore.lt` | Integer | Less than | `{ lt: 40 }` |
-| `accountEnabled` | Boolean | Active/disabled status | `accountEnabled: false` |
-| `accountType` | String | Account type | `accountType: "user"` |
-| `lastSeenTimestamp` | Timestamp | Last activity date | `lastSeenTimestamp: { gte: "2026-04-01T00:00:00Z" }` |
-
-**Pagination:**
-- Use `pageInfo.hasNextPage` to check for more results
-- Pass `pageInfo.endCursor` as `$cursor` variable for next page
-- PSFalcon `-All` switch automatically handles pagination
+**After retrieving all entities, filter client-side:**
+- High Risk: `privileged == true && riskScore >= 70` → 3 identities
+- Medium Risk: `privileged == true && riskScore >= 40 && riskScore < 70` → 12 identities  
+- Low Risk: `privileged == true && riskScore < 40` → 45 identities
+- Disabled Privileged: `privileged == true && accountEnabled == false` → 2 accounts
 
 ---
 
@@ -890,24 +893,58 @@ tags:'privileged_user'+state:'open'
           "3_Get_CrowdStrike_OAuth2_Token": ["Succeeded"]
         }
       },
-      "5_Get_CrowdScore": {
+      "5_Query_CrowdScore_IDs": {
         "type": "Http",
         "inputs": {
           "method": "GET",
-          "uri": "https://api.crowdstrike.com/incidents/combined/crowdscores/v1?sort=timestamp.desc&limit=2",
+          "uri": "https://api.crowdstrike.com/incidents/queries/crowdscores/v1?filter=timestamp:>'2026-04-01T00:00:00Z'&sort=timestamp.desc&limit=100",
           "headers": {
-            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
-            "Content-Type": "application/json"
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}"
           }
         },
         "runAfter": {
           "4_Parse_OAuth_Token": ["Succeeded"]
         }
       },
+      "5a_Parse_CrowdScore_IDs": {
+        "type": "ParseJson",
+        "inputs": {
+          "content": "@body('5_Query_CrowdScore_IDs')",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "resources": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "runAfter": {
+          "5_Query_CrowdScore_IDs": ["Succeeded"]
+        }
+      },
+      "5b_Get_CrowdScore_Details": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://api.crowdstrike.com/incidents/entities/crowdscores/v1",
+          "headers": {
+            "Authorization": "Bearer @{body('4_Parse_OAuth_Token')?['access_token']}",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "ids": "@take(body('5a_Parse_CrowdScore_IDs')?['resources'], 2)"
+          }
+        },
+        "runAfter": {
+          "5a_Parse_CrowdScore_IDs": ["Succeeded"]
+        }
+      },
       "6_Parse_CrowdScore_Response": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('5_Get_CrowdScore')",
+          "content": "@body('5b_Get_CrowdScore_Details')",
           "schema": {
             "type": "object",
             "properties": {
@@ -926,10 +963,10 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "5_Get_CrowdScore": ["Succeeded"]
+          "5b_Get_CrowdScore_Details": ["Succeeded"]
         }
       },
-      "7_Query_Privileged_Identities_GraphQL": {
+      "7_Query_All_Identities_GraphQL": {
         "type": "Http",
         "inputs": {
           "method": "POST",
@@ -939,7 +976,7 @@ tags:'privileged_user'+state:'open'
             "Content-Type": "application/json"
           },
           "body": {
-            "query": "query { highRisk: identities(filter: { privileged: true, riskScore: { gte: 70 } }) { totalCount } mediumRisk: identities(filter: { privileged: true, riskScore: { gte: 40, lt: 70 } }) { totalCount } lowRisk: identities(filter: { privileged: true, riskScore: { lt: 40 } }) { totalCount } disabledPrivileged: identities(filter: { privileged: true, accountEnabled: false }) { totalCount } topRisky: identities(first: 5, filter: { privileged: true }, sort: { field: RISK_SCORE, direction: DESC }) { nodes { primaryDisplayName riskScore riskFactors } } }"
+            "query": "query { entities(first: 100) { nodes { primaryDisplayName riskScore privileged accountEnabled } totalCount } }"
           }
         },
         "runAfter": {
@@ -949,28 +986,30 @@ tags:'privileged_user'+state:'open'
       "8_Parse_GraphQL_Response": {
         "type": "ParseJson",
         "inputs": {
-          "content": "@body('7_Query_Privileged_Identities_GraphQL')",
+          "content": "@body('7_Query_All_Identities_GraphQL')",
           "schema": {
             "type": "object",
             "properties": {
               "data": {
                 "type": "object",
                 "properties": {
-                  "highRisk": {
+                  "entities": {
                     "type": "object",
-                    "properties": { "totalCount": { "type": "integer" } }
-                  },
-                  "mediumRisk": {
-                    "type": "object",
-                    "properties": { "totalCount": { "type": "integer" } }
-                  },
-                  "lowRisk": {
-                    "type": "object",
-                    "properties": { "totalCount": { "type": "integer" } }
-                  },
-                  "disabledPrivileged": {
-                    "type": "object",
-                    "properties": { "totalCount": { "type": "integer" } }
+                    "properties": {
+                      "nodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "primaryDisplayName": { "type": "string" },
+                            "riskScore": { "type": "integer" },
+                            "privileged": { "type": "boolean" },
+                            "accountEnabled": { "type": "boolean" }
+                          }
+                        }
+                      },
+                      "totalCount": { "type": "integer" }
+                    }
                   }
                 }
               }
@@ -978,7 +1017,47 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "7_Query_Privileged_Identities_GraphQL": ["Succeeded"]
+          "7_Query_All_Identities_GraphQL": ["Succeeded"]
+        }
+      },
+      "8a_Filter_HighRisk_Identities": {
+        "type": "Query",
+        "inputs": {
+          "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+          "where": "@and(equals(item()?['privileged'], true), greaterOrEquals(item()?['riskScore'], 70))"
+        },
+        "runAfter": {
+          "8_Parse_GraphQL_Response": ["Succeeded"]
+        }
+      },
+      "8b_Filter_MediumRisk_Identities": {
+        "type": "Query",
+        "inputs": {
+          "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+          "where": "@and(and(equals(item()?['privileged'], true), greaterOrEquals(item()?['riskScore'], 40)), less(item()?['riskScore'], 70))"
+        },
+        "runAfter": {
+          "8_Parse_GraphQL_Response": ["Succeeded"]
+        }
+      },
+      "8c_Filter_LowRisk_Identities": {
+        "type": "Query",
+        "inputs": {
+          "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+          "where": "@and(equals(item()?['privileged'], true), less(item()?['riskScore'], 40))"
+        },
+        "runAfter": {
+          "8_Parse_GraphQL_Response": ["Succeeded"]
+        }
+      },
+      "8d_Filter_Disabled_Privileged": {
+        "type": "Query",
+        "inputs": {
+          "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+          "where": "@and(equals(item()?['privileged'], true), equals(item()?['accountEnabled'], false))"
+        },
+        "runAfter": {
+          "8_Parse_GraphQL_Response": ["Succeeded"]
         }
       },
       "9_Query_HighRisk_Device_IDs": {
@@ -991,7 +1070,10 @@ tags:'privileged_user'+state:'open'
           }
         },
         "runAfter": {
-          "8_Parse_GraphQL_Response": ["Succeeded"]
+          "8a_Filter_HighRisk_Identities": ["Succeeded"],
+          "8b_Filter_MediumRisk_Identities": ["Succeeded"],
+          "8c_Filter_LowRisk_Identities": ["Succeeded"],
+          "8d_Filter_Disabled_Privileged": ["Succeeded"]
         }
       },
       "10_Parse_Device_IDs": {
@@ -1190,19 +1272,19 @@ tags:'privileged_user'+state:'open'
                   "facts": [
                     {
                       "title": "🔴 High Risk (70-100)",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['highRisk']?['totalCount']} identities"
+                      "value": "@{length(body('8a_Filter_HighRisk_Identities'))} identities"
                     },
                     {
                       "title": "🟠 Medium Risk (40-69)",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['mediumRisk']?['totalCount']} identities"
+                      "value": "@{length(body('8b_Filter_MediumRisk_Identities'))} identities"
                     },
                     {
                       "title": "🟡 Low Risk (0-39)",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['lowRisk']?['totalCount']} identities"
+                      "value": "@{length(body('8c_Filter_LowRisk_Identities'))} identities"
                     },
                     {
                       "title": "⚫ Disabled Privileged",
-                      "value": "@{body('8_Parse_GraphQL_Response')?['data']?['disabledPrivileged']?['totalCount']} accounts ⚠️"
+                      "value": "@{length(body('8d_Filter_Disabled_Privileged'))} accounts ⚠️"
                     }
                   ]
                 }
@@ -1561,7 +1643,7 @@ tags:'privileged_user'+state:'open'
             "6_Parse_CrowdScore_Response": {
               "type": "ParseJson",
               "inputs": {
-                "content": "@body('5_Get_CrowdScore')",
+                "content": "@body('5b_Get_CrowdScore_Details')",
                 "schema": {
                   "type": "object",
                   "properties": {
@@ -1603,28 +1685,30 @@ tags:'privileged_user'+state:'open'
             "8_Parse_GraphQL_Response": {
               "type": "ParseJson",
               "inputs": {
-                "content": "@body('7_Query_Privileged_Identities_GraphQL')",
+                "content": "@body('7_Query_All_Identities_GraphQL')",
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
                       "type": "object",
                       "properties": {
-                        "highRisk": {
+                        "entities": {
                           "type": "object",
-                          "properties": { "totalCount": { "type": "integer" } }
-                        },
-                        "mediumRisk": {
-                          "type": "object",
-                          "properties": { "totalCount": { "type": "integer" } }
-                        },
-                        "lowRisk": {
-                          "type": "object",
-                          "properties": { "totalCount": { "type": "integer" } }
-                        },
-                        "disabledPrivileged": {
-                          "type": "object",
-                          "properties": { "totalCount": { "type": "integer" } }
+                          "properties": {
+                            "nodes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "primaryDisplayName": { "type": "string" },
+                                  "riskScore": { "type": "integer" },
+                                  "privileged": { "type": "boolean" },
+                                  "accountEnabled": { "type": "boolean" }
+                                }
+                              }
+                            },
+                            "totalCount": { "type": "integer" }
+                          }
                         }
                       }
                     }
@@ -1632,7 +1716,47 @@ tags:'privileged_user'+state:'open'
                 }
               },
               "runAfter": {
-                "7_Query_Privileged_Identities_GraphQL": ["Succeeded"]
+                "7_Query_All_Identities_GraphQL": ["Succeeded"]
+              }
+            },
+            "8a_Filter_HighRisk_Identities": {
+              "type": "Query",
+              "inputs": {
+                "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+                "where": "@and(equals(item()?['privileged'], true), greaterOrEquals(item()?['riskScore'], 70))"
+              },
+              "runAfter": {
+                "8_Parse_GraphQL_Response": ["Succeeded"]
+              }
+            },
+            "8b_Filter_MediumRisk_Identities": {
+              "type": "Query",
+              "inputs": {
+                "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+                "where": "@and(and(equals(item()?['privileged'], true), greaterOrEquals(item()?['riskScore'], 40)), less(item()?['riskScore'], 70))"
+              },
+              "runAfter": {
+                "8_Parse_GraphQL_Response": ["Succeeded"]
+              }
+            },
+            "8c_Filter_LowRisk_Identities": {
+              "type": "Query",
+              "inputs": {
+                "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+                "where": "@and(equals(item()?['privileged'], true), less(item()?['riskScore'], 40))"
+              },
+              "runAfter": {
+                "8_Parse_GraphQL_Response": ["Succeeded"]
+              }
+            },
+            "8d_Filter_Disabled_Privileged": {
+              "type": "Query",
+              "inputs": {
+                "from": "@body('8_Parse_GraphQL_Response')?['data']?['entities']?['nodes']",
+                "where": "@and(equals(item()?['privileged'], true), equals(item()?['accountEnabled'], false))"
+              },
+              "runAfter": {
+                "8_Parse_GraphQL_Response": ["Succeeded"]
               }
             },
             "9_Query_HighRisk_Device_IDs": {
@@ -1645,7 +1769,10 @@ tags:'privileged_user'+state:'open'
                 }
               },
               "runAfter": {
-                "8_Parse_GraphQL_Response": ["Succeeded"]
+                "8a_Filter_HighRisk_Identities": ["Succeeded"],
+                "8b_Filter_MediumRisk_Identities": ["Succeeded"],
+                "8c_Filter_LowRisk_Identities": ["Succeeded"],
+                "8d_Filter_Disabled_Privileged": ["Succeeded"]
               }
             },
             "10_Parse_Device_IDs": {
@@ -1867,25 +1994,122 @@ Write-Host "Access Token: $($response.access_token.Substring(0, 50))..."
 Write-Host "Expires In: $($response.expires_in) seconds"
 ```
 
-### 8.2 GraphQL Query Errors
+### 8.2 CrowdScore API 404 Error
+
+**Symptom:** `404 Page Not Found` when calling CrowdScore endpoint
+
+**Error Message:**
+```
+404: Page Not found
+GET https://api.crowdstrike.com/incidents/combined/crowdscores/v1
+```
+
+**Root Cause:** CrowdScore API uses a **two-step process** (query + entities), NOT a combined endpoint
+
+**❌ Incorrect (Returns 404):**
+```http
+GET https://api.crowdstrike.com/incidents/combined/crowdscores/v1
+```
+
+**✅ Correct (Two-Step Process):**
+
+**Step 1 - Query Score IDs:**
+```http
+GET https://api.crowdstrike.com/incidents/queries/crowdscores/v1?sort=timestamp.desc&limit=100
+```
+
+**Step 2 - Get Score Details:**
+```http
+POST https://api.crowdstrike.com/incidents/entities/crowdscores/v1
+Content-Type: application/json
+
+{
+  "ids": ["score:abc123:1745390400", "score:abc123:1745304000"]
+}
+```
+
+**Logic App Fix:**
+- Replace single `GET /combined/crowdscores/v1` action
+- Add two actions: Query IDs → Get Entity Details  
+- See Section 4.2 for complete workflow
+
+---
+
+### 8.3 GraphQL Filter Argument Error
+
+**Symptom:** `400 Bad Request` with GraphQL filter error
+
+**Error Message:**
+```json
+{
+  "errors": [{
+    "message": "Unknown argument \"filter\" on field \"entities\" of type \"Query\". Did you mean \"after\"?"
+  }]
+}
+```
+
+**Root Cause:** CrowdStrike GraphQL API does **NOT support** the `filter` argument
+
+**❌ Incorrect (Returns Error):**
+```graphql
+query {
+  identities(filter: { privileged: true, riskScore: { gte: 70 } }) {
+    totalCount
+  }
+}
+```
+
+**✅ Correct (No Filter - Use Client-Side Filtering):**
+```graphql
+query {
+  entities(first: 100) {
+    nodes {
+      primaryDisplayName
+      riskScore
+      privileged
+      accountEnabled
+    }
+    totalCount
+  }
+}
+```
+
+**Then Filter in Logic App:**
+- Use "Filter array" or "Query" actions in Logic App
+- Filter by: `@and(equals(item()?['privileged'], true), greaterOrEquals(item()?['riskScore'], 70))`
+- See Section 3.3 for complete client-side filtering examples
+
+**Alternative:** Use REST API with FQL filters instead of GraphQL
+```http
+GET /identity-protection/queries/identities/v1?filter=privileged:true+risk_score:>=70
+```
+
+---
+
+### 8.4 GraphQL Query Errors (General)
 
 **Symptom:** `400 Bad Request` or `GraphQL syntax error`
 
-**Root Cause:** Invalid GraphQL syntax or filter structure
+**Root Cause:** Invalid GraphQL syntax or unsupported features
 
 **Solution:**
-- Validate GraphQL queries at: https://www.graphqlbin.com
-- Ensure proper escaping of quotes in Logic App expressions
+- ✅ Use `entities` field (NOT `identities`)
+- ✅ Use `after` for pagination (NOT `filter`)
+- ✅ Fetch all data, filter client-side
+- ❌ Do NOT use `filter`, `sort`, or `where` arguments
+- Validate queries at: https://www.graphqlbin.com (if supported)
 - Test queries manually with Postman
 
 **Example Valid Query:**
 ```json
 {
-  "query": "query { identities(filter: { privileged: true }) { totalCount } }"
+  "query": "query { entities(first: 100) { nodes { primaryDisplayName riskScore } totalCount } }"
 }
 ```
 
-### 8.3 FQL Filter Syntax Errors
+---
+
+### 8.5 FQL Filter Syntax Errors
 
 **Symptom:** Empty results or `400 Bad Request` on device queries
 
@@ -1900,7 +2124,9 @@ Write-Host "Expires In: $($response.expires_in) seconds"
 ❌ risk_score>70 (missing colon and equals)
 ```
 
-### 8.4 Key Vault Access Denied
+---
+
+### 8.6 Key Vault Access Denied
 
 **Symptom:** Logic App cannot retrieve secrets
 
