@@ -708,7 +708,7 @@ Content-Type: application/json
     accountCreationStartTime: "P-30D"
     types: [USER]
     first: 10
-    sortKey: ACCOUNT_CREATION_TIME
+    sortKey: CREATION_TIME
     sortOrder: DESCENDING
   ) {
     nodes {
@@ -716,6 +716,9 @@ Content-Type: application/json
       secondaryDisplayName
       creationTime
       riskScoreSeverity
+       ... on UserEntity{
+          emailAddresses
+        }
       accounts {
         ... on ActiveDirectoryAccountDescriptor {
           ou
