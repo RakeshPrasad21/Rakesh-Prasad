@@ -1532,6 +1532,1290 @@ New-AzRoleAssignment `
 
 Write-Host "`n✅ Deployment Complete!" -ForegroundColor Green
 ```
+Logic app code view
+```
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Recurrence": {
+                "recurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            9
+                        ],
+                        "minutes": [
+                            0
+                        ]
+                    },
+                    "timeZone": "UTC"
+                },
+                "evaluatedRecurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            9
+                        ],
+                        "minutes": [
+                            0
+                        ]
+                    },
+                    "timeZone": "UTC"
+                },
+                "type": "Recurrence"
+            }
+        },
+        "actions": {
+            "Get_OAuth2_Token": {
+                "runAfter": {},
+                "type": "Http",
+                "inputs": {
+                    "uri": "@{parameters('BaseURL')}/oauth2/token",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    "body": "client_id=681c2e89a74744f89f930cc28bc814a0&client_secret=lop6aUzbK8yI9JPk0n5s4BZSiENYWje1dg23mDH7&grant_type=client_credentials"
+                }
+            },
+            "Parse_OAuth_Token": {
+                "runAfter": {
+                    "Get_OAuth2_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Get_OAuth2_Token')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "access_token": {
+                                "type": "string"
+                            },
+                            "token_type": {
+                                "type": "string"
+                            },
+                            "expires_in": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+            },
+            "Get_Security_Assessment": {
+                "runAfter": {
+                    "Parse_OAuth_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "query": "{ securityAssessment(domain: \"@{parameters('Domain')}\") { overallScore overallScoreLevel assessmentFactors { riskFactorType likelihood severity  lastUpdateTime } } }"
+                    }
+                }
+            },
+            "Parse_Security_Assessment": {
+                "runAfter": {
+                    "Get_Security_Assessment": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Get_Security_Assessment')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "securityAssessment": {
+                                        "type": "object",
+                                        "properties": {
+                                            "overallScore": {
+                                                "type": "number"
+                                            },
+                                            "overallScoreLevel": {
+                                                "type": "string"
+                                            },
+                                            "assessmentFactors": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "riskFactorType": {
+                                                            "type": "string"
+                                                        },
+                                                        "likelihood": {
+                                                            "type": "string"
+                                                        },
+                                                        "severity": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "riskFactorType",
+                                                        "likelihood",
+                                                        "severity"
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "extensions": {
+                                "type": "object",
+                                "properties": {
+                                    "runTime": {
+                                        "type": "integer"
+                                    },
+                                    "remainingPoints": {
+                                        "type": "integer"
+                                    },
+                                    "reset": {
+                                        "type": "integer"
+                                    },
+                                    "consumedPoints": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Get_Identity_Metrics": {
+                "runAfter": {
+                    "Parse_Security_Assessment": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "query": "{ highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false), weakPasswordCount: countEntities(roles: [AdminAccountRole] hasWeakPassword: true archived: false), hasNeverExpiringPasswordCount: countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false), inactiveCount: countEntities(roles: [AdminAccountRole] inactive: true archived: false), duplicatePasswordCount: countEntities(roles: [AdminAccountRole] riskFactorTypes: [DUPLICATE_PASSWORD] archived: false) }"
+                    }
+                }
+            },
+            "Parse_Identity_Metrics": {
+                "runAfter": {
+                    "Get_Identity_Metrics": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Get_Identity_Metrics')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "highRiskCount": {
+                                        "type": "integer"
+                                    },
+                                    "mediumRiskCount": {
+                                        "type": "integer"
+                                    },
+                                    "normalRiskCount": {
+                                        "type": "integer"
+                                    },
+                                    "disabledPrivilegedCount": {
+                                        "type": "integer"
+                                    },
+                                    "weakPasswordCount": {
+                                        "type": "integer"
+                                    },
+                                    "hasNeverExpiringPasswordCount": {
+                                        "type": "integer"
+                                    },
+                                    "inactiveCount": {
+                                        "type": "integer"
+                                    },
+                                    "duplicatePasswordCount": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Get_Open_Incidents": {
+                "runAfter": {
+                    "Parse_Identity_Metrics": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "query": "{ incidents(lifeCycleStages: [NEW] entityQuery: { types: [USER], roles: [AdminAccountRole] } sortOrder: DESCENDING sortKey: END_TIME first: 5) { nodes { incidentId type severity startTime compromisedEntities { primaryDisplayName type } } } }"
+                    }
+                }
+            },
+            "Parse_Open_Incidents": {
+                "runAfter": {
+                    "Get_Open_Incidents": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Get_Open_Incidents')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "incidents": {
+                                        "type": "object",
+                                        "properties": {
+                                            "nodes": {
+                                                "type": "array"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Get_Attack_Paths_and_New_Accounts": {
+                "runAfter": {
+                    "Parse_Open_Incidents": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                    "method": "POST",
+                    "headers": {
+                        "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "query": "{ attackPathCount: countEntities(archived: false riskFactorTypes: [HAS_ATTACK_PATH]), exposedPasswordCount: countEntities(roles: [AdminAccountRole] hasExposedPassword: true archived: false), newPrivilegedCount: countEntities(archived: false roles: [AdminAccountRole] accountCreationStartTime: \"P-30D\" types: [USER]) }"
+                    }
+                }
+            },
+            "Parse_Additional_Metrics": {
+                "runAfter": {
+                    "Get_Attack_Paths_and_New_Accounts": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('Get_Attack_Paths_and_New_Accounts')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "attackPathCount": {
+                                        "type": "integer"
+                                    },
+                                    "exposedPasswordCount": {
+                                        "type": "integer"
+                                    },
+                                    "newPrivilegedCount": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Build_Adaptive_Card": {
+                "runAfter": {
+                    "Parse_Additional_Metrics": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose",
+                "inputs": {
+                    "type": "AdaptiveCard",
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "Container",
+                            "style": "emphasis",
+                            "items": [
+                                {
+                                    "type": "ColumnSet",
+                                    "columns": [
+                                        {
+                                            "type": "Column",
+                                            "width": "auto",
+                                            "items": [
+                                                {
+                                                    "type": "Image",
+                                                    "url": "https://www.crowdstrike.com/wp-content/uploads/2020/08/crowdstrike-logo-2.svg",
+                                                    "size": "Medium",
+                                                    "height": "40px"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "type": "Column",
+                                            "width": "stretch",
+                                            "items": [
+                                                {
+                                                    "type": "TextBlock",
+                                                    "text": "🔐 CrowdStrike Identity Dashboard",
+                                                    "weight": "Bolder",
+                                                    "size": "ExtraLarge"
+                                                },
+                                                {
+                                                    "type": "TextBlock",
+                                                    "text": "Daily Report - @{utcNow('yyyy-MM-dd')}",
+                                                    "isSubtle": true,
+                                                    "spacing": "None"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Container",
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "📊 Security Assessment",
+                                    "weight": "Bolder",
+                                    "size": "Medium"
+                                },
+                                {
+                                    "type": "FactSet",
+                                    "facts": [
+                                        {
+                                            "title": "Overall Score",
+                                            "value": "@{body('Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScore']}/100"
+                                        },
+                                        {
+                                            "title": "Risk Level",
+                                            "value": "@{body('Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScoreLevel']}"
+                                        },
+                                        {
+                                            "title": "Domain",
+                                            "value": "@{parameters('Domain')}"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Container",
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "👥 Privileged Account Risk Breakdown",
+                                    "weight": "Bolder",
+                                    "size": "Medium"
+                                },
+                                {
+                                    "type": "FactSet",
+                                    "facts": [
+                                        {
+                                            "title": "🔴 High Risk Accounts",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['highRiskCount']} privileged users"
+                                        },
+                                        {
+                                            "title": "🟠 Medium Risk Accounts",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['mediumRiskCount']} privileged users"
+                                        },
+                                        {
+                                            "title": "🟢 Normal Risk Accounts",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['normalRiskCount']} privileged users"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Container",
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "⚠️ Critical Security Issues",
+                                    "weight": "Bolder",
+                                    "size": "Medium",
+                                    "color": "Attention"
+                                },
+                                {
+                                    "type": "FactSet",
+                                    "facts": [
+                                        {
+                                            "title": "🔑 Weak Passwords",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['weakPasswordCount']} accounts"
+                                        },
+                                        {
+                                            "title": "♾️ Never-Expiring Passwords",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['hasNeverExpiringPasswordCount']} accounts"
+                                        },
+                                        {
+                                            "title": "👤 Duplicate Passwords",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['duplicatePasswordCount']} accounts"
+                                        },
+                                        {
+                                            "title": "💤 Inactive Privileged",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['inactiveCount']} accounts"
+                                        },
+                                        {
+                                            "title": "⚫ Disabled (Still Privileged)",
+                                            "value": "@{body('Parse_Identity_Metrics')?['data']?['disabledPrivilegedCount']} accounts"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Container",
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "🚨 Active Threats",
+                                    "weight": "Bolder",
+                                    "size": "Medium",
+                                    "color": "Attention"
+                                },
+                                {
+                                    "type": "FactSet",
+                                    "facts": [
+                                        {
+                                            "title": "🔴 Open Incidents",
+                                            "value": "@{length(body('Parse_Open_Incidents')?['data']?['incidents']?['nodes'])} new incidents"
+                                        },
+                                        {
+                                            "title": "🔓 Exposed Passwords",
+                                            "value": "@{body('Parse_Additional_Metrics')?['data']?['exposedPasswordCount']} accounts (CRITICAL)"
+                                        },
+                                        {
+                                            "title": "🎯 Attack Paths",
+                                            "value": "@{body('Parse_Additional_Metrics')?['data']?['attackPathCount']} entities at risk"
+                                        },
+                                        {
+                                            "title": "📅 New Privileged (30d)",
+                                            "value": "@{body('Parse_Additional_Metrics')?['data']?['newPrivilegedCount']} accounts"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Container",
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "🎯 Top Assessment Factors",
+                                    "weight": "Bolder",
+                                    "size": "Medium"
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 0), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['riskFactorType'], '**  | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['severity'] ,'| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['lastUpdateTime']), 'No assessment factors available')}",
+                                    "wrap": true,
+                                    "spacing": "Small"
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 1), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['lastUpdateTime']), '')}",
+                                    "wrap": true,
+                                    "spacing": "Small"
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 2), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['lastUpdateTime']), '')}",
+                                    "wrap": true,
+                                    "spacing": "Small"
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 3), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['lastUpdateTime']), '')}",
+                                    "wrap": true,
+                                    "spacing": "Small"
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 4), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['lastUpdateTime']), '')}",
+                                    "wrap": true,
+                                    "spacing": "Small"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "ActionSet",
+                            "actions": [
+                                {
+                                    "type": "Action.OpenUrl",
+                                    "title": "Open Falcon Console",
+                                    "url": "https://falcon.crowdstrike.com/identity-protection/dashboard"
+                                },
+                                {
+                                    "type": "Action.OpenUrl",
+                                    "title": "Identity Protection Portal",
+                                    "url": "https://falcon.crowdstrike.com/identity-protection/identities"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Post_card_in_a_chat_or_channel": {
+                "runAfter": {
+                    "Build_Adaptive_Card": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['teams-1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "body": {
+                        "recipient": {
+                            "groupId": "e8a922b2-19de-4aec-8356-a8cd0e0f06fd",
+                            "channelId": "19:3cecc844b9bc469d82f280ccbce9745c@thread.tacv2"
+                        },
+                        "messageBody": "@{outputs('Build_Adaptive_Card')}"
+                    },
+                    "path": "/v1.0/teams/conversation/adaptivecard/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                }
+            }
+        },
+        "parameters": {
+            "BaseURL": {
+                "defaultValue": "https://api.eu-1.crowdstrike.com",
+                "type": "String"
+            },
+            "Domain": {
+                "defaultValue": "UK.TESCOBANK.ORG",
+                "type": "String"
+            },
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "teams-1": {
+                    "id": "/subscriptions/c781de44-4c82-49e0-a3b4-39182996dd5d/providers/Microsoft.Web/locations/uksouth/managedApis/teams",
+                    "connectionId": "/subscriptions/c781de44-4c82-49e0-a3b4-39182996dd5d/resourceGroups/tescobank-mgmt/providers/Microsoft.Web/connections/teams-6",
+                    "connectionName": "teams-6",
+                    "connectionProperties": {}
+                }
+            }
+        }
+    }
+}
+```
+Logic app Export Template
+```
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_CrowdStrike_Identity_Dashboard_name": {
+            "defaultValue": "CrowdStrike-Identity-Dashboard",
+            "type": "String"
+        },
+        "connections_teams_6_externalid": {
+            "defaultValue": "/subscriptions/c781de44-4c82-49e0-a3b4-39182996dd5d/resourceGroups/tescobank-mgmt/providers/Microsoft.Web/connections/teams-6",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_CrowdStrike_Identity_Dashboard_name')]",
+            "location": "uksouth",
+            "tags": {
+                "CostCentre": "55655",
+                "DataClassification": "Internal",
+                "Owner": "05_azureplatformengineering@tescobank.com",
+                "ServiceCategory": "A",
+                "SNApplicationService": "Azure Sentinel",
+                "SNBusinessApplication": "Azure Sentinel",
+                "SNEnvironment": "Production",
+                "SNResolver": "Azure Sentinel"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "BaseURL": {
+                            "defaultValue": "https://api.eu-1.crowdstrike.com",
+                            "type": "String"
+                        },
+                        "Domain": {
+                            "defaultValue": "UK.TESCOBANK.ORG",
+                            "type": "String"
+                        },
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "Day",
+                                "interval": 1,
+                                "schedule": {
+                                    "hours": [
+                                        9
+                                    ],
+                                    "minutes": [
+                                        0
+                                    ]
+                                },
+                                "timeZone": "UTC"
+                            },
+                            "evaluatedRecurrence": {
+                                "frequency": "Day",
+                                "interval": 1,
+                                "schedule": {
+                                    "hours": [
+                                        9
+                                    ],
+                                    "minutes": [
+                                        0
+                                    ]
+                                },
+                                "timeZone": "UTC"
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "Get_OAuth2_Token": {
+                            "runAfter": {},
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "@{parameters('BaseURL')}/oauth2/token",
+                                "method": "POST",
+                                "headers": {
+                                    "Content-Type": "application/x-www-form-urlencoded"
+                                },
+                                "body": "client_id=681c2e89a74744f89f930cc28bc814a0&client_secret=lop6aUzbK8yI9JPk0n5s4BZSiENYWje1dg23mDH7&grant_type=client_credentials"
+                            }
+                        },
+                        "Parse_OAuth_Token": {
+                            "runAfter": {
+                                "Get_OAuth2_Token": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('Get_OAuth2_Token')",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string"
+                                        },
+                                        "token_type": {
+                                            "type": "string"
+                                        },
+                                        "expires_in": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "Get_Security_Assessment": {
+                            "runAfter": {
+                                "Parse_OAuth_Token": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                                "method": "POST",
+                                "headers": {
+                                    "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "query": "{ securityAssessment(domain: \"@{parameters('Domain')}\") { overallScore overallScoreLevel assessmentFactors { riskFactorType likelihood severity  lastUpdateTime } } }"
+                                }
+                            }
+                        },
+                        "Parse_Security_Assessment": {
+                            "runAfter": {
+                                "Get_Security_Assessment": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('Get_Security_Assessment')",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "securityAssessment": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "overallScore": {
+                                                            "type": "number"
+                                                        },
+                                                        "overallScoreLevel": {
+                                                            "type": "string"
+                                                        },
+                                                        "assessmentFactors": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "riskFactorType": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "likelihood": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "severity": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "riskFactorType",
+                                                                    "likelihood",
+                                                                    "severity"
+                                                                ]
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "extensions": {
+                                            "type": "object",
+                                            "properties": {
+                                                "runTime": {
+                                                    "type": "integer"
+                                                },
+                                                "remainingPoints": {
+                                                    "type": "integer"
+                                                },
+                                                "reset": {
+                                                    "type": "integer"
+                                                },
+                                                "consumedPoints": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "Get_Identity_Metrics": {
+                            "runAfter": {
+                                "Parse_Security_Assessment": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                                "method": "POST",
+                                "headers": {
+                                    "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "query": "{ highRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: HIGH enabled: true archived: false), mediumRiskCount: countEntities(roles: [AdminAccountRole] minRiskScoreSeverity: MEDIUM maxRiskScoreSeverity: MEDIUM enabled: true archived: false), normalRiskCount: countEntities(roles: [AdminAccountRole] maxRiskScoreSeverity: NORMAL enabled: true archived: false), disabledPrivilegedCount: countEntities(roles: [AdminAccountRole] enabled: false archived: false), weakPasswordCount: countEntities(roles: [AdminAccountRole] hasWeakPassword: true archived: false), hasNeverExpiringPasswordCount: countEntities(roles: [AdminAccountRole] hasNeverExpiringPassword: true archived: false), inactiveCount: countEntities(roles: [AdminAccountRole] inactive: true archived: false), duplicatePasswordCount: countEntities(roles: [AdminAccountRole] riskFactorTypes: [DUPLICATE_PASSWORD] archived: false) }"
+                                }
+                            }
+                        },
+                        "Parse_Identity_Metrics": {
+                            "runAfter": {
+                                "Get_Identity_Metrics": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('Get_Identity_Metrics')",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "highRiskCount": {
+                                                    "type": "integer"
+                                                },
+                                                "mediumRiskCount": {
+                                                    "type": "integer"
+                                                },
+                                                "normalRiskCount": {
+                                                    "type": "integer"
+                                                },
+                                                "disabledPrivilegedCount": {
+                                                    "type": "integer"
+                                                },
+                                                "weakPasswordCount": {
+                                                    "type": "integer"
+                                                },
+                                                "hasNeverExpiringPasswordCount": {
+                                                    "type": "integer"
+                                                },
+                                                "inactiveCount": {
+                                                    "type": "integer"
+                                                },
+                                                "duplicatePasswordCount": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "Get_Open_Incidents": {
+                            "runAfter": {
+                                "Parse_Identity_Metrics": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                                "method": "POST",
+                                "headers": {
+                                    "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "query": "{ incidents(lifeCycleStages: [NEW] entityQuery: { types: [USER], roles: [AdminAccountRole] } sortOrder: DESCENDING sortKey: END_TIME first: 5) { nodes { incidentId type severity startTime compromisedEntities { primaryDisplayName type } } } }"
+                                }
+                            }
+                        },
+                        "Parse_Open_Incidents": {
+                            "runAfter": {
+                                "Get_Open_Incidents": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('Get_Open_Incidents')",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "incidents": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "nodes": {
+                                                            "type": "array"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "Get_Attack_Paths_and_New_Accounts": {
+                            "runAfter": {
+                                "Parse_Open_Incidents": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "@{parameters('BaseURL')}/identity-protection/combined/graphql/v1",
+                                "method": "POST",
+                                "headers": {
+                                    "Authorization": "Bearer @{body('Parse_OAuth_Token')?['access_token']}",
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "query": "{ attackPathCount: countEntities(archived: false riskFactorTypes: [HAS_ATTACK_PATH]), exposedPasswordCount: countEntities(roles: [AdminAccountRole] hasExposedPassword: true archived: false), newPrivilegedCount: countEntities(archived: false roles: [AdminAccountRole] accountCreationStartTime: \"P-30D\" types: [USER]) }"
+                                }
+                            }
+                        },
+                        "Parse_Additional_Metrics": {
+                            "runAfter": {
+                                "Get_Attack_Paths_and_New_Accounts": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('Get_Attack_Paths_and_New_Accounts')",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attackPathCount": {
+                                                    "type": "integer"
+                                                },
+                                                "exposedPasswordCount": {
+                                                    "type": "integer"
+                                                },
+                                                "newPrivilegedCount": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "Build_Adaptive_Card": {
+                            "runAfter": {
+                                "Parse_Additional_Metrics": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": {
+                                "type": "AdaptiveCard",
+                                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                "version": "1.4",
+                                "body": [
+                                    {
+                                        "type": "Container",
+                                        "style": "emphasis",
+                                        "items": [
+                                            {
+                                                "type": "ColumnSet",
+                                                "columns": [
+                                                    {
+                                                        "type": "Column",
+                                                        "width": "auto",
+                                                        "items": [
+                                                            {
+                                                                "type": "Image",
+                                                                "url": "https://www.crowdstrike.com/wp-content/uploads/2020/08/crowdstrike-logo-2.svg",
+                                                                "size": "Medium",
+                                                                "height": "40px"
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        "type": "Column",
+                                                        "width": "stretch",
+                                                        "items": [
+                                                            {
+                                                                "type": "TextBlock",
+                                                                "text": "🔐 CrowdStrike Identity Dashboard",
+                                                                "weight": "Bolder",
+                                                                "size": "ExtraLarge"
+                                                            },
+                                                            {
+                                                                "type": "TextBlock",
+                                                                "text": "Daily Report - @{utcNow('yyyy-MM-dd')}",
+                                                                "isSubtle": true,
+                                                                "spacing": "None"
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "Container",
+                                        "spacing": "Medium",
+                                        "items": [
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "📊 Security Assessment",
+                                                "weight": "Bolder",
+                                                "size": "Medium"
+                                            },
+                                            {
+                                                "type": "FactSet",
+                                                "facts": [
+                                                    {
+                                                        "title": "Overall Score",
+                                                        "value": "@{body('Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScore']}/100"
+                                                    },
+                                                    {
+                                                        "title": "Risk Level",
+                                                        "value": "@{body('Parse_Security_Assessment')?['data']?['securityAssessment']?['overallScoreLevel']}"
+                                                    },
+                                                    {
+                                                        "title": "Domain",
+                                                        "value": "@{parameters('Domain')}"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "Container",
+                                        "spacing": "Medium",
+                                        "items": [
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "👥 Privileged Account Risk Breakdown",
+                                                "weight": "Bolder",
+                                                "size": "Medium"
+                                            },
+                                            {
+                                                "type": "FactSet",
+                                                "facts": [
+                                                    {
+                                                        "title": "🔴 High Risk Accounts",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['highRiskCount']} privileged users"
+                                                    },
+                                                    {
+                                                        "title": "🟠 Medium Risk Accounts",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['mediumRiskCount']} privileged users"
+                                                    },
+                                                    {
+                                                        "title": "🟢 Normal Risk Accounts",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['normalRiskCount']} privileged users"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "Container",
+                                        "spacing": "Medium",
+                                        "items": [
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "⚠️ Critical Security Issues",
+                                                "weight": "Bolder",
+                                                "size": "Medium",
+                                                "color": "Attention"
+                                            },
+                                            {
+                                                "type": "FactSet",
+                                                "facts": [
+                                                    {
+                                                        "title": "🔑 Weak Passwords",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['weakPasswordCount']} accounts"
+                                                    },
+                                                    {
+                                                        "title": "♾️ Never-Expiring Passwords",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['hasNeverExpiringPasswordCount']} accounts"
+                                                    },
+                                                    {
+                                                        "title": "👤 Duplicate Passwords",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['duplicatePasswordCount']} accounts"
+                                                    },
+                                                    {
+                                                        "title": "💤 Inactive Privileged",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['inactiveCount']} accounts"
+                                                    },
+                                                    {
+                                                        "title": "⚫ Disabled (Still Privileged)",
+                                                        "value": "@{body('Parse_Identity_Metrics')?['data']?['disabledPrivilegedCount']} accounts"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "Container",
+                                        "spacing": "Medium",
+                                        "items": [
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "🚨 Active Threats",
+                                                "weight": "Bolder",
+                                                "size": "Medium",
+                                                "color": "Attention"
+                                            },
+                                            {
+                                                "type": "FactSet",
+                                                "facts": [
+                                                    {
+                                                        "title": "🔴 Open Incidents",
+                                                        "value": "@{length(body('Parse_Open_Incidents')?['data']?['incidents']?['nodes'])} new incidents"
+                                                    },
+                                                    {
+                                                        "title": "🔓 Exposed Passwords",
+                                                        "value": "@{body('Parse_Additional_Metrics')?['data']?['exposedPasswordCount']} accounts (CRITICAL)"
+                                                    },
+                                                    {
+                                                        "title": "🎯 Attack Paths",
+                                                        "value": "@{body('Parse_Additional_Metrics')?['data']?['attackPathCount']} entities at risk"
+                                                    },
+                                                    {
+                                                        "title": "📅 New Privileged (30d)",
+                                                        "value": "@{body('Parse_Additional_Metrics')?['data']?['newPrivilegedCount']} accounts"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "Container",
+                                        "spacing": "Medium",
+                                        "items": [
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "🎯 Top Assessment Factors",
+                                                "weight": "Bolder",
+                                                "size": "Medium"
+                                            },
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 0), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['riskFactorType'], '**  | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['severity'] ,'| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[0]?['lastUpdateTime']), 'No assessment factors available')}",
+                                                "wrap": true,
+                                                "spacing": "Small"
+                                            },
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 1), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[1]?['lastUpdateTime']), '')}",
+                                                "wrap": true,
+                                                "spacing": "Small"
+                                            },
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 2), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[2]?['lastUpdateTime']), '')}",
+                                                "wrap": true,
+                                                "spacing": "Small"
+                                            },
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 3), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[3]?['lastUpdateTime']), '')}",
+                                                "wrap": true,
+                                                "spacing": "Small"
+                                            },
+                                            {
+                                                "type": "TextBlock",
+                                                "text": "@{if(greater(length(body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']), 4), concat('**', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['riskFactorType'], '** | Severity: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['severity'], '| LastUpdateTime: ', body('Parse_Security_Assessment')?['data']?['securityAssessment']?['assessmentFactors']?[4]?['lastUpdateTime']), '')}",
+                                                "wrap": true,
+                                                "spacing": "Small"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "ActionSet",
+                                        "actions": [
+                                            {
+                                                "type": "Action.OpenUrl",
+                                                "title": "Open Falcon Console",
+                                                "url": "https://falcon.crowdstrike.com/identity-protection/dashboard"
+                                            },
+                                            {
+                                                "type": "Action.OpenUrl",
+                                                "title": "Identity Protection Portal",
+                                                "url": "https://falcon.crowdstrike.com/identity-protection/identities"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        },
+                        "Post_card_in_a_chat_or_channel": {
+                            "runAfter": {
+                                "Build_Adaptive_Card": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['teams-1']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": {
+                                    "recipient": {
+                                        "groupId": "e8a922b2-19de-4aec-8356-a8cd0e0f06fd",
+                                        "channelId": "19:3cecc844b9bc469d82f280ccbce9745c@thread.tacv2"
+                                    },
+                                    "messageBody": "@{outputs('Build_Adaptive_Card')}"
+                                },
+                                "path": "/v1.0/teams/conversation/adaptivecard/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                            }
+                        }
+                    }
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "teams-1": {
+                                "id": "/subscriptions/c781de44-4c82-49e0-a3b4-39182996dd5d/providers/Microsoft.Web/locations/uksouth/managedApis/teams",
+                                "connectionId": "[parameters('connections_teams_6_externalid')]",
+                                "connectionName": "teams-6",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
+```
 
 ### 6.3 Complete ARM Template for Custom Deployment
 
