@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" width="1200" height="850">
+  <!-- Title -->
+  <text x="700" y="30" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#262626">
+    NIST SP 800-53 Solution: Data Flow &amp; Integration Architecture
+  </text>
+  <text x="700" y="55" font-family="Segoe UI, Arial, sans-serif" font-size="13" text-anchor="middle" fill="#666666">
+    End-to-End Compliance Monitoring, Alerting, and Automated Response Workflow
+  </text>
+  
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="azure" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078D4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#005A9E;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="policy" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#50E6FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00B7C3;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="sentinel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFB900;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF8C00;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="defender" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00CC6A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00A854;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="automation" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8764B8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6B4C9A;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="response" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#E81123;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C50F1F;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Filters -->
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.25"/>
+    </filter>
+    
+    <!-- Arrow markers -->
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto">
+      <path d="M2,2 L2,11 L10,6 L2,2" fill="#0078D4" />
+    </marker>
+    <marker id="arrow-orange" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto">
+      <path d="M2,2 L2,11 L10,6 L2,2" fill="#FFB900" />
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto">
+      <path d="M2,2 L2,11 L10,6 L2,2" fill="#00CC6A" />
+    </marker>
+    <marker id="arrow-purple" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto">
+      <path d="M2,2 L2,11 L10,6 L2,2" fill="#8764B8" />
+    </marker>
+    <marker id="arrow-red" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto">
+      <path d="M2,2 L2,11 L10,6 L2,2" fill="#E81123" />
+    </marker>
+  </defs>
+  
+  <!-- Layer 1: Azure Resources -->
+  <rect x="50" y="90" width="1300" height="140" fill="#E6F2FF" stroke="#0078D4" stroke-width="2" rx="8"/>
+  <text x="70" y="115" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0078D4">LAYER 1: Azure Resources &amp; Workloads</text>
+  
+  <rect x="80" y="130" width="150" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="155" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Virtual Machines</text>
+  <text x="155" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">100+ VMs</text>
+  <text x="155" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Windows + Linux</text>
+  <text x="155" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">CM, SI Controls</text>
+  
+  <rect x="250" y="130" width="150" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="325" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Storage Accounts</text>
+  <text x="325" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">50+ Accounts</text>
+  <text x="325" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Blob, Files, Tables</text>
+  <text x="325" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">SC, MP Controls</text>
+  
+  <rect x="420" y="130" width="150" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="495" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">SQL Databases</text>
+  <text x="495" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">30+ DBs</text>
+  <text x="495" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Azure SQL, Cosmos</text>
+  <text x="495" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">AU, SI Controls</text>
+  
+  <rect x="590" y="130" width="150" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="665" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Network</text>
+  <text x="665" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">VNets, NSGs</text>
+  <text x="665" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Firewalls, VPN</text>
+  <text x="665" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">SC, AC Controls</text>
+  
+  <rect x="760" y="130" width="150" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="835" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Identity (Azure AD)</text>
+  <text x="835" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">500+ Users</text>
+  <text x="835" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Apps, Service Principals</text>
+  <text x="835" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">AC, IA Controls</text>
+  
+  <rect x="930" y="130" width="150" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="1005" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Key Vaults</text>
+  <text x="1005" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">20+ Vaults</text>
+  <text x="1005" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Secrets, Keys, Certs</text>
+  <text x="1005" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">SC, IA Controls</text>
+  
+  <rect x="1100" y="130" width="230" height="80" fill="white" stroke="#0078D4" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="1215" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Multi-Cloud (Azure Arc)</text>
+  <text x="1215" y="172" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">AWS, GCP, On-Premises</text>
+  <text x="1215" y="187" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Hybrid Servers, K8s</text>
+  <text x="1215" y="202" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#0078D4">All Control Families</text>
+  
+  <!-- Layer 2: Azure Policy -->
+  <rect x="50" y="260" width="1300" height="120" fill="#E6FFFE" stroke="#50E6FF" stroke-width="2" rx="8"/>
+  <text x="70" y="285" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="bold" fill="#00B7C3">LAYER 2: Azure Policy Engine</text>
+  
+  <rect x="80" y="300" width="600" height="60" fill="url(#policy)" rx="5" filter="url(#shadow)"/>
+  <text x="380" y="325" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="white">NIST SP 800-53 Rev. 5 Initiative (ID: 179d1daa-458f-4e47-8086-2a68d0d6c38f)</text>
+  <text x="380" y="345" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="white">280+ Policy Definitions | 24-Hour Evaluation Cycle | Audit, Deny, DeployIfNotExists Effects</text>
+  
+  <rect x="700" y="300" width="280" height="60" fill="white" stroke="#50E6FF" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="840" y="320" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Policy Compliance States</text>
+  <text x="840" y="338" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#00CC6A">✓ Compliant: 198 policies (70.7%)</text>
+  <text x="840" y="354" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#E81123">✗ Non-Compliant: 82 policies (29.3%)</text>
+  
+  <rect x="1000" y="300" width="330" height="60" fill="white" stroke="#50E6FF" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="1165" y="320" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Azure Resource Graph Query</text>
+  <text x="1165" y="338" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Real-Time Asset Inventory</text>
+  <text x="1165" y="354" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Policy Compliance Aggregation</text>
+  
+  <!-- Layer 3: Microsoft Defender for Cloud -->
+  <rect x="50" y="410" width="1300" height="100" fill="#E6FFF5" stroke="#00CC6A" stroke-width="2" rx="8"/>
+  <text x="70" y="435" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="bold" fill="#00A854">LAYER 3: Microsoft Defender for Cloud</text>
+  
+  <rect x="80" y="450" width="390" height="45" fill="url(#defender)" rx="5" filter="url(#shadow)"/>
+  <text x="275" y="478" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="white">Regulatory Compliance Dashboard</text>
+  
+  <rect x="490" y="450" width="390" height="45" fill="white" stroke="#00CC6A" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="685" y="468" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#262626">Continuous Export to Sentinel</text>
+  <text x="685" y="485" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">SecurityRegulatoryCompliance | SecureScoreControls | SecurityRecommendation</text>
+  
+  <rect x="900" y="450" width="430" height="45" fill="white" stroke="#00CC6A" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="1115" y="468" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#262626">Enhanced Security Plans Active</text>
+  <text x="1115" y="485" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Servers (Plan 2) | Storage | SQL | Key Vault | Containers</text>
+  
+  <!-- Layer 4: Microsoft Sentinel -->
+  <rect x="50" y="540" width="1300" height="160" fill="#FFF9E6" stroke="#FFB900" stroke-width="2" rx="8"/>
+  <text x="70" y="565" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="bold" fill="#FF8C00">LAYER 4: Microsoft Sentinel (SIEM)</text>
+  
+  <rect x="80" y="580" width="380" height="100" fill="white" stroke="#FFB900" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="270" y="600" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Log Analytics Workspace</text>
+  <text x="270" y="618" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">• SecurityRegulatoryCompliance Table</text>
+  <text x="270" y="634" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">• 180 GB/day Ingestion</text>
+  <text x="270" y="650" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">• 180-Day Retention</text>
+  <text x="270" y="666" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#FFB900">• KQL Query Engine</text>
+  
+  <rect x="480" y="580" width="380" height="100" fill="url(#sentinel)" rx="5" filter="url(#shadow)"/>
+  <text x="670" y="605" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="white">NIST SP 800-53 Workbook</text>
+  <text x="670" y="625" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="white">📊 Interactive Compliance Dashboard</text>
+  <text x="670" y="642" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="white">• 20 Control Family Cards</text>
+  <text x="670" y="657" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="white">• Real-Time Compliance Percentage</text>
+  <text x="670" y="672" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="white">• Exportable PDF Reports</text>
+  
+  <rect x="880" y="580" width="450" height="100" fill="white" stroke="#FFB900" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="1105" y="600" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Analytics Rule</text>
+  <text x="1105" y="618" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Name: "NIST SP 800-53 - Azure Policy Compliance Below 70%"</text>
+  <text x="1105" y="634" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Frequency: Every 24 hours</text>
+  <text x="1105" y="650" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Threshold: Compliance &lt; 70%</text>
+  <text x="1105" y="666" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#E81123">Action: Create Incident + Trigger Playbooks</text>
+  
+  <!-- Layer 5: Automation & Response -->
+  <rect x="50" y="730" width="1300" height="140" fill="#F3EEFF" stroke="#8764B8" stroke-width="2" rx="8"/>
+  <text x="70" y="755" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="bold" fill="#6B4C9A">LAYER 5: SOAR Automation &amp; Response</text>
+  
+  <rect x="80" y="770" width="380" height="85" fill="url(#automation)" rx="5" filter="url(#shadow)"/>
+  <text x="270" y="795" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="white">Playbook 1: Notify Governance Team</text>
+  <text x="270" y="815" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="white">📧 Email Notification</text>
+  <text x="270" y="831" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="white">💬 Microsoft Teams Message</text>
+  <text x="270" y="847" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="white">Recipients: security-leadership@company.com</text>
+  
+  <rect x="480" y="770" width="380" height="85" fill="white" stroke="#8764B8" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="670" y="795" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#262626">Playbook 2: Create Azure DevOps Task</text>
+  <text x="670" y="815" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666666">🎫 Work Item: Bug / Task</text>
+  <text x="670" y="831" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666666">Priority: 2 (High)</text>
+  <text x="670" y="847" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Assigned: Security Operations Team</text>
+  
+  <rect x="880" y="770" width="450" height="85" fill="white" stroke="#8764B8" stroke-width="2" rx="5" filter="url(#shadow)"/>
+  <text x="1105" y="795" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#262626">Playbook 3: Open JIRA Ticket (Optional)</text>
+  <text x="1105" y="815" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666666">🎫 Issue Type: Bug</text>
+  <text x="1105" y="831" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="#666666">Project: SECURITY</text>
+  <text x="1105" y="847" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">Labels: NIST-Compliance, Sentinel-Alert</text>
+  
+  <!-- Layer 6: Governance & Remediation -->
+  <rect x="50" y="900" width="1300" height="80" fill="#FFEBEB" stroke="#E81123" stroke-width="2" rx="8"/>
+  <text x="70" y="925" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="bold" fill="#C50F1F">LAYER 6: Governance &amp; Remediation</text>
+  
+  <rect x="80" y="940" width="280" height="25" fill="url(#response)" rx="3"/>
+  <text x="220" y="958" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="white">SOC Team Reviews Incident</text>
+  
+  <rect x="380" y="940" width="280" height="25" fill="white" stroke="#E81123" stroke-width="2" rx="3"/>
+  <text x="520" y="958" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="#262626">Remediate Non-Compliant Resources</text>
+  
+  <rect x="680" y="940" width="280" height="25" fill="white" stroke="#E81123" stroke-width="2" rx="3"/>
+  <text x="820" y="958" font-family="Segoe UI, Arial, sans-serif" font-size="10" text-anchor="middle" fill="#262626">Policy Re-Evaluation (24h)</text>
+  
+  <rect x="980" y="940" width="350" height="25" fill="#00CC6A" rx="3"/>
+  <text x="1155" y="958" font-family="Segoe UI, Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="white">✓ Compliance Improved | Incident Closed</text>
+  
+  <!-- Data Flow Arrows -->
+  <path d="M 400 210 L 400 260" stroke="#0078D4" stroke-width="3" fill="none" marker-end="url(#arrow-blue)"/>
+  <text x="420" y="240" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#0078D4">Policy Evaluation</text>
+  
+  <path d="M 700 360 L 700 410" stroke="#50E6FF" stroke-width="3" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="720" y="390" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#00A854">Compliance Data</text>
+  
+  <path d="M 700 495 L 700 540" stroke="#00CC6A" stroke-width="3" fill="none" marker-end="url(#arrow-orange)"/>
+  <text x="720" y="522" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#FFB900">Continuous Export</text>
+  
+  <path d="M 700 680 L 700 730" stroke="#FFB900" stroke-width="3" fill="none" marker-end="url(#arrow-purple)"/>
+  <text x="720" y="710" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#8764B8">Incident Created</text>
+  
+  <path d="M 700 855 L 700 900" stroke="#8764B8" stroke-width="3" fill="none" marker-end="url(#arrow-red)"/>
+  <text x="720" y="882" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#E81123">Playbooks Executed</text>
+  
+  <!-- Feedback loop arrow -->
+  <path d="M 1330 945 Q 1380 500 1330 210" stroke="#00CC6A" stroke-width="3" fill="none" stroke-dasharray="5,5" marker-end="url(#arrow-green)"/>
+  <text x="1355" y="580" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#00CC6A" transform="rotate(90 1355 580)">Continuous Improvement Loop</text>
+  
+  <!-- Legend -->
+  <rect x="1420" y="90" width="180" height="250" fill="#FAFAFA" stroke="#CCCCCC" stroke-width="1" rx="5"/>
+  <text x="1510" y="115" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#262626">Data Flow Legend</text>
+  
+  <line x1="1430" y1="130" x2="1470" y2="130" stroke="#0078D4" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <text x="1480" y="135" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#666666">Policy Evaluation</text>
+  
+  <line x1="1430" y1="150" x2="1470" y2="150" stroke="#50E6FF" stroke-width="3" marker-end="url(#arrow-green)"/>
+  <text x="1480" y="155" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#666666">Compliance Export</text>
+  
+  <line x1="1430" y1="170" x2="1470" y2="170" stroke="#FFB900" stroke-width="3" marker-end="url(#arrow-orange)"/>
+  <text x="1480" y="175" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#666666">Alert Generation</text>
+  
+  <line x1="1430" y1="190" x2="1470" y2="190" stroke="#8764B8" stroke-width="3" marker-end="url(#arrow-purple)"/>
+  <text x="1480" y="195" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#666666">Automation Trigger</text>
+  
+  <line x1="1430" y1="210" x2="1470" y2="210" stroke="#E81123" stroke-width="3" marker-end="url(#arrow-red)"/>
+  <text x="1480" y="215" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#666666">Response Action</text>
+  
+  <line x1="1430" y1="230" x2="1470" y2="230" stroke="#00CC6A" stroke-width="3" stroke-dasharray="5,5" marker-end="url(#arrow-green)"/>
+  <text x="1480" y="235" font-family="Segoe UI, Arial, sans-serif" font-size="9" fill="#666666">Feedback Loop</text>
+  
+  <line x1="1430" y1="255" x2="1590" y2="255" stroke="#CCCCCC" stroke-width="1"/>
+  
+  <text x="1430" y="275" font-family="Segoe UI, Arial, sans-serif" font-size="9" font-weight="bold" fill="#262626">Key Timings:</text>
+  <text x="1430" y="290" font-family="Segoe UI, Arial, sans-serif" font-size="8" fill="#666666">Policy Eval: 24h cycle</text>
+  <text x="1430" y="303" font-family="Segoe UI, Arial, sans-serif" font-size="8" fill="#666666">Export: Real-time</text>
+  <text x="1430" y="316" font-family="Segoe UI, Arial, sans-serif" font-size="8" fill="#666666">Alert: 2-5 minutes</text>
+  <text x="1430" y="329" font-family="Segoe UI, Arial, sans-serif" font-size="8" fill="#666666">Playbooks: 1-3 minutes</text>
+  
+  <!-- Footer -->
+  <text x="700" y="995" font-family="Segoe UI, Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666666">
+    © 2026 | Microsoft Sentinel NIST SP 800-53 Data Flow | End-to-End Compliance Automation
+  </text>
+</svg>
