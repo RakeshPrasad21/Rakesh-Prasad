@@ -2,6 +2,33 @@
 ### Test Analytic Rules Safely Using Mock CSV Data (No Test Environment Needed)
 
 ---
+```
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize VolumeGB = sum(Quantity) / 1000
+    by DataType, Day = bin(StartTime, 1d)
+| serialize
+| extend PreviousDayGB = prev(VolumeGB)
+| extend IncreaseGB = VolumeGB - PreviousDayGB
+| where IncreaseGB > 0
+| top 20 by IncreaseGB desc
+
+let TotalGB =
+toscalar(
+    Usage
+    | where TimeGenerated > ago(30d)
+    | where IsBillable == true
+    | summarize sum(Quantity) / 1000
+);
+
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize VolumeGB = round(sum(Quantity) / 1000, 2) by DataType
+| extend PercentOfTotal = round((VolumeGB / TotalGB) * 100, 2)
+| order by VolumeGB desc
+```
 
 ## 📍 Overview
 This guide describes **how to test Microsoft Sentinel Analytic Rules** without using a production environment or ingesting any mock data.  
