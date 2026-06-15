@@ -8,6 +8,14 @@ Usage
 | where IsBillable == true
 | summarize VolumeGB = sum(Quantity) / 1000
     by DataType, Day = bin(StartTime, 1d)
+| summarize PeakDailyGB = max(VolumeGB) by DataType
+| order by PeakDailyGB desc
+
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize VolumeGB = sum(Quantity) / 1000
+    by DataType, Day = bin(StartTime, 1d)
 | serialize
 | extend PreviousDayGB = prev(VolumeGB)
 | extend IncreaseGB = VolumeGB - PreviousDayGB
