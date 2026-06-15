@@ -3,6 +3,60 @@
 
 ---
 ```
+let SpikeDays =
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize DailyGB = sum(Quantity) / 1000 by Day = bin(StartTime, 1d)
+| where DailyGB > 300
+| project Day;
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| extend Day = bin(StartTime, 1d)
+| where Day in (SpikeDays)
+| summarize VolumeGB = sum(Quantity) / 1000 by Day, DataType
+| order by Day desc, VolumeGB desc
+
+
+let SpikeDays =
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize DailyGB = sum(Quantity) / 1000 by Day = bin(StartTime, 1d)
+| where DailyGB > 300
+| project Day;
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| extend Day = bin(StartTime, 1d)
+| where Day in (SpikeDays)
+| summarize TotalGB = sum(Quantity) / 1000 by DataType
+| top 10 by TotalGB desc
+
+
+let AvgDailyTableIngestion =
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize AvgGB = avg(Quantity / 1000.0) by DataType;
+let SpikeDays =
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize DailyGB = sum(Quantity) / 1000 by Day = bin(StartTime, 1d)
+| where DailyGB > 300
+| project Day;
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| extend Day = bin(StartTime, 1d)
+| where Day in (SpikeDays)
+| summarize SpikeGB = sum(Quantity) / 1000 by DataType
+| join kind=leftouter AvgDailyTableIngestion on DataType
+| extend IncreaseFactor = round(SpikeGB / AvgGB, 2)
+| order by IncreaseFactor desc
+----
 Usage
 | where TimeGenerated > ago(30d)
 | where IsBillable == true
