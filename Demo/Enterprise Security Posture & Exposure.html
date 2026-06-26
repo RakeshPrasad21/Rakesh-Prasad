@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Security Exposure & Threat Management Dashboard</title>
+    <style>
+        :root {
+            --bg-main: #f4f6f9;
+            --bg-card: #ffffff;
+            --bg-accent: #f8fafc;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --accent-blue: #2563eb;
+            --accent-blue-light: rgba(37, 99, 235, 0.1);
+            --accent-green: #10b981;
+            --accent-green-light: rgba(16, 185, 129, 0.1);
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: #e2e8f0;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            padding: 32px 24px;
+            line-height: 1.5;
+        }
+
+        .dashboard-container {
+            max-width: 1440px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* Top Header Grid */
+        .header-section {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 24px;
+            align-items: center;
+            background-color: var(--bg-card);
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .title-block h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+        }
+
+        .title-block p {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        /* Stakeholders Matrix */
+        .stakeholders-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-accent);
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .stakeholders-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border-right: 2px solid var(--border-color);
+            padding-right: 16px;
+            margin-right: 16px;
+            white-space: nowrap;
+        }
+
+        .stakeholder-tags {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .tag span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-blue);
+        }
+
+        /* Top KPI Grid */
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .kpi-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background-color: var(--accent-blue);
+            border-radius: 12px 12px 0 0;
+        }
+
+        .kpi-card.success::before { background-color: var(--accent-green); }
+        .kpi-card.danger::before { background-color: var(--accent-red); }
+        .kpi-card.warning::before { background-color: var(--accent-yellow); }
+
+        .kpi-header {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-body {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin: 12px 0 6px 0;
+        }
+
+        .kpi-value {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .kpi-unit {
+            font-size: 16px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .kpi-footer {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .trend-down { color: var(--accent-green); font-weight: 600; }
+        .trend-up { color: var(--accent-red); font-weight: 600; }
+
+        /* Core Analytics Section */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+
+        .panel-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-main);
+        }
+
+        .panel-subtitle {
+            font-size: 12px;
+            font-weight: 600;
+            background-color: var(--bg-accent);
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: var(--text-muted);
+        }
+
+        /* SVG Line Chart Exposure vs Months */
+        .chart-container {
+            width: 100%;
+            height: 260px;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 16px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        /* Threat Funnel Style */
+        .funnel-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .funnel-tier {
+            background-color: var(--bg-accent);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 6px;
+            margin: 0 auto;
+            transition: all 0.2s ease;
+        }
+
+        .funnel-tier-1 { width: 100%; border-left: 4px solid var(--accent-blue); }
+        .funnel-tier-2 { width: 85%; border-left: 4px solid var(--accent-yellow); }
+        .funnel-tier-3 { width: 70%; border-left: 4px solid var(--accent-red); }
+        .funnel-tier-4 { width: 55%; border-left: 4px solid var(--accent-green); background-color: var(--accent-green-light); color: var(--accent-green); }
+
+        /* Intangible Benefits Section */
+        .intangibles-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        .metrics-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background-color: var(--bg-accent);
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 13px;
+        }
+
+        .metric-name {
+            font-weight: 500;
+            color: var(--text-main);
+        }
+
+        .metric-name span {
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .metric-val {
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .metric-val.success {
+            color: var(--accent-green);
+        }
+
+        /* Micro Sparkline Simulation */
+        .sparkline-box {
+            display: flex;
+            align-items: flex-end;
+            gap: 3px;
+            height: 24px;
+        }
+
+        .spark-bar {
+            width: 4px;
+            background-color: var(--border-color);
+            border-radius: 1px;
+        }
+
+        .spark-bar.active {
+            background-color: var(--accent-blue);
+        }
+        
+        .spark-bar.green {
+            background-color: var(--accent-green);
+        }
+
+        @media (max-width: 1024px) {
+            .header-section, .analytics-grid, .intangibles-row { grid-template-columns: 1fr; }
+            .kpi-row { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="dashboard-container">
+    
+    <!-- Header with Stakeholders View -->
+    <header class="header-section">
+        <div class="title-block">
+            <h1>Enterprise Security Posture & Exposure</h1>
+            <p>Unified CXO & VP Management Report &bull; Unified Perspective</p>
+        </div>
+        <div class="stakeholders-panel">
+            <div class="stakeholders-title">Dashboard Audience Context</div>
+            <div class="stakeholder-tags">
+                <div class="tag"><span></span>Board of Directors</div>
+                <div class="tag"><span></span>CEO</div>
+                <div class="tag"><span></span>CFO</div>
+                <div class="tag"><span></span>VP of Security</div>
+                <div class="tag"><span></span>Shareholders</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- KPI Metric Summary Row -->
+    <div class="kpi-row">
+        <div class="kpi-card success">
+            <div class="kpi-header">Global Cyber Risk Score</div>
+            <div class="kpi-body">
+                <div class="kpi-value">820</div>
+                <div class="kpi-unit">/850</div>
+            </div>
+            <div class="kpi-footer">
+                <span class="trend-down">Optimal Risk Zone</span> &bull; Peer Avg: 740
+            </div>
+        </div>
+        <div class="kpi-card warning">
+            <div class="kpi-header">Total Financial Exposure</div>
+            <div class="kpi-body">
+                <div class="kpi-value">$1.2M</div>
+            </div>
+            <div class="kpi-footer">
+                <span class="trend-down">&darr; 73% Drop</span> from Q1 ($4.5M)
+            </div>
+        </div>
+        <div class="kpi-card danger">
+            <div class="kpi-header">Active Critical Threats</div>
+            <div class="kpi-body">
+                <div class="kpi-value">0</div>
+            </div>
+            <div class="kpi-footer">
+                No material active security incidents
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">Risk Reduction Value Index</div>
+            <div class="kpi-body">
+                <div class="kpi-value">3.4x</div>
+            </div>
+            <div class="kpi-footer">
+                Protection value vs. potential breach cost
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Metrics: Line Graph & Operational Funnel -->
+    <div class="analytics-grid">
+        
+        <!-- Pillar 1: Exposure Management Line Graph -->
+        <div class="panel-card">
+            <div class="panel-title">
+                Pillar 1: Exposure Trends vs. Months
+                <span class="panel-subtitle">Rolling 90-Day Engineering Matrix</span>
+            </div>
+            
+            <div class="chart-legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--accent-blue);"></div>
+                    <span>New Vulnerabilities Discovered</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--accent-green);"></div>
+                    <span>Vulnerabilities Remediated</span>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <!-- Pure Inline Responsive SVG Vector Graphic for the Line Chart -->
+                <svg viewBox="0 0 800 240" width="100%" height="100%">
+                    <!-- Grid Lines -->
+                    <line x1="50" y1="30" x2="780" y2="30" stroke="#f1f5f9" stroke-width="1" />
+                    <line x1="50" y1="80" x2="780" y2="80" stroke="#f1f5f9" stroke-width="1" />
+                    <line x1="50" y1="130" x2="780" y2="130" stroke="#f1f5f9" stroke-width="1" />
+                    <line x1="50" y1="180" x2="780" y2="180" stroke="#f1f5f9" stroke-width="1" />
+                    <line x1="50" y1="210" x2="780" y2="210" stroke="#e2e8f0" stroke-width="1" />
+                    
+                    <!-- X Axis Labels (Months) -->
+                    <text x="60" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Apr</text>
+                    <text x="150" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">May</text>
+                    <text x="240" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Jun</text>
+                    <text x="330" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Jul</text>
+                    <text x="420" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Aug</text>
+                    <text x="510" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Sep</text>
+                    <text x="600" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Oct</text>
+                    <text x="690" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Nov</text>
+                    <text x="770" y="230" fill="#94a3b8" font-size="11" text-anchor="middle">Dec</text>
+
+                    <!-- Left Y Axis Labels -->
+                    <text x="40" y="34" fill="#94a3b8" font-size="11" text-anchor="end">80</text>
+                    <text x="40" y="84" fill="#94a3b8" font-size="11" text-anchor="end">60</text>
+                    <text x="40" y="134" fill="#94a3b8" font-size="11" text-anchor="end">40</text>
+                    <text x="40" y="184" fill="#94a3b8" font-size="11" text-anchor="end">20</text>
+                    <text x="40" y="214" fill="#94a3b8" font-size="11" text-anchor="end">0</text>
+
+                    <!-- Trend Line 1: New Vulnerabilities Discovered (Blue) -->
+                    <path d="M 60 55 L 150 70 L 240 75 L 330 80 L 420 110 L 510 145 L 600 150 L 690 158 L 770 178" 
+                          fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/>
+                    <!-- Trend Line 1 Dots -->
+                    <circle cx="60" cy="55" r="4" fill="#2563eb"/>
+                    <circle cx="150" cy="70" r="4" fill="#2563eb"/>
+                    <circle cx="240" cy="75" r="4" fill="#2563eb"/>
+                    <circle cx="330" cy="80" r="4" fill="#2563eb"/>
+                    <circle cx="420" cy="110" r="4" fill="#2563eb"/>
+                    <circle cx="510" cy="145" r="4" fill="#2563eb"/>
+                    <circle cx="600" cy="150" r="4" fill="#2563eb"/>
+                    <circle cx="690" cy="158" r="4" fill="#2563eb"/>
+                    <circle cx="770" cy="178" r="4" fill="#2563eb"/>
+
+                    <!-- Trend Line 2: Vulnerabilities Remediated (Green) -->
+                    <path d="M 60 190 L 150 160 L 240 157 L 330 140 L 420 135 L 510 115 L 600 98 L 690 85 L 770 70" 
+                          fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round"/>
+                    <!-- Trend Line 2 Dots -->
+                    <circle cx="60" cy="190" r="4" fill="#10b981"/>
+                    <circle cx="150" cy="160" r="4" fill="#10b981"/>
+                    <circle cx="240" cy="157" r="4" fill="#10b981"/>
+                    <circle cx="330" cy="140" r="4" fill="#10b981"/>
+                    <circle cx="420" cy="135" r="4" fill="#10b981"/>
+                    <circle cx="510" cy="115" r="4" fill="#10b981"/>
+                    <circle cx="600" cy="98" r="4" fill="#10b981"/>
+                    <circle cx="690" cy="85" r="4" fill="#10b981"/>
+                    <circle cx="770" cy="70" r="4" fill="#10b981"/>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Pillar 2: Threats Funnel -->
+        <div class="panel-card">
+            <div class="panel-title">
+                Pillar 2: Threat Mitigation
+                <span class="panel-subtitle">Incident Funnel</span>
+            </div>
+            <div class="funnel-layout">
+                <div class="funnel-tier funnel-tier-1">
+                    124M Security Events Processed
+                </div>
+                <div class="funnel-tier funnel-tier-2">
+                    4,120 Alerts Flagged
+                </div>
+                <div class="funnel-tier funnel-tier-3">
+                    12 High-Severity Incidents Contained
+                </div>
+                <div class="funnel-tier funnel-tier-4">
+                    0 Material Breaches
+                </div>
+            </div>
+            <div class="metrics-list" style="margin-top: 14px;">
+                <div class="metric-item">
+                    <div class="metric-name">Mean Time to Detect (MTTD)</div>
+                    <div class="metric-val">4.2 Mins</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-name">Mean Time to Contain (MTTC)</div>
+                    <div class="metric-val">14.5 Mins</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Pillar 3: Security Operating Impact & Maturity -->
+    <div class="panel-card">
+        <div class="panel-title">
+            Pillar 3: Security Operating Impact & Maturity
+            <span class="panel-subtitle">Operational effectiveness, resilience, and measurable risk reduction</span>
+        </div>
+        
+        <div class="intangibles-row">
+            <!-- Strategic Threats & Hunting -->
+            <div>
+                <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-blue);">Proactive Detection & Response</h3>
+                <div class="metrics-list">
+                    <div class="metric-item">
+                        <div class="metric-name">
+                            Proactive Detection Pipelines
+                            <span>Threat hunting / exposure detection pipelines operationalized</span>
+                        </div>
+                        <div class="metric-val success">3</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-name">
+                            Estimated Risk Avoidance Value
+                            <span>Estimated financial impact of early threat detection</span>
+                        </div>
+                        <div class="metric-val success">$500K+</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-name">Hunt Detection Pattern Maturity</div>
+                        <div class="sparkline-box">
+                            <div class="spark-bar active" style="height: 10px;"></div>
+                            <div class="spark-bar active" style="height: 14px;"></div>
+                            <div class="spark-bar active" style="height: 18px;"></div>
+                            <div class="spark-bar active" style="height: 24px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Architecture Modernization -->
+            <div>
+                <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-blue);">Architecture & Operational Resilience</h3>
+                <div class="metrics-list">
+                    <div class="metric-item">
+                        <div class="metric-name">
+                            Legacy Vulnerability Reduction
+                            <span>Legacy vulnerabilities eliminated year-over-year</span>
+                        </div>
+                        <div class="metric-val">34% Down YoY</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-name">
+                            Mean Time to Remediate
+                            <span>Average time to resolve security incidents</span>
+                        </div>
+                        <div class="metric-val">12.5 Days</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-name">Infrastructure Hardening Index</div>
+                        <div class="sparkline-box">
+                            <div class="spark-bar active" style="height: 8px;"></div>
+                            <div class="spark-bar active" style="height: 12px;"></div>
+                            <div class="spark-bar active" style="height: 16px;"></div>
+                            <div class="spark-bar active" style="height: 22px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Culture & People Resilience -->
+            <div>
+                <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--accent-blue);">Human & Culture Risk Mitigation</h3>
+                <div class="metrics-list">
+                    <div class="metric-item">
+                        <div class="metric-name">
+                            Phishing Simulation Fail Rate
+                            <span>Employee click-through threshold</span>
+                        </div>
+                        <div class="metric-val success">1.8%</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-name">
+                            User Reporting Rate
+                            <span>User-generated reporting of suspicious activity</span>
+                        </div>
+                        <div class="metric-val success">64%</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-name">Security Culture Density</div>
+                        <div class="sparkline-box">
+                            <div class="spark-bar green" style="height: 12px;"></div>
+                            <div class="spark-bar green" style="height: 15px;"></div>
+                            <div class="spark-bar green" style="height: 20px;"></div>
+                            <div class="spark-bar green" style="height: 24px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
