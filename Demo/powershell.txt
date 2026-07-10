@@ -1,0 +1,209 @@
+# Update-TeamsMigrationPermissions.ps1
+# Restores Team membership + "General" folder SharePoint permissions after MigrationWiz migration.
+#
+# Usage:
+#   .\Update-TeamsMigrationPermissions.ps1 -CsvPath .\acl.csv -WhatIf -PnPClientId "<guid>" -TenantId "yourtenant.onmicrosoft.com"
+#   .\Update-TeamsMigrationPermissions.ps1 -CsvPath .\acl.csv -PnPClientId "<guid>" -TenantId "yourtenant.onmicrosoft.com"
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$CsvPath,
+
+    [Parameter(Mandatory = $false)]
+    [string]$TenantId,
+
+    [Parameter(Mandatory = $false)]
+    [string]$LogPath = ".\MigrationFix-Log-$(Get-Date -Format 'yyyyMMdd-HHmmss').csv",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$WhatIf,
+
+    [Parameter(Mandatory = $false)]
+    [string]$PnPClientId
+)
+
+$DryRun = $WhatIf.IsPresent
+$ErrorActionPreference = "Stop"
+$results = New-Object System.Collections.Generic.List[object]
+
+function Write-Result {
+    param($TeamName, $Action, $Target, $Value, $Status, $Detail = "")
+    $results.Add([PSCustomObject]@{
+        Timestamp = Get-Date -Format "o"
+        TeamName  = $TeamName
+        Action    = $Action
+        Target    = $Target
+        Value     = $Value
+        Status    = $Status
+        Detail    = $Detail
+    })
+    $color = switch ($Status) {
+        "SUCCESS"         { "Green" }
+        "ALREADY_PRESENT" { "DarkYellow" }
+        "WHATIF"          { "Cyan" }
+        "SKIPPED"         { "Gray" }
+        "INFO"            { "White" }
+        default           { "Red" }
+    }
+    Write-Host "  [$Status] $Action -> $Target ($Value) $Detail" -ForegroundColor $color
+}
+
+$TeamRoleMap = @{
+    "writer" = "Member"; "commenter" = "Member"; "reader" = "Member"
+    "organizer" = "Owner"; "fileOrganizer" = "Owner"
+}
+$SPRoleMap = @{ "Owners" = "Full Control"; "Members" = "Edit"; "Visitors" = "Read" }
+
+# 1. CONNECT
+Write-Host "Connecting to Microsoft Teams..." -ForegroundColor Cyan
+Connect-MicrosoftTeams | Out-Null
+
+Write-Host "Connecting to Microsoft Graph..." -ForegroundColor Cyan
+if ($TenantId) {
+    Connect-MgGraph -Scopes "Group.ReadWrite.All", "Sites.FullControl.All" -TenantId $TenantId | Out-Null
+} else {
+    Connect-MgGraph -Scopes "Group.ReadWrite.All", "Sites.FullControl.All" | Out-Null
+}
+
+# 2. LOAD CSV
+if (-not (Test-Path $CsvPath)) { throw "CSV not found at path: $CsvPath" }
+$acl = Import-Csv -Path $CsvPath
+foreach ($col in @("id", "name", "permission.emailAddress", "permission.role")) {
+    if (-not ($acl | Get-Member -Name $col)) { throw "CSV is missing required column: $col" }
+}
+$teamGroups = $acl | Group-Object -Property name
+Write-Host "`nFound $($teamGroups.Count) team(s) in CSV: $($teamGroups.Name -join ', ')" -ForegroundColor Cyan
+
+# 3. PROCESS EACH TEAM
+foreach ($teamGroup in $teamGroups) {
+
+    $teamName = $teamGroup.Name
+    Write-Host "`n=== Processing Team: $teamName ===" -ForegroundColor Yellow
+
+    # 3a. Resolve the Team
+    $team = Get-Team -DisplayName $teamName -ErrorAction SilentlyContinue
+    if (-not $team) {
+        Write-Result -TeamName $teamName -Action "ResolveTeam" -Target $teamName -Value "" -Status "SKIPPED" -Detail "Team not found"
+        continue
+    }
+    if (@($team).Count -gt 1) {
+        Write-Result -TeamName $teamName -Action "ResolveTeam" -Target $teamName -Value "" -Status "SKIPPED" -Detail "Multiple teams share this name"
+        continue
+    }
+    $groupId = $team.GroupId
+
+    # 3b. Add members/owners
+    foreach ($row in $teamGroup.Group) {
+        $email = $row.'permission.emailAddress'.Trim()
+        $role  = $row.'permission.role'.Trim()
+
+        if (-not $TeamRoleMap.ContainsKey($role)) {
+            Write-Result -TeamName $teamName -Action "AddTeamUser" -Target $email -Value $role -Status "SKIPPED" -Detail "Unmapped role"
+            continue
+        }
+        $teamsRole = $TeamRoleMap[$role]
+
+        if (-not $DryRun) {
+            try {
+                Add-TeamUser -GroupId $groupId -User $email -Role $teamsRole -ErrorAction Stop
+                Write-Result -TeamName $teamName -Action "AddTeamUser" -Target $email -Value $teamsRole -Status "SUCCESS"
+            }
+            catch {
+                if ($_.Exception.Message -match "already exists|UserAlreadyExists") {
+                    Write-Result -TeamName $teamName -Action "AddTeamUser" -Target $email -Value $teamsRole -Status "ALREADY_PRESENT"
+                } else {
+                    Write-Result -TeamName $teamName -Action "AddTeamUser" -Target $email -Value $teamsRole -Status "FAILED" -Detail $_.Exception.Message
+                }
+            }
+        } else {
+            Write-Result -TeamName $teamName -Action "AddTeamUser" -Target $email -Value $teamsRole -Status "WHATIF"
+        }
+    }
+
+    # 3c. Resolve the Team's SharePoint site
+    try {
+        $site = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$groupId/sites/root"
+        $siteUrl = $site.webUrl
+    }
+    catch {
+        Write-Result -TeamName $teamName -Action "ResolveSite" -Target $teamName -Value "" -Status "FAILED" -Detail $_.Exception.Message
+        continue
+    }
+
+    # 3d. Connect to that site with PnP
+    try {
+        if ($PnPClientId) {
+            Connect-PnPOnline -Url $siteUrl -Interactive -ClientId $PnPClientId
+        } else {
+            Connect-PnPOnline -Url $siteUrl -Interactive
+        }
+    }
+    catch {
+        Write-Result -TeamName $teamName -Action "ConnectPnP" -Target $siteUrl -Value "" -Status "FAILED" -Detail $_.Exception.Message
+        continue
+    }
+
+    # 3e. Find the document library (name varies: "Documents", "Shared Documents", etc.)
+    $docLib = Get-PnPList -Identity "Documents" -ErrorAction SilentlyContinue
+    if (-not $docLib) { $docLib = Get-PnPList -Identity "Shared Documents" -ErrorAction SilentlyContinue }
+    if (-not $docLib) {
+        $docLib = Get-PnPList -ErrorAction SilentlyContinue |
+            Where-Object { $_.BaseType -eq "DocumentLibrary" -and -not $_.Hidden } |
+            Select-Object -First 1
+    }
+    if (-not $docLib) {
+        Write-Result -TeamName $teamName -Action "ResolveDocLib" -Target $teamName -Value "" -Status "FAILED" -Detail "No document library found on this site"
+        Disconnect-PnPOnline
+        continue
+    }
+
+    # 3f. Find the "General" folder and its list item (needed for Set-PnPListItemPermission)
+    $generalFolder = Get-PnPFolder -Url "$($docLib.RootFolder.ServerRelativeUrl)/General" -Includes ListItemAllFields -ErrorAction SilentlyContinue
+    if (-not $generalFolder -or -not $generalFolder.ListItemAllFields) {
+        Write-Result -TeamName $teamName -Action "ResolveGeneralFolder" -Target $docLib.Title -Value "" -Status "FAILED" -Detail "No 'General' folder found in library '$($docLib.Title)'"
+        Disconnect-PnPOnline
+        continue
+    }
+
+    # 3g. Reset "General" folder to inherit permissions from the library/site.
+    # SharePoint blocks direct/unique permission edits on a Team's default channel
+    # folder ("go to the channel in Microsoft Teams" error) - but resetting the
+    # folder back to inheritance is allowed, and restores the site's built-in
+    # Owners/Members/Visitors groups, which is what MigrationWiz broke.
+    if (-not $DryRun) {
+        try {
+            $listItem = $generalFolder.ListItemAllFields
+            $listItem.ResetRoleInheritance()
+            Invoke-PnPQuery
+            Write-Result -TeamName $teamName -Action "ResetFolderInheritance" -Target "General" -Value "" -Status "SUCCESS"
+        }
+        catch {
+            Write-Result -TeamName $teamName -Action "ResetFolderInheritance" -Target "General" -Value "" -Status "FAILED" -Detail $_.Exception.Message
+        }
+    } else {
+        Write-Result -TeamName $teamName -Action "ResetFolderInheritance" -Target "General" -Value "" -Status "WHATIF"
+    }
+
+    # 3h. Verify: read back who now has access, so the log proves the fix worked
+    try {
+        $roleAssignments = Get-PnPProperty -ClientObject $generalFolder.ListItemAllFields -Property RoleAssignments
+        foreach ($ra in $roleAssignments) {
+            $principal = Get-PnPProperty -ClientObject $ra -Property Member
+            $bindings = Get-PnPProperty -ClientObject $ra -Property RoleDefinitionBindings
+            $roleNames = ($bindings | ForEach-Object { $_.Name }) -join ", "
+            Write-Result -TeamName $teamName -Action "VerifyFolderPermission" -Target $principal.Title -Value $roleNames -Status "INFO"
+        }
+    }
+    catch {
+        Write-Result -TeamName $teamName -Action "VerifyFolderPermission" -Target "General" -Value "" -Status "FAILED" -Detail $_.Exception.Message
+    }
+
+    Disconnect-PnPOnline
+}
+
+# 4. WRITE LOG
+$results | Export-Csv -Path $LogPath -NoTypeInformation
+Write-Host "`nDone. Results written to $LogPath" -ForegroundColor Green
+$results | Format-Table -AutoSize
+ 
