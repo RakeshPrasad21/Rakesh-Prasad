@@ -16,3 +16,18 @@ Usage
 | project Day, IngestionGB, IncludedGB, OverageGB, EstimatedCost
 | order by Day desc
 ```
+
+```
+let DailyBenefit = 27.2 + 3.4;   // Average M365 + Defender benefit per day
+let Commitment = 200.0;
+let Price = 0.82;
+
+Usage
+| where TimeGenerated > ago(31d)
+| where IsBillable == true
+| summarize TotalGB = sum(Quantity)/1000 by Day=bin(StartTime,1d)
+| extend BillableGB = max_of(TotalGB - DailyBenefit, 0.0)
+| extend OverageGB = max_of(BillableGB - Commitment, 0.0)
+| extend EstimatedCost = 164.25 + (OverageGB * Price)
+| project Day, TotalGB=round(TotalGB,2), BillableGB=round(BillableGB,2), OverageGB=round(OverageGB,2), EstimatedCost=round(EstimatedCost,2)
+```
