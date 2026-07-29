@@ -292,6 +292,181 @@ Regex_kuwait_civil_id: \b[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[0-9]{4}
 Keyword_kuwait_civil_id: Civil ID, رقم مدني, بطاقة مدنية, Kuwait ID, PACI number
 ```
 
+## 2.2 Custom SITs Required for Kuwait
+
+### Common Navigation Path (Applies to All 5 SITs)
+
+| Step | Action |
+|------|---------|
+| 1 | Open **Microsoft Purview Portal** |
+| 2 | Navigate to **Information Protection → Classifiers → Sensitive info types** |
+| 3 | Click **Create sensitive info type** |
+| 4 | Enter **Name** and **Description** |
+| 5 | Click **Next** |
+| 6 | Click **Create pattern** |
+| 7 | Select the required **Confidence Level** (High or Medium) |
+| 8 | Configure **Primary Element (Regex)** |
+| 9 | Configure **Supporting Element (Keyword List)** |
+| 10 | Configure **Character Proximity = 300** |
+| 11 | Save Pattern |
+| 12 | Click **Next → Finish → Create** |
+| 13 | Test using **Sensitive Info Type Tester** |
+| 14 | Validate results in **Content Explorer** |
+
+---
+
+### SIT 1 – Kuwait Civil ID Number (CRITICAL)
+
+| Configuration Item | Value |
+|-------------------|--------|
+| SIT Name | Kuwait Civil ID Number |
+| Priority | Critical |
+| Confidence Level | High |
+| Departments | HR, Finance, Legal, Management, Marketing |
+| Primary Element Type | Regular Expression |
+| Regex Pattern | `\b[0-9]{2}(0[1-9]\|1[0-2])(0[1-9]\|[12][0-9]\|3[01])[0-9]{4}[0-9]\b` |
+| Minimum Match Count | 1 |
+| Supporting Element | Keyword List |
+| Keywords | Civil ID, Kuwait Civil ID, Kuwait ID, PACI Number, رقم مدني, بطاقة مدنية, الرقم المدني, هوية مدنية |
+| Character Proximity | 300 |
+| Detection Logic | Regex + Keyword |
+| Usage | Auto-labeling, DLP, Content Explorer |
+
+#### Optional Second Pattern
+
+| Configuration Item | Value |
+|-------------------|--------|
+| Confidence Level | Medium |
+| Regex | Same Regex |
+| Supporting Element | None |
+| Detection Logic | Regex Only |
+
+---
+
+### SIT 2 – Kuwait Work Permit Number (HIGH)
+
+> ⚠️ Requires customer validation before production deployment.
+
+| Configuration Item | Value |
+|-------------------|--------|
+| SIT Name | Kuwait Work Permit Number |
+| Priority | High |
+| Confidence Level | High |
+| Departments | HR, Legal |
+| Primary Element Type | Regular Expression |
+| Temporary Regex | `\b[A-Z0-9\-]{6,20}\b` |
+| Minimum Match Count | 1 |
+| Supporting Element | Keyword List |
+| Keywords | Work Permit, Permit Number, Labor Permit, تصريح عمل, رقم تصريح العمل, MOI, وزارة الداخلية |
+| Character Proximity | 300 |
+| Detection Logic | Regex + Keyword |
+| Validation Required | Obtain actual Kuwait work permit samples |
+
+---
+
+### SIT 3 – Kuwait Labor File Number (HIGH)
+
+> ⚠️ Requires customer validation before production deployment.
+
+| Configuration Item | Value |
+|-------------------|--------|
+| SIT Name | Kuwait Labor File Number |
+| Priority | High |
+| Confidence Level | High |
+| Departments | HR |
+| Primary Element Type | Regular Expression |
+| Temporary Regex | `\b[0-9]{6,15}\b` |
+| Minimum Match Count | 1 |
+| Supporting Element | Keyword List |
+| Keywords | Labor File, Employment File, PAM, Labor Registration, ملف العمل, رقم ملف العمل, القوى العاملة |
+| Character Proximity | 300 |
+| Detection Logic | Regex + Keyword |
+| Validation Required | Confirm PAM format |
+
+---
+
+### SIT 4 – Kuwait Trade License Number (MEDIUM)
+
+> ⚠️ Requires customer validation before production deployment.
+
+| Configuration Item | Value |
+|-------------------|--------|
+| SIT Name | Kuwait Trade License Number |
+| Priority | Medium |
+| Confidence Level | Medium |
+| Departments | Finance, Legal |
+| Primary Element Type | Regular Expression |
+| Temporary Regex | `\b[0-9]{5,15}\b` |
+| Minimum Match Count | 1 |
+| Supporting Element | Keyword List |
+| Keywords | Trade License, Commercial Registration, Business License, CR Number, السجل التجاري, الرخصة التجارية, وزارة التجارة |
+| Character Proximity | 300 |
+| Detection Logic | Regex + Keyword |
+| Validation Required | Confirm Ministry of Commerce numbering format |
+
+---
+
+### SIT 5 – Kuwait Sponsor / Employer ID (MEDIUM)
+
+> ⚠️ Requires customer validation before production deployment.
+
+| Configuration Item | Value |
+|-------------------|--------|
+| SIT Name | Kuwait Sponsor Employer ID |
+| Priority | Medium |
+| Confidence Level | Medium |
+| Departments | HR |
+| Primary Element Type | Regular Expression |
+| Temporary Regex | `\b[A-Z0-9]{4,20}\b` |
+| Minimum Match Count | 1 |
+| Supporting Element | Keyword List |
+| Keywords | Sponsor ID, Employer ID, Company ID, كفيل, رقم الكفيل, صاحب العمل, Employer Number |
+| Character Proximity | 300 |
+| Detection Logic | Regex + Keyword |
+| Validation Required | Confirm actual employer ID format |
+
+---
+
+### Recommended Test Cases
+
+| Test Scenario | Expected Result |
+|--------------|----------------|
+| Valid Number + Keyword | Match (High Confidence) |
+| Valid Number without Keyword | Match (Medium Confidence if Pattern 2 exists) |
+| Invalid Number + Keyword | No Match |
+| Arabic Keyword + Valid Number | Match |
+| English Keyword + Valid Number | Match |
+| Random Numeric Value | No Match |
+| Random Alphanumeric Value | No Match |
+
+---
+
+### Post-Creation Validation
+
+| Validation Step | Expected Outcome |
+|----------------|------------------|
+| Sensitive Information Type Tester | SIT detected correctly |
+| Content Explorer | Items classified correctly |
+| DLP Test Policy | SIT triggers DLP rule |
+| Auto-Labeling Test Policy | Label applied/recommended correctly |
+| False Positive Review | Detection accuracy acceptable |
+| Business Validation | HR/Legal confirm results |
+
+---
+
+### Important Implementation Notes
+
+1. **Kuwait Civil ID Number** is the only SIT with a defined business format and can be implemented immediately.
+2. **Kuwait Work Permit Number**, **Kuwait Labor File Number**, **Kuwait Trade License Number**, and **Kuwait Sponsor/Employer ID** require customer validation before production deployment.
+3. The regex patterns for these four SITs are **placeholders for implementation planning only** and must be validated against actual customer documents.
+4. Consider **Exact Data Match (EDM)** for:
+   - Kuwait Civil ID Number
+   - Kuwait Labor File Number
+   - Kuwait Work Permit Number
+
+   if authoritative HR or employee records are available.
+5. Test all SITs in **Content Explorer**, **DLP**, and **Auto-labeling** policies before moving to enforcement mode.
+
 ---
 
 ### 2.3 Department-Specific SIT Mapping
