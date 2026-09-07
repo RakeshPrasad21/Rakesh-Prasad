@@ -1,0 +1,310 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Weekly Microsoft Sentinel health report Logic App: Unmapped analytics rules, Disabled analytics rules, and Connector health issues, with an Affected Items list, a static recommendation, and a link to the Sentinel portal."
+  },
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "LA-MITER-Coverage-Health-Report",
+      "metadata": { "description": "Name of the Logic App (Consumption)." }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Location for the Logic App." }
+    },
+    "sentinelSubscriptionId": {
+      "type": "string",
+      "metadata": { "description": "Subscription ID that contains the Microsoft Sentinel (Log Analytics) workspace." }
+    },
+    "sentinelResourceGroupName": {
+      "type": "string",
+      "metadata": { "description": "Resource group that contains the Microsoft Sentinel workspace." }
+    },
+    "sentinelWorkspaceName": {
+      "type": "string",
+      "metadata": { "description": "Name of the Log Analytics workspace with Microsoft Sentinel enabled." }
+    },
+    "recurrenceInterval": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": { "description": "Runs every N week(s). Default 1 = weekly." }
+    },
+    "connectorHealthLookbackDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "metadata": { "description": "How many days back to check the SentinelHealth table for data connector failures. Requires Sentinel health monitoring (preview) to be enabled on the workspace." }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "sentinelSubscriptionId": { "type": "string" },
+            "sentinelResourceGroupName": { "type": "string" },
+            "sentinelWorkspaceName": { "type": "string" },
+            "recurrenceInterval": { "type": "int" },
+            "connectorHealthLookbackDays": { "type": "int" }
+          },
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Week",
+                "interval": "@parameters('recurrenceInterval')"
+              }
+            }
+          },
+          "actions": {
+            "List_Analytics_Rules": {
+              "type": "Http",
+              "runAfter": {},
+              "inputs": {
+                "method": "GET",
+                "uri": "@concat('https://management.azure.com/subscriptions/', parameters('sentinelSubscriptionId'), '/resourceGroups/', parameters('sentinelResourceGroupName'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('sentinelWorkspaceName'), '/providers/Microsoft.SecurityInsights/alertRules?api-version=2023-11-01')",
+                "authentication": {
+                  "type": "ManagedServiceIdentity"
+                }
+              }
+            },
+            "Initialize_AllRules": {
+              "type": "InitializeVariable",
+              "runAfter": { "List_Analytics_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "AllRules",
+                    "type": "array",
+                    "value": "@body('List_Analytics_Rules')?['value']"
+                  }
+                ]
+              }
+            },
+            "Filter_Unmapped_Rules": {
+              "type": "Query",
+              "runAfter": { "Initialize_AllRules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@equals(length(coalesce(item()?['properties']?['tactics'], createArray())), 0)"
+              }
+            },
+            "Filter_Disabled_Rules": {
+              "type": "Query",
+              "runAfter": { "Filter_Unmapped_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@equals(item()?['properties']?['enabled'], false)"
+              }
+            },
+            "Get_Workspace_Details": {
+              "type": "Http",
+              "runAfter": { "Filter_Disabled_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "method": "GET",
+                "uri": "@concat('https://management.azure.com/subscriptions/', parameters('sentinelSubscriptionId'), '/resourceGroups/', parameters('sentinelResourceGroupName'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('sentinelWorkspaceName'), '?api-version=2022-10-01')",
+                "authentication": {
+                  "type": "ManagedServiceIdentity"
+                }
+              }
+            },
+            "Query_Connector_Health": {
+              "type": "Http",
+              "runAfter": { "Get_Workspace_Details": [ "Succeeded" ] },
+              "description": "Queries the SentinelHealth table for data connector failures. Requires Sentinel health monitoring (preview) enabled on the workspace.",
+              "inputs": {
+                "method": "POST",
+                "uri": "@concat('https://api.loganalytics.io/v1/workspaces/', body('Get_Workspace_Details')?['properties']?['customerId'], '/query')",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "@concat('SentinelHealth | where TimeGenerated > ago(', string(parameters('connectorHealthLookbackDays')), 'd) | where SentinelResourceKind == ''DataConnector'' | where Status == ''Failure'' | summarize arg_max(TimeGenerated, *) by SentinelResourceName | project AffectedItem = SentinelResourceName')"
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://api.loganalytics.io/"
+                }
+              }
+            },
+            "Select_Connector_Issue_Names": {
+              "type": "Select",
+              "runAfter": { "Query_Connector_Health": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Query_Connector_Health')?['tables'][0]?['rows']",
+                "select": "@item()?[0]"
+              }
+            },
+            "Compose_IssueCounts": {
+              "type": "Compose",
+              "runAfter": { "Select_Connector_Issue_Names": [ "Succeeded" ] },
+              "inputs": {
+                "unmappedRules": "@length(body('Filter_Unmapped_Rules'))",
+                "disabledRules": "@length(body('Filter_Disabled_Rules'))",
+                "connectorHealthIssues": "@length(body('Select_Connector_Issue_Names'))"
+              }
+            },
+            "Select_Unmapped_Items": {
+              "type": "Select",
+              "runAfter": { "Compose_IssueCounts": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Unmapped_Rules')",
+                "select": {
+                  "name": "@coalesce(item()?['properties']?['displayName'], item()?['name'])",
+                  "issue": "No MITRE ATT&CK mapping"
+                }
+              }
+            },
+            "Select_Disabled_Items": {
+              "type": "Select",
+              "runAfter": { "Select_Unmapped_Items": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Disabled_Rules')",
+                "select": {
+                  "name": "@coalesce(item()?['properties']?['displayName'], item()?['name'])",
+                  "issue": "Analytics rule disabled"
+                }
+              }
+            },
+            "Select_Connector_Items": {
+              "type": "Select",
+              "runAfter": { "Select_Disabled_Items": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Select_Connector_Issue_Names')",
+                "select": {
+                  "name": "@item()",
+                  "issue": "Connector offline"
+                }
+              }
+            },
+            "Compose_AffectedItems": {
+              "type": "Compose",
+              "runAfter": { "Select_Connector_Items": [ "Succeeded" ] },
+              "inputs": "@union(union(body('Select_Unmapped_Items'), body('Select_Disabled_Items')), body('Select_Connector_Items'))"
+            },
+            "Select_AffectedItemLines": {
+              "type": "Select",
+              "runAfter": { "Compose_AffectedItems": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@outputs('Compose_AffectedItems')",
+                "select": "@concat(item()?['name'], '\nIssue: ', item()?['issue'])"
+              }
+            },
+            "Compose_AffectedItemsMarkdown": {
+              "type": "Compose",
+              "runAfter": { "Select_AffectedItemLines": [ "Succeeded" ] },
+              "inputs": "@if(equals(length(outputs('Compose_AffectedItems')), 0), 'No issues identified this period.', join(body('Select_AffectedItemLines'), '\n\n'))"
+            },
+            "Compose_PortalLink": {
+              "type": "Compose",
+              "runAfter": { "Compose_AffectedItemsMarkdown": [ "Succeeded" ] },
+              "inputs": "@concat('https://portal.azure.com/#blade/Microsoft_Azure_Security_Insights/MainMenuBlade/0/id/', uriComponent(concat('/subscriptions/', parameters('sentinelSubscriptionId'), '/resourcegroups/', parameters('sentinelResourceGroupName'), '/providers/microsoft.operationalinsights/workspaces/', parameters('sentinelWorkspaceName'))))"
+            },
+            "Compose_AdaptiveCard": {
+              "type": "Compose",
+              "runAfter": { "Compose_PortalLink": [ "Succeeded" ] },
+              "description": "Builds the Teams Adaptive Card payload. No Teams connector/action is wired up - add a 'Post adaptive card in a chat or channel' action after this one and use outputs('Compose_AdaptiveCard') as the card.",
+              "inputs": {
+                "type": "AdaptiveCard",
+                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                "version": "1.4",
+                "body": [
+                  {
+                    "type": "TextBlock",
+                    "size": "Large",
+                    "weight": "Bolder",
+                    "text": "Microsoft Sentinel - Weekly Detection Health Report",
+                    "wrap": true
+                  },
+                  {
+                    "type": "TextBlock",
+                    "isSubtle": true,
+                    "spacing": "None",
+                    "wrap": true,
+                    "text": "Reporting Date: @{utcNow('yyyy-MM-dd')} (Weekly)"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Issue Identified"
+                  },
+                  {
+                    "type": "FactSet",
+                    "facts": [
+                      { "title": "Unmapped Analytics Rule", "value": "@{string(outputs('Compose_IssueCounts')?['unmappedRules'])}" },
+                      { "title": "Disabled Analytics Rule", "value": "@{string(outputs('Compose_IssueCounts')?['disabledRules'])}" },
+                      { "title": "Connector Health Issue", "value": "@{string(outputs('Compose_IssueCounts')?['connectorHealthIssues'])}" }
+                    ]
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Affected Items"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "@{outputs('Compose_AffectedItemsMarkdown')}"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Recommendation Action"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "Review and remediate the affected items to maintain ATT&CK and detection effectiveness."
+                  }
+                ],
+                "actions": [
+                  {
+                    "type": "Action.OpenUrl",
+                    "title": "Open Microsoft Sentinel",
+                    "url": "@{outputs('Compose_PortalLink')}"
+                  }
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "sentinelSubscriptionId": { "value": "[parameters('sentinelSubscriptionId')]" },
+          "sentinelResourceGroupName": { "value": "[parameters('sentinelResourceGroupName')]" },
+          "sentinelWorkspaceName": { "value": "[parameters('sentinelWorkspaceName')]" },
+          "recurrenceInterval": { "value": "[parameters('recurrenceInterval')]" },
+          "connectorHealthLookbackDays": { "value": "[parameters('connectorHealthLookbackDays')]" }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    },
+    "logicAppPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'Full').identity.principalId]"
+    }
+  }
+}

@@ -1,0 +1,416 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Deploys a Consumption Logic App that reads Microsoft Sentinel Analytics Rules, calculates a Detection Estate Summary / MITRE ATT&CK Coverage Summary / Governance Findings / Recommendations, and composes a Teams Adaptive Card."
+  },
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "LA-MITRE-Coverage-Summary",
+      "metadata": { "description": "Name of the Logic App (Consumption)." }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Location for the Logic App." }
+    },
+    "sentinelSubscriptionId": {
+      "type": "string",
+      "metadata": { "description": "Subscription ID that contains the Microsoft Sentinel (Log Analytics) workspace." }
+    },
+    "sentinelResourceGroupName": {
+      "type": "string",
+      "metadata": { "description": "Resource group that contains the Microsoft Sentinel workspace." }
+    },
+    "sentinelWorkspaceName": {
+      "type": "string",
+      "metadata": { "description": "Name of the Log Analytics workspace with Microsoft Sentinel enabled." }
+    },
+    "recurrenceFrequency": {
+      "type": "string",
+      "defaultValue": "Week",
+      "allowedValues": [ "Hour", "Day", "Week", "Month" ],
+      "metadata": { "description": "How often the report should run." }
+    },
+    "recurrenceInterval": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": { "description": "Interval that pairs with recurrenceFrequency." }
+    },
+    "coverageTargetPerTactic": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": { "description": "Minimum number of mapped rules per tactic used to drive the demo 'continue expansion' recommendation." }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "sentinelSubscriptionId": { "type": "string" },
+            "sentinelResourceGroupName": { "type": "string" },
+            "sentinelWorkspaceName": { "type": "string" },
+            "recurrenceFrequency": { "type": "string" },
+            "recurrenceInterval": { "type": "int" },
+            "coverageTargetPerTactic": { "type": "int" }
+          },
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "@parameters('recurrenceFrequency')",
+                "interval": "@parameters('recurrenceInterval')"
+              }
+            }
+          },
+          "actions": {
+            "List_Analytics_Rules": {
+              "type": "Http",
+              "runAfter": {},
+              "inputs": {
+                "method": "GET",
+                "uri": "@concat('https://management.azure.com/subscriptions/', parameters('sentinelSubscriptionId'), '/resourceGroups/', parameters('sentinelResourceGroupName'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('sentinelWorkspaceName'), '/providers/Microsoft.SecurityInsights/alertRules?api-version=2023-11-01')",
+                "authentication": {
+                  "type": "ManagedServiceIdentity"
+                }
+              }
+            },
+            "Initialize_AllRules": {
+              "type": "InitializeVariable",
+              "runAfter": { "List_Analytics_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "AllRules",
+                    "type": "array",
+                    "value": "@body('List_Analytics_Rules')?['value']"
+                  }
+                ]
+              }
+            },
+            "Initialize_TacticList": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_AllRules": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "TacticList",
+                    "type": "array",
+                    "value": [
+                      "Reconnaissance",
+                      "ResourceDevelopment",
+                      "InitialAccess",
+                      "Execution",
+                      "Persistence",
+                      "PrivilegeEscalation",
+                      "DefenseEvasion",
+                      "CredentialAccess",
+                      "Discovery",
+                      "LateralMovement",
+                      "Collection",
+                      "CommandAndControl",
+                      "Exfiltration",
+                      "Impact"
+                    ]
+                  }
+                ]
+              }
+            },
+            "Initialize_CoverageTable": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_TacticList": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "CoverageTable",
+                    "type": "array",
+                    "value": []
+                  }
+                ]
+              }
+            },
+            "Initialize_CoverageLines": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_CoverageTable": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "CoverageLines",
+                    "type": "array",
+                    "value": []
+                  }
+                ]
+              }
+            },
+            "Initialize_CoverageTargetPerTactic": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_CoverageLines": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "CoverageTargetPerTactic",
+                    "type": "integer",
+                    "value": "@parameters('coverageTargetPerTactic')"
+                  }
+                ]
+              }
+            },
+            "Filter_Enabled_Rules": {
+              "type": "Query",
+              "runAfter": { "Initialize_CoverageTargetPerTactic": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@equals(item()?['properties']?['enabled'], true)"
+              }
+            },
+            "Filter_Disabled_Rules": {
+              "type": "Query",
+              "runAfter": { "Filter_Enabled_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@equals(item()?['properties']?['enabled'], false)"
+              }
+            },
+            "Filter_NRT_Rules": {
+              "type": "Query",
+              "runAfter": { "Filter_Disabled_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@equals(item()?['kind'], 'NRT')"
+              }
+            },
+            "Filter_Unmapped_Rules": {
+              "type": "Query",
+              "runAfter": { "Filter_NRT_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@equals(length(coalesce(item()?['properties']?['tactics'], createArray())), 0)"
+              }
+            },
+            "Filter_Reconnaissance_Rules": {
+              "type": "Query",
+              "runAfter": { "Filter_Unmapped_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@contains(coalesce(item()?['properties']?['tactics'], createArray()), 'Reconnaissance')"
+              }
+            },
+            "Compose_Totals": {
+              "type": "Compose",
+              "runAfter": { "Filter_Reconnaissance_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "total": "@length(variables('AllRules'))",
+                "enabled": "@length(body('Filter_Enabled_Rules'))",
+                "disabled": "@length(body('Filter_Disabled_Rules'))",
+                "nrt": "@length(body('Filter_NRT_Rules'))",
+                "unmapped": "@length(body('Filter_Unmapped_Rules'))"
+              }
+            },
+            "For_each_Tactic": {
+              "type": "Foreach",
+              "runAfter": { "Compose_Totals": [ "Succeeded" ] },
+              "foreach": "@variables('TacticList')",
+              "actions": {
+                "Filter_Rules_By_Tactic": {
+                  "type": "Query",
+                  "inputs": {
+                    "from": "@variables('AllRules')",
+                    "where": "@contains(coalesce(item()?['properties']?['tactics'], createArray()), items('For_each_Tactic'))"
+                  }
+                },
+                "Compose_TacticCoverage": {
+                  "type": "Compose",
+                  "runAfter": { "Filter_Rules_By_Tactic": [ "Succeeded" ] },
+                  "inputs": {
+                    "tactic": "@items('For_each_Tactic')",
+                    "count": "@length(body('Filter_Rules_By_Tactic'))"
+                  }
+                },
+                "Append_to_CoverageTable": {
+                  "type": "AppendToArrayVariable",
+                  "runAfter": { "Compose_TacticCoverage": [ "Succeeded" ] },
+                  "inputs": {
+                    "name": "CoverageTable",
+                    "value": "@outputs('Compose_TacticCoverage')"
+                  }
+                },
+                "Append_to_CoverageLines": {
+                  "type": "AppendToArrayVariable",
+                  "runAfter": { "Append_to_CoverageTable": [ "Succeeded" ] },
+                  "inputs": {
+                    "name": "CoverageLines",
+                    "value": "@concat(items('For_each_Tactic'), ': ', string(length(body('Filter_Rules_By_Tactic'))))"
+                  }
+                }
+              }
+            },
+            "Compose_CoverageMarkdown": {
+              "type": "Compose",
+              "runAfter": { "For_each_Tactic": [ "Succeeded" ] },
+              "inputs": "@join(variables('CoverageLines'), '\n')"
+            },
+            "Select_Unmapped_DisplayNames": {
+              "type": "Select",
+              "runAfter": { "Compose_CoverageMarkdown": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Unmapped_Rules')",
+                "select": "@coalesce(item()?['properties']?['displayName'], item()?['name'])"
+              }
+            },
+            "Compose_UnmappedList": {
+              "type": "Compose",
+              "runAfter": { "Select_Unmapped_DisplayNames": [ "Succeeded" ] },
+              "inputs": "@if(equals(length(body('Filter_Unmapped_Rules')), 0), 'None', join(body('Select_Unmapped_DisplayNames'), ', '))"
+            },
+            "Select_Disabled_DisplayNames": {
+              "type": "Select",
+              "runAfter": { "Compose_UnmappedList": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Disabled_Rules')",
+                "select": "@coalesce(item()?['properties']?['displayName'], item()?['name'])"
+              }
+            },
+            "Compose_DisabledList": {
+              "type": "Compose",
+              "runAfter": { "Select_Disabled_DisplayNames": [ "Succeeded" ] },
+              "inputs": "@if(equals(length(body('Filter_Disabled_Rules')), 0), 'None', join(body('Select_Disabled_DisplayNames'), ', '))"
+            },
+            "Compose_Recommendations": {
+              "type": "Compose",
+              "runAfter": { "Compose_DisabledList": [ "Succeeded" ] },
+              "inputs": "@createArray(concat('Review ', string(length(body('Filter_Unmapped_Rules'))), ' unmapped analytic rule(s) and assign MITRE ATT&CK tactics.'), if(less(length(body('Filter_Reconnaissance_Rules')), variables('CoverageTargetPerTactic')), 'Continue expansion of Reconnaissance detection coverage (currently below target threshold).', 'Reconnaissance coverage meets the target threshold.'), concat('Review ', string(length(body('Filter_Disabled_Rules'))), ' disabled detection(s); re-enable or formally retire them.'), 'Validate NRT (near-real-time) rule coverage for high-priority, time-sensitive tactics.', 'Re-run this report after onboarding new data connectors or use cases to reassess coverage.')"
+            },
+            "Select_RecommendationLines": {
+              "type": "Select",
+              "runAfter": { "Compose_Recommendations": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@outputs('Compose_Recommendations')",
+                "select": "@concat('- ', item())"
+              }
+            },
+            "Compose_RecommendationsMarkdown": {
+              "type": "Compose",
+              "runAfter": { "Select_RecommendationLines": [ "Succeeded" ] },
+              "inputs": "@join(body('Select_RecommendationLines'), '\n')"
+            },
+            "Compose_AdaptiveCard": {
+              "type": "Compose",
+              "runAfter": { "Compose_RecommendationsMarkdown": [ "Succeeded" ] },
+              "description": "Builds the Teams Adaptive Card payload. No Teams connector/action is wired up - add a 'Post adaptive card in a chat or channel' action after this one and use outputs('Compose_AdaptiveCard') as the card.",
+              "inputs": {
+                "type": "AdaptiveCard",
+                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                "version": "1.4",
+                "body": [
+                  {
+                    "type": "TextBlock",
+                    "size": "Large",
+                    "weight": "Bolder",
+                    "text": "Sentinel Detection Estate Report",
+                    "wrap": true
+                  },
+                  {
+                    "type": "TextBlock",
+                    "isSubtle": true,
+                    "spacing": "None",
+                    "wrap": true,
+                    "text": "Generated @{utcNow('yyyy-MM-dd HH:mm')} UTC"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Detection Estate Summary"
+                  },
+                  {
+                    "type": "FactSet",
+                    "facts": [
+                      { "title": "Total Analytics Rules", "value": "@{string(outputs('Compose_Totals')?['total'])}" },
+                      { "title": "Enabled Rules", "value": "@{string(outputs('Compose_Totals')?['enabled'])}" },
+                      { "title": "Disabled Rules", "value": "@{string(outputs('Compose_Totals')?['disabled'])}" },
+                      { "title": "NRT Rules", "value": "@{string(outputs('Compose_Totals')?['nrt'])}" },
+                      { "title": "Unmapped Rules", "value": "@{string(outputs('Compose_Totals')?['unmapped'])}" }
+                    ]
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Coverage Summary (MITRE ATT&CK)"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "@{outputs('Compose_CoverageMarkdown')}"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Governance Findings"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "**Rules without ATT&CK mapping:** @{outputs('Compose_UnmappedList')}"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "**Disabled detections:** @{outputs('Compose_DisabledList')}"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Recommendations"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "@{outputs('Compose_RecommendationsMarkdown')}"
+                  }
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "sentinelSubscriptionId": { "value": "[parameters('sentinelSubscriptionId')]" },
+          "sentinelResourceGroupName": { "value": "[parameters('sentinelResourceGroupName')]" },
+          "sentinelWorkspaceName": { "value": "[parameters('sentinelWorkspaceName')]" },
+          "recurrenceFrequency": { "value": "[parameters('recurrenceFrequency')]" },
+          "recurrenceInterval": { "value": "[parameters('recurrenceInterval')]" },
+          "coverageTargetPerTactic": { "value": "[parameters('coverageTargetPerTactic')]" }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    },
+    "logicAppPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'Full').identity.principalId]"
+    }
+  }
+}
