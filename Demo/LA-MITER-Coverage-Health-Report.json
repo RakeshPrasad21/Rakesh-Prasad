@@ -2,7 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "metadata": {
-    "description": "Weekly Microsoft Sentinel health report Logic App: Unmapped analytics rules, Disabled analytics rules, and Connector health issues, with an Affected Items list, a static recommendation, and a link to the Sentinel portal."
+    "description": "Weekly Microsoft Sentinel health report Logic App: Unmapped analytics rules, Disabled analytics rules (with High/Medium/Low severity breakdown), Connector health issues, MITRE ATT&CK per-tactic technique coverage (Most/Least Covered Tactics), a dynamic Attention Required list, an Affected Items list, a static recommendation, and a link to the Sentinel portal."
   },
   "parameters": {
     "logicAppName": {
@@ -38,6 +38,7 @@
       "metadata": { "description": "How many days back to check the SentinelHealth table for data connector failures. Requires Sentinel health monitoring (preview) to be enabled on the workspace." }
     }
   },
+  "variables": {},
   "resources": [
     {
       "type": "Microsoft.Logic/workflows",
@@ -93,12 +94,94 @@
                 ]
               }
             },
-            "Filter_Unmapped_Rules": {
-              "type": "Query",
+            "Initialize_TacticDefinitions": {
+              "type": "InitializeVariable",
               "runAfter": { "Initialize_AllRules": [ "Succeeded" ] },
               "inputs": {
+                "variables": [
+                  {
+                    "name": "TacticDefinitions",
+                    "type": "array",
+                    "value": [
+                      { "key": "Reconnaissance", "label": "Reconnaissance" },
+                      { "key": "ResourceDevelopment", "label": "Resource Development" },
+                      { "key": "InitialAccess", "label": "Initial Access" },
+                      { "key": "Execution", "label": "Execution" },
+                      { "key": "Persistence", "label": "Persistence" },
+                      { "key": "PrivilegeEscalation", "label": "Privilege Escalation" },
+                      { "key": "DefenseEvasion", "label": "Defense Evasion" },
+                      { "key": "CredentialAccess", "label": "Credential Access" },
+                      { "key": "Discovery", "label": "Discovery" },
+                      { "key": "LateralMovement", "label": "Lateral Movement" },
+                      { "key": "Collection", "label": "Collection" },
+                      { "key": "CommandAndControl", "label": "Command and Control" },
+                      { "key": "Exfiltration", "label": "Exfiltration" },
+                      { "key": "Impact", "label": "Impact" }
+                    ]
+                  }
+                ]
+              }
+            },
+            "Initialize_TacticCoverage": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_TacticDefinitions": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [ { "name": "TacticCoverage", "type": "array", "value": [] } ]
+              }
+            },
+            "Initialize_TacticTechniques": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_TacticCoverage": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [ { "name": "TacticTechniques", "type": "array", "value": [] } ]
+              }
+            },
+            "Initialize_Top1Tactic": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_TacticTechniques": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Top1Tactic", "type": "string", "value": "" } ] }
+            },
+            "Initialize_Top1Count": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Top1Tactic": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Top1Count", "type": "integer", "value": -1 } ] }
+            },
+            "Initialize_Top2Tactic": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Top1Count": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Top2Tactic", "type": "string", "value": "" } ] }
+            },
+            "Initialize_Top2Count": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Top2Tactic": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Top2Count", "type": "integer", "value": -1 } ] }
+            },
+            "Initialize_Bottom1Tactic": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Top2Count": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Bottom1Tactic", "type": "string", "value": "" } ] }
+            },
+            "Initialize_Bottom1Count": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Bottom1Tactic": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Bottom1Count", "type": "integer", "value": 999999 } ] }
+            },
+            "Initialize_Bottom2Tactic": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Bottom1Count": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Bottom2Tactic", "type": "string", "value": "" } ] }
+            },
+            "Initialize_Bottom2Count": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_Bottom2Tactic": [ "Succeeded" ] },
+              "inputs": { "variables": [ { "name": "Bottom2Count", "type": "integer", "value": 999999 } ] }
+            },
+            "Filter_Unmapped_Rules": {
+              "type": "Query",
+              "runAfter": { "Initialize_Bottom2Count": [ "Succeeded" ] },
+              "inputs": {
                 "from": "@variables('AllRules')",
-                "where": "@equals(length(coalesce(item()?['properties']?['tactics'], createArray())), 0)"
+                "where": "@equals(length(coalesce(item()?['properties']?['tactics'], json('[]'))), 0)"
               }
             },
             "Filter_Disabled_Rules": {
@@ -109,9 +192,63 @@
                 "where": "@equals(item()?['properties']?['enabled'], false)"
               }
             },
+            "Filter_Mapped_Enabled_Rules": {
+              "type": "Query",
+              "runAfter": { "Filter_Disabled_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('AllRules')",
+                "where": "@and(greater(length(coalesce(item()?['properties']?['tactics'], json('[]'))), 0), equals(item()?['properties']?['enabled'], true))"
+              }
+            },
+            "Filter_Disabled_High": {
+              "type": "Query",
+              "runAfter": { "Filter_Mapped_Enabled_Rules": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Disabled_Rules')",
+                "where": "@equals(item()?['properties']?['severity'], 'High')"
+              }
+            },
+            "Filter_Disabled_Medium": {
+              "type": "Query",
+              "runAfter": { "Filter_Disabled_High": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Disabled_Rules')",
+                "where": "@equals(item()?['properties']?['severity'], 'Medium')"
+              }
+            },
+            "Filter_Disabled_Low": {
+              "type": "Query",
+              "runAfter": { "Filter_Disabled_Medium": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Disabled_Rules')",
+                "where": "@equals(item()?['properties']?['severity'], 'Low')"
+              }
+            },
+            "Compose_DisabledSeverityCounts": {
+              "type": "Compose",
+              "runAfter": { "Filter_Disabled_Low": [ "Succeeded" ] },
+              "inputs": {
+                "high": "@length(body('Filter_Disabled_High'))",
+                "medium": "@length(body('Filter_Disabled_Medium'))",
+                "low": "@length(body('Filter_Disabled_Low'))"
+              }
+            },
+            "Select_HighSeverityLines": {
+              "type": "Select",
+              "runAfter": { "Compose_DisabledSeverityCounts": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@body('Filter_Disabled_High')",
+                "select": "@concat('\u26a0 ', coalesce(item()?['properties']?['displayName'], item()?['name']), ' \u2014 high-severity rule disabled')"
+              }
+            },
+            "Compose_HighSeverityBlock": {
+              "type": "Compose",
+              "runAfter": { "Select_HighSeverityLines": [ "Succeeded" ] },
+              "inputs": "@if(equals(length(body('Select_HighSeverityLines')), 0), '', concat(join(body('Select_HighSeverityLines'), '\n'), '\n'))"
+            },
             "Get_Workspace_Details": {
               "type": "Http",
-              "runAfter": { "Filter_Disabled_Rules": [ "Succeeded" ] },
+              "runAfter": { "Compose_HighSeverityBlock": [ "Succeeded" ] },
               "inputs": {
                 "method": "GET",
                 "uri": "@concat('https://management.azure.com/subscriptions/', parameters('sentinelSubscriptionId'), '/resourceGroups/', parameters('sentinelResourceGroupName'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('sentinelWorkspaceName'), '?api-version=2022-10-01')",
@@ -212,9 +349,194 @@
               "runAfter": { "Compose_AffectedItemsMarkdown": [ "Succeeded" ] },
               "inputs": "@concat('https://portal.azure.com/#blade/Microsoft_Azure_Security_Insights/MainMenuBlade/0/id/', uriComponent(concat('/subscriptions/', parameters('sentinelSubscriptionId'), '/resourcegroups/', parameters('sentinelResourceGroupName'), '/providers/microsoft.operationalinsights/workspaces/', parameters('sentinelWorkspaceName'))))"
             },
+            "Foreach_Tactic": {
+              "type": "Foreach",
+              "foreach": "@variables('TacticDefinitions')",
+              "runAfter": { "Compose_PortalLink": [ "Succeeded" ] },
+              "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
+              "actions": {
+                "Set_TacticTechniques_Empty": {
+                  "type": "SetVariable",
+                  "runAfter": {},
+                  "inputs": { "name": "TacticTechniques", "value": [] }
+                },
+                "Filter_Rules_For_Tactic": {
+                  "type": "Query",
+                  "runAfter": { "Set_TacticTechniques_Empty": [ "Succeeded" ] },
+                  "inputs": {
+                    "from": "@body('Filter_Mapped_Enabled_Rules')",
+                    "where": "@contains(coalesce(item()?['properties']?['tactics'], json('[]')), items('Foreach_Tactic')?['key'])"
+                  }
+                },
+                "Foreach_Rule_In_Tactic": {
+                  "type": "Foreach",
+                  "foreach": "@body('Filter_Rules_For_Tactic')",
+                  "runAfter": { "Filter_Rules_For_Tactic": [ "Succeeded" ] },
+                  "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
+                  "actions": {
+                    "Foreach_Technique_In_Rule": {
+                      "type": "Foreach",
+                      "foreach": "@coalesce(item()?['properties']?['techniques'], json('[]'))",
+                      "runAfter": {},
+                      "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
+                      "actions": {
+                        "Append_Technique": {
+                          "type": "AppendToArrayVariable",
+                          "runAfter": {},
+                          "inputs": { "name": "TacticTechniques", "value": "@item()" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "Append_TacticCoverage": {
+                  "type": "AppendToArrayVariable",
+                  "runAfter": { "Foreach_Rule_In_Tactic": [ "Succeeded" ] },
+                  "inputs": {
+                    "name": "TacticCoverage",
+                    "value": {
+                      "tactic": "@items('Foreach_Tactic')?['label']",
+                      "count": "@length(union(variables('TacticTechniques'), json('[]')))"
+                    }
+                  }
+                }
+              }
+            },
+            "Foreach_RankTactics": {
+              "type": "Foreach",
+              "foreach": "@variables('TacticCoverage')",
+              "runAfter": { "Foreach_Tactic": [ "Succeeded" ] },
+              "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
+              "actions": {
+                "Condition_Top": {
+                  "type": "If",
+                  "runAfter": {},
+                  "expression": "@greater(item()?['count'], variables('Top1Count'))",
+                  "actions": {
+                    "Shift_Top2Tactic": {
+                      "type": "SetVariable",
+                      "runAfter": {},
+                      "inputs": { "name": "Top2Tactic", "value": "@variables('Top1Tactic')" }
+                    },
+                    "Shift_Top2Count": {
+                      "type": "SetVariable",
+                      "runAfter": { "Shift_Top2Tactic": [ "Succeeded" ] },
+                      "inputs": { "name": "Top2Count", "value": "@variables('Top1Count')" }
+                    },
+                    "Set_Top1Tactic": {
+                      "type": "SetVariable",
+                      "runAfter": { "Shift_Top2Count": [ "Succeeded" ] },
+                      "inputs": { "name": "Top1Tactic", "value": "@item()?['tactic']" }
+                    },
+                    "Set_Top1Count": {
+                      "type": "SetVariable",
+                      "runAfter": { "Set_Top1Tactic": [ "Succeeded" ] },
+                      "inputs": { "name": "Top1Count", "value": "@item()?['count']" }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Condition_Top2": {
+                        "type": "If",
+                        "runAfter": {},
+                        "expression": "@greater(item()?['count'], variables('Top2Count'))",
+                        "actions": {
+                          "Set_Top2Tactic_From_Item": {
+                            "type": "SetVariable",
+                            "runAfter": {},
+                            "inputs": { "name": "Top2Tactic", "value": "@item()?['tactic']" }
+                          },
+                          "Set_Top2Count_From_Item": {
+                            "type": "SetVariable",
+                            "runAfter": { "Set_Top2Tactic_From_Item": [ "Succeeded" ] },
+                            "inputs": { "name": "Top2Count", "value": "@item()?['count']" }
+                          }
+                        },
+                        "else": { "actions": {} }
+                      }
+                    }
+                  }
+                },
+                "Condition_Bottom": {
+                  "type": "If",
+                  "runAfter": { "Condition_Top": [ "Succeeded" ] },
+                  "expression": "@less(item()?['count'], variables('Bottom1Count'))",
+                  "actions": {
+                    "Shift_Bottom2Tactic": {
+                      "type": "SetVariable",
+                      "runAfter": {},
+                      "inputs": { "name": "Bottom2Tactic", "value": "@variables('Bottom1Tactic')" }
+                    },
+                    "Shift_Bottom2Count": {
+                      "type": "SetVariable",
+                      "runAfter": { "Shift_Bottom2Tactic": [ "Succeeded" ] },
+                      "inputs": { "name": "Bottom2Count", "value": "@variables('Bottom1Count')" }
+                    },
+                    "Set_Bottom1Tactic": {
+                      "type": "SetVariable",
+                      "runAfter": { "Shift_Bottom2Count": [ "Succeeded" ] },
+                      "inputs": { "name": "Bottom1Tactic", "value": "@item()?['tactic']" }
+                    },
+                    "Set_Bottom1Count": {
+                      "type": "SetVariable",
+                      "runAfter": { "Set_Bottom1Tactic": [ "Succeeded" ] },
+                      "inputs": { "name": "Bottom1Count", "value": "@item()?['count']" }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Condition_Bottom2": {
+                        "type": "If",
+                        "runAfter": {},
+                        "expression": "@less(item()?['count'], variables('Bottom2Count'))",
+                        "actions": {
+                          "Set_Bottom2Tactic_From_Item": {
+                            "type": "SetVariable",
+                            "runAfter": {},
+                            "inputs": { "name": "Bottom2Tactic", "value": "@item()?['tactic']" }
+                          },
+                          "Set_Bottom2Count_From_Item": {
+                            "type": "SetVariable",
+                            "runAfter": { "Set_Bottom2Tactic_From_Item": [ "Succeeded" ] },
+                            "inputs": { "name": "Bottom2Count", "value": "@item()?['count']" }
+                          }
+                        },
+                        "else": { "actions": {} }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "Select_TacticFacts": {
+              "type": "Select",
+              "runAfter": { "Foreach_RankTactics": [ "Succeeded" ] },
+              "inputs": {
+                "from": "@variables('TacticCoverage')",
+                "select": {
+                  "title": "@item()?['tactic']",
+                  "value": "@string(item()?['count'])"
+                }
+              }
+            },
+            "Compose_MostCoveredText": {
+              "type": "Compose",
+              "runAfter": { "Select_TacticFacts": [ "Succeeded" ] },
+              "inputs": "@concat(variables('Top1Tactic'), ' \u2014 ', string(variables('Top1Count')), ' techniques\n', variables('Top2Tactic'), ' \u2014 ', string(variables('Top2Count')), ' techniques')"
+            },
+            "Compose_LeastCoveredText": {
+              "type": "Compose",
+              "runAfter": { "Compose_MostCoveredText": [ "Succeeded" ] },
+              "inputs": "@concat(variables('Bottom1Tactic'), ' \u2014 ', string(variables('Bottom1Count')), ' techniques\n', variables('Bottom2Tactic'), ' \u2014 ', string(variables('Bottom2Count')), ' techniques')"
+            },
+            "Compose_AttentionRequired": {
+              "type": "Compose",
+              "runAfter": { "Compose_LeastCoveredText": [ "Succeeded" ] },
+              "inputs": "@concat(outputs('Compose_HighSeverityBlock'), '\u26a0 ', variables('Bottom1Tactic'), ' has the lowest technique coverage (', string(variables('Bottom1Count')), ' techniques mapped)\n', '\u26a0 ', variables('Bottom2Tactic'), ' has low technique coverage (', string(variables('Bottom2Count')), ' techniques mapped)')"
+            },
             "Compose_AdaptiveCard": {
               "type": "Compose",
-              "runAfter": { "Compose_PortalLink": [ "Succeeded" ] },
+              "runAfter": { "Compose_AttentionRequired": [ "Succeeded" ] },
               "description": "Builds the Teams Adaptive Card payload. No Teams connector/action is wired up - add a 'Post adaptive card in a chat or channel' action after this one and use outputs('Compose_AdaptiveCard') as the card.",
               "inputs": {
                 "type": "AdaptiveCard",
@@ -240,15 +562,80 @@
                     "weight": "Bolder",
                     "size": "Medium",
                     "spacing": "Medium",
-                    "text": "Issue Identified"
+                    "text": "Detection Governance Health"
                   },
                   {
                     "type": "FactSet",
                     "facts": [
-                      { "title": "Unmapped Analytics Rule", "value": "@{string(outputs('Compose_IssueCounts')?['unmappedRules'])}" },
-                      { "title": "Disabled Analytics Rule", "value": "@{string(outputs('Compose_IssueCounts')?['disabledRules'])}" },
-                      { "title": "Connector Health Issue", "value": "@{string(outputs('Compose_IssueCounts')?['connectorHealthIssues'])}" }
+                      { "title": "Unmapped Analytics Rules", "value": "@{string(outputs('Compose_IssueCounts')?['unmappedRules'])}" },
+                      { "title": "Disabled Analytics Rules", "value": "@{string(outputs('Compose_IssueCounts')?['disabledRules'])}" },
+                      { "title": "Connector Health Issues", "value": "@{string(outputs('Compose_IssueCounts')?['connectorHealthIssues'])}" }
                     ]
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "MITRE ATT&CK Coverage Health"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "wrap": true,
+                    "spacing": "Small",
+                    "text": "Most Covered Tactics (by techniques mapped)"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "spacing": "None",
+                    "text": "@{outputs('Compose_MostCoveredText')}"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "wrap": true,
+                    "spacing": "Small",
+                    "text": "Least Covered Tactics (by techniques mapped)"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "spacing": "None",
+                    "text": "@{outputs('Compose_LeastCoveredText')}"
+                  },
+                  {
+                    "type": "FactSet",
+                    "spacing": "Medium",
+                    "facts": "@body('Select_TacticFacts')"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Disabled Rule Risk"
+                  },
+                  {
+                    "type": "FactSet",
+                    "facts": [
+                      { "title": "High Severity Rules Disabled", "value": "@{string(outputs('Compose_DisabledSeverityCounts')?['high'])}" },
+                      { "title": "Medium Severity Rules Disabled", "value": "@{string(outputs('Compose_DisabledSeverityCounts')?['medium'])}" },
+                      { "title": "Low Severity Rules Disabled", "value": "@{string(outputs('Compose_DisabledSeverityCounts')?['low'])}" }
+                    ]
+                  },
+                  {
+                    "type": "TextBlock",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "spacing": "Medium",
+                    "text": "Attention Required"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "wrap": true,
+                    "text": "@{outputs('Compose_AttentionRequired')}"
                   },
                   {
                     "type": "TextBlock",
