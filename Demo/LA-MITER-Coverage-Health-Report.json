@@ -7,7 +7,7 @@
   "parameters": {
     "logicAppName": {
       "type": "string",
-      "defaultValue": "LA-MITER-Coverage-Health-Report",
+      "defaultValue": "LA-MITRE-Coverage-Health-Report",
       "metadata": { "description": "Name of the Logic App (Consumption)." }
     },
     "location": {
