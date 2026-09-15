@@ -136,9 +136,16 @@
                 "variables": [ { "name": "TacticTechniques", "type": "array", "value": [] } ]
               }
             },
-            "Initialize_Top1Tactic": {
+            "Initialize_TacticTechniquesNext": {
               "type": "InitializeVariable",
               "runAfter": { "Initialize_TacticTechniques": [ "Succeeded" ] },
+              "inputs": {
+                "variables": [ { "name": "TacticTechniquesNext", "type": "array", "value": [] } ]
+              }
+            },
+            "Initialize_Top1Tactic": {
+              "type": "InitializeVariable",
+              "runAfter": { "Initialize_TacticTechniquesNext": [ "Succeeded" ] },
               "inputs": { "variables": [ { "name": "Top1Tactic", "type": "string", "value": "" } ] }
             },
             "Initialize_Top1Count": {
@@ -374,18 +381,18 @@
                   "runAfter": { "Filter_Rules_For_Tactic": [ "Succeeded" ] },
                   "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
                   "actions": {
-                    "Foreach_Technique_In_Rule": {
-                      "type": "Foreach",
-                      "foreach": "@coalesce(item()?['properties']?['techniques'], json('[]'))",
+                    "Union_Rule_Techniques": {
+                      "type": "SetVariable",
                       "runAfter": {},
-                      "runtimeConfiguration": { "concurrency": { "repetitions": 1 } },
-                      "actions": {
-                        "Append_Technique": {
-                          "type": "AppendToArrayVariable",
-                          "runAfter": {},
-                          "inputs": { "name": "TacticTechniques", "value": "@item()" }
-                        }
+                      "inputs": {
+                        "name": "TacticTechniquesNext",
+                        "value": "@union(variables('TacticTechniques'), coalesce(item()?['properties']?['techniques'], json('[]')))"
                       }
+                    },
+                    "Copy_Union_Result": {
+                      "type": "SetVariable",
+                      "runAfter": { "Union_Rule_Techniques": [ "Succeeded" ] },
+                      "inputs": { "name": "TacticTechniques", "value": "@variables('TacticTechniquesNext')" }
                     }
                   }
                 },
@@ -396,7 +403,7 @@
                     "name": "TacticCoverage",
                     "value": {
                       "tactic": "@items('Foreach_Tactic')?['label']",
-                      "count": "@length(union(variables('TacticTechniques'), json('[]')))"
+                      "count": "@length(variables('TacticTechniques'))"
                     }
                   }
                 }
