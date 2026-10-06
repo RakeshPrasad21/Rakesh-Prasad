@@ -91,3 +91,75 @@ CrowdstrikeAlerts
 | where TimeGenerated > ago(24h)
 | summarize AlertCount = count() by bin(TimeGenerated, 1h)
 | order by TimeGenerated asc
+
+
+
+//
+
+Querying Choke Points Across Attack Paths
+------------------------------------------
+ 
+// Identify top Choke Points based on incoming path connections
+ExposureGraphEdges
+| summarize IncomingPathCount = count(), 
+            SourceNodes = make_set(SourceNodeId, 10),
+            EdgeTypes = make_set(EdgeLabel, 10) 
+            by TargetNodeId
+| join kind=inner (
+    ExposureGraphNodes
+    | project TargetNodeId = NodeId, NodeName, Categories, NodeProperties
+) on TargetNodeId
+| extend Criticality = tostring(NodeProperties.RawEvent.criticalityLevel)
+| sort by IncomingPathCount desc
+| project NodeName, Categories, Criticality, IncomingPathCount, EdgeTypes, TargetNodeId
+ 
+Tracing 2-Hop Attack Paths to Critical Assets
+--------------------------------------------
+// Trace 2-Hop Attack Paths from Initial Entry Node to Target Asset
+ExposureGraphEdges
+| where EdgeLabel in ("CanAuthenticateAs", "IsAdminOf", "HasVulnerability", "CanExecuteCode")
+| project EntryNodeId = SourceNodeId, PivotNodeId = TargetNodeId, FirstHopLabel = EdgeLabel
+| join kind=inner (
+    ExposureGraphEdges
+    | where EdgeLabel in ("CanAuthenticateAs", "IsAdminOf", "CanExecuteCode")
+    | project PivotNodeId = SourceNodeId, TargetNodeId = TargetNodeId, SecondHopLabel = EdgeLabel
+) on PivotNodeId
+// Resolve Names & Criticality for Entry, Pivot (Choke Point), and Target
+| join kind=inner (ExposureGraphNodes | project EntryNodeId = NodeId, EntryName = NodeName) on EntryNodeId
+| join kind=inner (ExposureGraphNodes | project PivotNodeId = NodeId, PivotName = NodeName) on PivotNodeId
+| join kind=inner (
+    ExposureGraphNodes 
+    | project TargetNodeId = NodeId, TargetName = NodeName, TargetProperties = NodeProperties
+) on TargetNodeId
+| extend TargetCriticality = tostring(TargetProperties.RawEvent.criticalityLevel)
+| where TargetCriticality in ("Very High", "High")
+| project EntryName, FirstHopLabel, PivotName, SecondHopLabel, TargetName, TargetCriticality
+ 
+Finding External / Internet-Exposed Entry Points to Internal High-Value Targets
+------------------------------------------------------------------------------
+// Find internet-exposed assets connected directly or indirectly to admin nodes
+ExposureGraphNodes
+| where Categories has "Device" and NodeProperties.RawEvent.isInternetFacing == true
+| project SourceNodeId = NodeId, EntryPointName = NodeName
+| join kind=inner (
+    ExposureGraphEdges
+) on SourceNodeId
+| join kind=inner (
+    ExposureGraphNodes
+    | project TargetNodeId = NodeId, TargetName = NodeName, TargetCategories = Categories
+) on TargetNodeId
+| project EntryPointName, EdgeLabel, TargetName, TargetCategories
+ 
+Graph Operators: Using make-graph (Graph Query Language)
+----------------------------------------------------------
+// Path traversal using graph-match operator
+ExposureGraphNodes
+| make-graph SourceNodeId --> TargetNodeId with ExposureGraphEdges
+| graph-match (entry)-[e1]->(chokepoint)-[e2]->(target)
+  where entry.NodeProperties.RawEvent.isInternetFacing == true
+    and target.NodeProperties.RawEvent.criticalityLevel == "Very High"
+  project EntryNode = entry.NodeName, 
+          FirstHop = e1.EdgeLabel, 
+          ChokePointNode = chokepoint.NodeName, 
+          SecondHop = e2.EdgeLabel, 
+          TargetNode = target.NodeName
