@@ -1,0 +1,143 @@
+//1. First, use this discovery query
+//User is part of an attack path	User + Security Team
+
+ExposureGraphEdges
+| where SourceNodeLabel contains "identity"
+    or TargetNodeLabel contains "identity"
+    or SourceNodeCategories has "identity"
+    or TargetNodeCategories has "identity"
+| summarize Count=count() by
+    EdgeLabel,
+    SourceNodeLabel,
+    TargetNodeLabel
+| order by Count desc
+
+//2. Basic KQL — user connected to a critical asset
+
+let RelevantNodes =
+    ExposureGraphNodes
+    | where
+        set_has_element(Categories, "identity")
+        or set_has_element(Categories, "device")
+        or set_has_element(Categories, "user_account")
+    | project
+        NodeId,
+        NodeLabel,
+        NodeName,
+        Categories,
+        EntityIds,
+        NodeProperties;
+ExposureGraphEdges
+| where EdgeLabel in~ (
+    "Can Authenticate As",
+    "CanRemoteInteractiveLogonTo",
+    "member of",
+    "can authenticate to",
+    "credentials of",
+    "authenticate as",
+    "affecting"
+)
+| make-graph SourceNodeId --> TargetNodeId
+    with RelevantNodes on NodeId
+| graph-match (User)-[Edge]->(Target)
+    where
+        set_has_element(User.Categories, "identity")
+        and
+        (
+            set_has_element(Target.Categories, "device")
+            or set_has_element(Target.Categories, "user_account")
+        )
+    project
+        UserName = User.NodeName,
+        UserEntityIds = User.EntityIds,
+        Relationship = Edge.EdgeLabel,
+        TargetName = Target.NodeName,
+        TargetLabel = Target.NodeLabel,
+        TargetEntityIds = Target.EntityIds
+        
+//3. Better query — user is actually in a multi-hop path
+
+let RelevantNodes =
+    ExposureGraphNodes
+    | where
+        set_has_element(Categories, "identity")
+        or set_has_element(Categories, "device")
+    | project
+        NodeId,
+        NodeLabel,
+        NodeName,
+        Categories,
+        EntityIds,
+        NodeProperties;
+ExposureGraphEdges
+| where EdgeLabel in~ (
+    "Can Authenticate As",
+    "CanRemoteInteractiveLogonTo",
+    "can authenticate to",
+    "authenticate as",
+    "member of"
+)
+| make-graph SourceNodeId --> TargetNodeId
+    with RelevantNodes on NodeId
+| graph-match
+    (Entry)-[Edge1]->(User)-[Edge2]->(CriticalAsset)
+    where
+        set_has_element(User.Categories, "identity")
+        and set_has_element(Entry.Categories, "device")
+        and set_has_element(CriticalAsset.Categories, "device")
+        and isnotnull(CriticalAsset.NodeProperties.rawData.criticalityLevel)
+    project
+        UserName = User.NodeName,
+        UserEntityIds = User.EntityIds,
+        EntryPoint = Entry.NodeName,
+        EntryPointType = Entry.NodeLabel,
+        UserRelationship = Edge1.EdgeLabel,
+        TargetRelationship = Edge2.EdgeLabel,
+        CriticalAsset = CriticalAsset.NodeName,
+        CriticalAssetType = CriticalAsset.NodeLabel,
+        Criticality = CriticalAsset.NodeProperties.rawData.criticalityLevel.criticalityLevel
+
+ //4. I would make the notification query more targeted
+ //For your actual automation, I'd modify it to return only high-value paths.
+
+ let RelevantNodes =
+    ExposureGraphNodes
+    | where
+        set_has_element(Categories, "identity")
+        or set_has_element(Categories, "device")
+    | project
+        NodeId,
+        NodeLabel,
+        NodeName,
+        Categories,
+        EntityIds,
+        NodeProperties;
+ExposureGraphEdges
+| where EdgeLabel in~ (
+    "Can Authenticate As",
+    "CanRemoteInteractiveLogonTo",
+    "can authenticate to",
+    "authenticate as"
+)
+| make-graph SourceNodeId --> TargetNodeId
+    with RelevantNodes on NodeId
+| graph-match
+    (Entry)-[Edge1]->(User)-[Edge2]->(CriticalAsset)
+    where
+        set_has_element(User.Categories, "identity")
+        and set_has_element(Entry.Categories, "device")
+        and set_has_element(CriticalAsset.Categories, "device")
+        and
+        isnotnull(CriticalAsset.NodeProperties.rawData.criticalityLevel)
+        and
+        CriticalAsset.NodeProperties.rawData.criticalityLevel.criticalityLevel >= 4
+    project
+        UserName = User.NodeName,
+        UserEntityIds = User.EntityIds,
+        EntryPoint = Entry.NodeName,
+        EntryPointType = Entry.NodeLabel,
+        CriticalAsset = CriticalAsset.NodeName,
+        Criticality =
+            CriticalAsset.NodeProperties.rawData.criticalityLevel.criticalityLevel,
+        Relationship1 = Edge1.EdgeLabel,
+        Relationship2 = Edge2.EdgeLabel
