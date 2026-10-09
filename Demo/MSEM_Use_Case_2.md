@@ -191,6 +191,34 @@ ExposureGraphEdges
 
 > **Note:** The `TargetNodeName` filtering above is a starting point only. Once we inspect your actual MSEM records, replace these generic string filters with the exact privilege/role attributes available in your tenant.
 
+Identify the users associated with these groups
+```
+let CandidateGroups =
+    ExposureGraphNodes
+    | where NodeLabel =~ "group"
+    | where NodeName contains "Admin"
+        or NodeName contains "Administrator"
+        or NodeName contains "Privileged"
+        or NodeName contains "PRIV"
+        or NodeName contains "Owner"
+    | project
+        GroupNodeId = NodeId,
+        GroupName = NodeName;
+ExposureGraphEdges
+| where EdgeLabel =~ "has role on"
+| where SourceNodeLabel =~ "user"
+| where TargetNodeLabel =~ "group"
+| join kind=inner CandidateGroups
+    on $left.TargetNodeId == $right.GroupNodeId
+| project
+    User = SourceNodeName,
+    UserNodeId = SourceNodeId,
+    GroupName,
+    GroupNodeId,
+    Relationship = EdgeLabel
+| distinct User, UserNodeId, GroupName, GroupNodeId, Relationship
+| order by GroupName asc
+```
 ---
 
 # 8. Recommended Severity Model
