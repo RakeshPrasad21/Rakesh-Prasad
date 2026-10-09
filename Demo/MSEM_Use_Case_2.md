@@ -219,6 +219,46 @@ ExposureGraphEdges
 | distinct User, UserNodeId, GroupName, GroupNodeId, Relationship
 | order by GroupName asc
 ```
+KQL — Identify candidate privileged groups and associated users
+
+Run this query first. It uses the relationship direction observed in your tenant and includes the group names found in your screenshot.
+```
+let CandidateGroups =
+    ExposureGraphNodes
+    | where NodeLabel =~ "group"
+    | where
+        NodeName contains "Admin"
+        or NodeName contains "Administrator"
+        or NodeName contains "Privileged"
+        or NodeName contains "PRIV"
+        or NodeName contains "Owner"
+    | project
+        GroupNodeId = NodeId,
+        GroupName = NodeName,
+        GroupProperties = NodeProperties;
+let UserGroupRelationships =
+    ExposureGraphEdges
+    | where EdgeLabel =~ "has role on"
+    | where SourceNodeLabel =~ "user"
+    | where TargetNodeLabel =~ "group"
+    | project
+        User = SourceNodeName,
+        UserNodeId = SourceNodeId,
+        GroupNodeId = TargetNodeId,
+        Relationship = EdgeLabel;
+UserGroupRelationships
+| join kind=inner CandidateGroups on GroupNodeId
+| summarize
+    CandidateGroups = make_set(GroupName),
+    GroupCount = dcount(GroupNodeId)
+    by User, UserNodeId
+| project
+    User,
+    UserNodeId,
+    GroupCount,
+    CandidateGroups
+| order by GroupCount desc
+```
 ---
 
 # 8. Recommended Severity Model
