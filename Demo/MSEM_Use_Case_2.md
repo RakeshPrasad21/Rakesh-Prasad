@@ -259,6 +259,34 @@ UserGroupRelationships
     CandidateGroups
 | order by GroupCount desc
 ```
+Investigate the service account associated with 220 groups
+```
+let CandidateGroups =
+    ExposureGraphNodes
+    | where NodeLabel =~ "group"
+    | where
+        NodeName contains "Admin"
+        or NodeName contains "Administrator"
+        or NodeName contains "Privileged"
+        or NodeName contains "PRIV"
+        or NodeName contains "Owner"
+    | project GroupNodeId = NodeId, GroupName = NodeName;
+ExposureGraphEdges
+| where EdgeLabel =~ "has role on"
+| where SourceNodeLabel =~ "user"
+| where TargetNodeLabel =~ "group"
+| project
+    User = SourceNodeName,
+    UserNodeId = SourceNodeId,
+    GroupNodeId = TargetNodeId
+| join kind=inner CandidateGroups on GroupNodeId
+| summarize
+    CandidateGroupCount = dcount(GroupNodeId),
+    CandidateGroups = make_set(GroupName, 250)
+    by User, UserNodeId
+| where CandidateGroupCount >= 20
+| project User, UserNodeId, CandidateGroupCount, CandidateGroups
+```
 ---
 
 # 8. Recommended Severity Model
