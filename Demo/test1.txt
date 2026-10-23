@@ -1,0 +1,227 @@
+Act as a Senior Microsoft Security Technical Architect specializing in Microsoft Security Exposure Management (MSEM), Microsoft Sentinel, Microsoft Defender, and Microsoft Teams Adaptive Cards.
+
+### 1. Objective
+
+I have uploaded CSV files containing actual MSEM query results for six security use cases. The last three use cases do not currently have any log records.
+
+Analyze the uploaded CSV files and create a realistic, management-ready Microsoft Teams security notification dashboard using the Microsoft Teams Adaptive Card JSON format.
+
+**Critical requirements:**
+
+* Use actual values from the uploaded CSV files.
+* Do not use placeholders such as `<UserName>`, `<Severity>`, `<Count>`, `TBD`, `N/A`, `Example User`, or fabricated identities.
+* Do not invent findings, identities, device names, group names, counts, timestamps, severity levels, or remediation details.
+* Do not populate missing use cases with sample or fabricated security findings.
+* If a field is not present in the CSV, do not pretend that its value is known.
+* This is a sample notification based on the provided data, not a live connection to Microsoft Sentinel or Microsoft Defender.
+
+### 2. Analyze the uploaded CSV files
+
+First, inspect all uploaded CSV files and determine:
+
+1. The number of files and records in each file.
+2. Which security use case each file represents.
+3. The available columns and their data types.
+4. The actual identities, devices, groups, resources, relationships, and other entities represented.
+5. Whether multiple records represent the same identity or underlying security finding.
+6. Whether duplicate records exist across different use cases.
+7. Which values can be reliably used for management reporting and notification.
+
+Use the actual column names from the CSV files. Do not assume that every file has the same schema.
+
+For MSEM graph data, relevant fields may include:
+
+* SourceNodeId
+* SourceNodeName
+* SourceNodeLabel
+* TargetNodeId
+* TargetNodeName
+* TargetNodeLabel
+* EdgeLabel
+
+These are examples of possible columns, not a requirement to invent missing columns.
+
+### 3. Represent the six available use cases
+
+Map the available records to the following use cases where supported by the CSV data:
+
+* UC-01: Identity appears in an attack path.
+* UC-02: Potentially privileged identity or excessive privilege.
+* UC-03: Identity acts as a choke point in an attack path.
+* UC-04: Device exposure.
+* UC-05: Identity belongs to a potentially risky group.
+* UC-06: Attack path reaches a user account.
+
+Use the actual mapping established by the CSV contents. If the filenames or records indicate a different mapping, report that discrepancy rather than silently assigning the wrong use-case identifier.
+
+The last three use cases have no available log records in this sample.
+
+Represent them as:
+
+* No records available in the supplied dataset.
+* No findings demonstrated for these use cases in this sample.
+
+Do not interpret missing records as proof that the environment is secure or that no exposure exists.
+
+### 4. Consolidate the security findings
+
+Create a consolidated view across all six use cases.
+
+Use a stable identifier such as EntityId or NodeId to correlate records when the data supports that relationship. Do not merge entities merely because they have similar display names.
+
+For each consolidated finding, retain the fields that are actually supported by the data:
+
+* UseCaseId
+* EntityName
+* EntityId
+* EntityType
+* FindingType
+* Relationship
+* Evidence
+* Severity, only when explicitly available or supported by a documented rule
+* FirstSeen, only when available
+* LastSeen, only when available
+* RecommendedAction
+
+Do not create a severity score or claim that a finding is critical merely because a record appears in multiple queries.
+
+Where a severity field is absent, do not fabricate a severity. Use a neutral description such as "Severity not provided in source data" only if necessary to explain the limitation.
+
+For potentially privileged identities, distinguish between a candidate relationship and a confirmed privileged role. A group name containing words such as Admin, Owner, or Privileged is not sufficient evidence by itself to confirm effective privilege.
+
+### 5. Create the management summary
+
+Prepare a concise summary using actual CSV data.
+
+Include:
+
+* Total source records analyzed.
+* Total distinct entities identified, where reliable identifiers permit deduplication.
+* Number of records and distinct entities for each of the six use cases.
+* Number of findings that can be correlated across multiple use cases.
+* Highest-priority findings supported by the source evidence.
+* Data limitations and use cases without records.
+
+Clearly distinguish between:
+
+* Source records.
+* Distinct entities.
+* Consolidated findings.
+
+Do not treat these three measures as interchangeable.
+
+If the available data does not support a particular metric, omit that metric or explicitly state the limitation.
+
+### 6. Generate the Microsoft Teams Adaptive Card
+
+Create one consolidated Microsoft Teams Adaptive Card using Adaptive Card JSON.
+
+Use Adaptive Card schema version 1.5 or another version supported by the intended Teams delivery method.
+
+The card should contain the following sections:
+
+**A. Header**
+
+* Title: MSEM Security Exposure Summary.
+* Reporting context: Sample generated from uploaded CSV data.
+* Reporting timestamp: Use the actual analysis or generation timestamp only if available from the execution environment.
+
+**B. Executive summary**
+
+* Actual total record count.
+* Actual distinct entity count, if reliably calculated.
+* Actual number of represented use cases.
+* Actual number of use cases without records.
+
+**C. Use-case summary**
+Display all six use cases with:
+
+* Use-case ID.
+* Short description.
+* Actual record count.
+* Actual distinct entity count, if calculable.
+* Status based on the available dataset.
+
+Use an explicit status such as "Records available" or "No records in supplied dataset". Do not use "Healthy", "Secure", or "No risk" for a use case with no records.
+
+**D. Priority findings**
+Display the most important findings supported by the actual data.
+
+For each finding, include only available and reliable information:
+
+* Entity name.
+* Entity type.
+* Use case.
+* Actual relationship or evidence.
+* Severity, if available.
+* Recommended validation or remediation action.
+
+Limit the main card to a manageable number of priority findings. If the dataset contains more findings, summarize the remainder using actual counts and provide a separate detailed table.
+
+**E. Consolidated entity view**
+Where one entity appears in multiple use cases, display it once and list the associated use cases and evidence.
+
+Do not inflate the entity count when the same entity appears in multiple CSV files.
+
+**F. Data limitations**
+Clearly mention that the last three use cases contain no records in the supplied dataset. Explain that this is a data-availability limitation, not confirmation that those risks are absent.
+
+**G. Footer**
+Include a short note that the notification represents a sample based on supplied data and is not a live security monitoring feed.
+
+### 7. Adaptive Card implementation requirements
+
+Generate complete, valid Adaptive Card JSON.
+
+Requirements:
+
+* Use actual CSV values in the card.
+* Use valid Adaptive Card elements such as AdaptiveCard, Container, TextBlock, FactSet, ColumnSet, and Action.OpenUrl only when appropriate.
+* Ensure JSON syntax is valid.
+* Escape special characters correctly.
+* Keep the card readable in Microsoft Teams desktop and mobile clients.
+* Avoid unsupported properties and oversized cards.
+* Do not create fake dashboard links, action URLs, incident IDs, or remediation buttons.
+* Do not include buttons that claim to perform actions unless an actual working destination or implementation exists.
+* Do not include credentials, secrets, or sensitive information that is unnecessary for the sample.
+* Do not hardcode example identities or invented data into the final JSON.
+
+### 8. Deliverables
+
+Produce the following outputs in this order:
+
+**Deliverable 1 — CSV analysis**
+A table showing each input filename, use case, source record count, distinct entity count where calculable, and any data-quality issues.
+
+**Deliverable 2 — Consolidated findings**
+A table containing actual findings from the CSV files, with duplicate entities correlated where supported.
+
+**Deliverable 3 — Executive summary**
+A concise management summary based entirely on the uploaded data.
+
+**Deliverable 4 — Complete Adaptive Card JSON**
+Provide the full JSON payload with actual values from the CSV files. Do not provide a template containing placeholders.
+
+**Deliverable 5 — Teams preview**
+Show a readable preview of how the card will appear in Teams. If you cannot render an interactive card, provide a faithful text-based preview and clearly distinguish it from a rendered Adaptive Card.
+
+**Deliverable 6 — Validation**
+Validate the JSON syntax and Adaptive Card structure. Report any issues that cannot be verified in the current environment.
+
+**Deliverable 7 — Implementation guidance**
+Briefly explain how the generated JSON can be used in a Microsoft Teams Workflow or an Azure Logic App to send the card. Do not claim that the card has been deployed or sent.
+
+### 9. Final validation rules
+
+Before producing the final answer, verify that:
+
+1. Every displayed count comes from the actual CSV data.
+2. Distinct entity counts are calculated using reliable identifiers.
+3. Duplicate records have not inflated the consolidated metrics.
+4. No identities, findings, severity values, or evidence have been invented.
+5. The three use cases without records are clearly marked as having no records in the supplied dataset.
+6. Potentially privileged identities are not incorrectly presented as confirmed privileged accounts.
+7. The Adaptive Card JSON is complete and syntactically valid.
+8. The output is suitable for a technical demonstration to security management.
+
+If a required value cannot be derived from the uploaded files, explain the limitation rather than fabricating a value.
