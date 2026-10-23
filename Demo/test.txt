@@ -1,0 +1,257 @@
+# Role
+
+Act as a Microsoft Security Technical Architect specializing in Microsoft Security Exposure Management (MSEM), Microsoft Sentinel, Microsoft Defender, and Microsoft Teams Adaptive Cards.
+
+# Objective
+
+I have uploaded CSV files containing actual query results for six MSEM security use cases. The remaining three use cases currently have no log records.
+
+Analyze all uploaded CSV files and create a professional, management-friendly **Microsoft Teams Adaptive Card dashboard** that consolidates the six use cases with actual data into a single notification.
+
+The objective is to demonstrate how MSEM security findings can be presented to security management, the SOC team, and the IAM team through one consolidated Teams notification.
+
+## 1. Analyze the CSV files first
+
+Before designing the Adaptive Card:
+
+1. Read every uploaded CSV file completely.
+2. Identify which file corresponds to each of the nine MSEM use cases using its filename, column names, and actual data.
+3. Inspect the column names and sample records to understand the data structure.
+4. Calculate the actual record count for each use case.
+5. Identify unique identities, users, devices, groups, credentials, resources, attack paths, and other entities where the available columns support these classifications.
+6. Identify duplicate records across different use cases using stable entity identifiers wherever possible.
+7. Determine which fields contain useful evidence, severity, risk indicators, entity names, relationship information, and recommended actions.
+8. Use the actual column names and values present in the files. Do not assume columns exist if they are absent.
+9. Distinguish raw relationship counts from unique entities and unique security findings.
+
+Do not modify, fabricate, or silently discard the source data.
+
+If a value is missing, do not invent it. If an entity cannot be reliably identified or deduplicated, state the limitation.
+
+## 2. MSEM use cases
+
+Organize the dashboard around these nine use cases:
+
+| Use Case | Description                                            |
+| -------- | ------------------------------------------------------ |
+| UC-01    | User or identity appears in an attack path             |
+| UC-02    | Potentially privileged identity or excessive privilege |
+| UC-03    | Identity identified as a potential choke point         |
+| UC-04    | Exposed or potentially compromised device              |
+| UC-05    | Identity associated with a critical asset              |
+| UC-06    | Exposed credentials or secrets                         |
+| UC-07    | Risky group membership                                 |
+| UC-08    | Attack path reaches a user account                     |
+| UC-09    | High-risk identity exposure                            |
+
+Map the CSV files to these use cases based on their actual contents. If a mapping cannot be established confidently, explicitly identify it as unconfirmed rather than guessing.
+
+### Handling the three use cases without logs
+
+Three use cases currently have no records in the supplied CSV files.
+
+For these use cases:
+
+* Display the actual use case ID and description.
+* Display a record count of zero only if the corresponding query has actually been executed and returned zero records.
+* If the query has not been executed or no CSV was supplied, display "No sample data available".
+* Do not invent sample identities, devices, findings, or counts.
+* Do not interpret missing logs as proof that the environment is secure.
+* Do not mark a use case as successful, resolved, or healthy merely because no records are available.
+
+Include these use cases in the dashboard so management can see the complete scope of all nine use cases.
+
+## 3. Create one consolidated Teams Adaptive Card
+
+Generate a single, polished Microsoft Teams Adaptive Card using the actual CSV data.
+
+Use Adaptive Cards schema version 1.5, with compatible elements and actions for the intended Teams environment.
+
+Design the card with the following sections.
+
+### Section A: Executive security summary
+
+Show the following metrics where they can be calculated reliably from the source data:
+
+* Total records across the six supplied use cases.
+* Total unique entities identified.
+* Number of identities associated with findings.
+* Number of devices associated with findings.
+* Number of use cases with actual records.
+* Number of use cases without supplied log records.
+* Severity distribution, only if severity is present and meaningful in the source data.
+
+Avoid double-counting entities appearing in multiple use cases.
+
+Clearly distinguish the number of raw records from the number of unique entities and unique findings.
+
+### Section B: Use-case status overview
+
+Present all nine use cases in a compact table or set of cards.
+
+For each use case, show:
+
+* Use case ID.
+* Use case description.
+* Actual record count or appropriate data-availability status.
+* Number of unique entities, if calculable.
+* Highest observed severity, if the source contains a valid severity field.
+* A short finding summary derived from the CSV.
+
+Use visual indicators such as High, Medium, Low, or No sample data only when supported by the source data.
+
+Do not assign severity based solely on the number of records.
+
+### Section C: Top security findings
+
+Display the most important findings from the supplied data.
+
+For each finding, include the available fields that are relevant:
+
+* Entity name.
+* Entity type.
+* Use case.
+* Observed relationship or exposure.
+* Relevant evidence.
+* Severity or risk score, if available.
+* Recommended investigation or remediation action.
+
+Prioritize findings based on valid severity and risk information present in the CSV files.
+
+If the CSV files contain no authoritative severity field, describe the findings without assigning an invented severity.
+
+Do not include every raw record in the Adaptive Card. Select a concise, representative set of important findings while preserving accurate counts for the full dataset.
+
+### Section D: Consolidated identity and entity exposure
+
+Where the data supports it, identify entities that appear in multiple use cases.
+
+For example, if the same identity appears in an attack-path finding, a privileged-access finding, and a high-risk identity finding, display one consolidated identity entry with all three associated findings.
+
+Use a stable identifier for matching entities whenever available. Do not merge different entities simply because their display names are similar.
+
+Show:
+
+* Entity name and type.
+* Associated use cases.
+* Number of distinct associated findings, if reliably calculable.
+* Evidence supporting the consolidated entry.
+* Recommended next action.
+
+Do not treat an association, graph relationship, or candidate group membership as proof of privilege or compromise unless the supplied data establishes that conclusion.
+
+### Section E: Recommended actions
+
+Provide practical actions based on the actual findings.
+
+Examples of appropriate action categories include:
+
+* Validate potentially privileged identities with the IAM team.
+* Investigate confirmed or suspected attack paths with the SOC team.
+* Review exposed credentials and secrets with the security team.
+* Validate device exposure and identify the responsible owner.
+* Review identities associated with critical assets.
+* Investigate risky group membership.
+
+Only recommend actions relevant to findings actually present in the CSV data.
+
+Distinguish confirmed observations from items requiring validation.
+
+### Section F: Management footer
+
+Include:
+
+* Report title: MSEM Consolidated Security Exposure Summary.
+* Data scope: six supplied use cases with CSV records, plus the remaining three use cases with their actual data-availability status.
+* Data source: supplied CSV exports of MSEM-related query results.
+* A concise note that this is a sample dashboard based on the supplied data, not a live, automatically refreshing security dashboard.
+
+Do not fabricate a report timestamp, data collection period, workspace name, tenant name, or dashboard URL.
+
+## 4. Adaptive Card design requirements
+
+Create a professional enterprise-security design suitable for a Microsoft Teams channel notification.
+
+Requirements:
+
+* Use a clear title and executive summary.
+* Use FactSet, ColumnSet, Container, TextBlock, Table, and ActionSet elements where supported by the target Teams client.
+* Use appropriate emphasis for important findings.
+* Use compact tables or containers to present the nine use cases.
+* Make the card readable on both desktop and mobile.
+* Avoid excessive text, nested tables, and unnecessarily large payloads.
+* Include only meaningful information derived from the source data.
+* Use actual entity names, identifiers, counts, and evidence from the uploaded CSV files.
+* Do not expose unnecessary personal or sensitive information.
+* Do not add buttons that point to invented URLs or pretend to execute actions that have not been configured.
+
+If a dashboard URL is not supplied, omit the dashboard-navigation button. If no remediation workflow is configured, show recommended actions as text rather than creating misleading action buttons.
+
+## 5. Strict no-placeholder requirement
+
+This is a mandatory requirement.
+
+Do not use:
+
+* Placeholder values.
+* Fake user names.
+* Fake device names.
+* Sample security findings invented for illustration.
+* Fictional counts or severity values.
+* Generic labels such as "User A", "Device 1", or "Finding XYZ".
+* Expressions such as "{{EntityName}}", "${count}", or "<insert value>" in the final populated card.
+* Fabricated dashboard links or remediation URLs.
+
+Populate the card with the actual values extracted from the uploaded CSV files.
+
+If a field is unavailable, omit it or explicitly indicate that the source data does not contain it.
+
+For the three use cases without log records, use the appropriate data-availability status instead of fabricated findings.
+
+## 6. Deliverables
+
+Produce all the following:
+
+**Deliverable 1 — Data analysis**
+
+* List each CSV file and its mapped use case.
+* Show actual record counts.
+* Summarize the important findings and unique entities.
+* Identify the three use cases without log records.
+* Explain any limitations in the source data or deduplication.
+
+**Deliverable 2 — Populated Adaptive Card**
+
+* Generate the complete Adaptive Card JSON.
+* Use actual values from the CSV files.
+* Ensure that the JSON is syntactically valid.
+* Use the Adaptive Cards schema version 1.5.
+* Ensure that the card is designed for a Teams message.
+* Do not leave data placeholders in the final JSON.
+
+**Deliverable 3 — Visual preview**
+If your environment supports Adaptive Card rendering, render the completed card so I can review its appearance.
+
+If direct rendering is unavailable, provide a clear preview of the card's layout and explain how to preview the JSON using the official Adaptive Cards Designer.
+
+**Deliverable 4 — Implementation guidance**
+Briefly explain how to use the populated Adaptive Card JSON in a Microsoft Power Automate or Azure Logic Apps workflow to send the notification to Microsoft Teams.
+
+Keep the implementation guidance separate from the populated card.
+
+## 7. Validation before completion
+
+Before returning the final result:
+
+1. Verify all record counts against the uploaded CSV files.
+2. Verify that the use-case mapping is supported by the data.
+3. Check that consolidated entity counts do not double-count records incorrectly.
+4. Ensure that every displayed finding is supported by source data.
+5. Validate the Adaptive Card JSON syntax and required properties.
+6. Check for missing fields and fabricated values.
+7. Ensure that the three use cases without records are represented accurately.
+8. Confirm that the final card contains no unresolved data placeholders.
+
+If the files are too large to process completely or their structures prevent reliable analysis, explain the limitation rather than claiming that the entire dataset was validated.
+
+**Final objective:** Deliver one management-ready Microsoft Teams Adaptive Card that demonstrates the actual security findings from the six supplied use cases, shows the status of all nine use cases, and consolidates overlapping findings without inventing data.
