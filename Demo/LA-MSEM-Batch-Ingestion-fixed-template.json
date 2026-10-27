@@ -1,0 +1,358 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "3.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "LA-MSEM-Batch-Ingestion"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "dcrImmutableId": {
+      "type": "string",
+      "defaultValue": "dcr-cb8ea574541944e6b75fc9aa34597ed3"
+    },
+    "dcrIngestionEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Full HTTPS Logs ingestion endpoint from the Data Collection Endpoint."
+      }
+    },
+    "streamName": {
+      "type": "string",
+      "defaultValue": "Custom-MSEMLogs_CL"
+    },
+    "batchSize": {
+      "type": "int",
+      "defaultValue": 100,
+      "minValue": 1,
+      "maxValue": 500
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "3.0.0.0",
+          "parameters": {
+            "dcrIngestionEndpoint": {
+              "type": "String"
+            },
+            "dcrImmutableId": {
+              "type": "String"
+            },
+            "streamName": {
+              "type": "String"
+            },
+            "batchSize": {
+              "type": "Int"
+            }
+          },
+          "triggers": {
+            "When_HTTP_Request_Is_Received": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "method": "POST",
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "records"
+                  ],
+                  "properties": {
+                    "records": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "actions": {
+            "Initialize_Index": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "Index",
+                    "type": "integer",
+                    "value": 0
+                  }
+                ]
+              },
+              "runAfter": {}
+            },
+            "Initialize_TotalRecords": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "TotalRecords",
+                    "type": "integer",
+                    "value": "@length(triggerBody()?['records'])"
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_Index": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Initialize_BatchCount": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "BatchCount",
+                    "type": "integer",
+                    "value": 0
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_TotalRecords": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Initialize_ProcessedRecords": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "ProcessedRecords",
+                    "type": "integer",
+                    "value": 0
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_BatchCount": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Initialize_HasFailed": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "HasFailed",
+                    "type": "boolean",
+                    "value": false
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_ProcessedRecords": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Ingest_Batches": {
+              "type": "Until",
+              "expression": "@or(greaterOrEquals(variables('Index'), variables('TotalRecords')), equals(variables('HasFailed'), true))",
+              "limit": {
+                "count": 5000,
+                "timeout": "PT1H"
+              },
+              "actions": {
+                "Compose_Current_Batch": {
+                  "type": "Compose",
+                  "inputs": "@take(skip(triggerBody()?['records'], variables('Index')), parameters('batchSize'))",
+                  "runAfter": {}
+                },
+                "Send_Batch_To_DCR": {
+                  "type": "Http",
+                  "inputs": {
+                    "method": "POST",
+                    "uri": "@{concat(parameters('dcrIngestionEndpoint'), '/dataCollectionRules/', parameters('dcrImmutableId'), '/streams/', parameters('streamName'), '?api-version=2023-01-01')}",
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": "@outputs('Compose_Current_Batch')",
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://monitor.azure.com/"
+                    }
+                  },
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  },
+                  "runAfter": {
+                    "Compose_Current_Batch": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Increment_BatchCount": {
+                  "type": "IncrementVariable",
+                  "inputs": {
+                    "name": "BatchCount",
+                    "value": 1
+                  },
+                  "runAfter": {
+                    "Send_Batch_To_DCR": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Increment_ProcessedRecords": {
+                  "type": "IncrementVariable",
+                  "inputs": {
+                    "name": "ProcessedRecords",
+                    "value": "@length(outputs('Compose_Current_Batch'))"
+                  },
+                  "runAfter": {
+                    "Increment_BatchCount": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Increment_Index": {
+                  "type": "IncrementVariable",
+                  "inputs": {
+                    "name": "Index",
+                    "value": "@length(outputs('Compose_Current_Batch'))"
+                  },
+                  "runAfter": {
+                    "Increment_ProcessedRecords": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Set_HasFailed": {
+                  "type": "SetVariable",
+                  "inputs": {
+                    "name": "HasFailed",
+                    "value": true
+                  },
+                  "runAfter": {
+                    "Send_Batch_To_DCR": [
+                      "Failed",
+                      "TimedOut"
+                    ]
+                  }
+                },
+                "Capture_DCR_Error": {
+                  "type": "Compose",
+                  "inputs": {
+                    "message": "DCR ingestion failed. The current batch was not counted as successful.",
+                    "httpStatus": "@coalesce(actions('Send_Batch_To_DCR')?['outputs']?['statusCode'], 'unknown')",
+                    "errorBody": "@coalesce(actions('Send_Batch_To_DCR')?['outputs']?['body'], actions('Send_Batch_To_DCR')?['error']?['message'], 'No response body available')",
+                    "failedBatchIndex": "@variables('Index')",
+                    "totalRecords": "@variables('TotalRecords')",
+                    "batchSize": "@length(outputs('Compose_Current_Batch'))"
+                  },
+                  "runAfter": {
+                    "Set_HasFailed": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "runAfter": {
+                "Initialize_HasFailed": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Check_Ingestion_Result": {
+              "type": "If",
+              "expression": {
+                "equals": [
+                  "@variables('HasFailed')",
+                  true
+                ]
+              },
+              "actions": {
+                "Terminate_Failed": {
+                  "type": "Terminate",
+                  "inputs": {
+                    "runStatus": "Failed",
+                    "runError": {
+                      "code": "DCRIngestionFailed",
+                      "message": "DCR ingestion failed. Inspect Capture_DCR_Error in run history."
+                    }
+                  },
+                  "runAfter": {}
+                }
+              },
+              "else": {
+                "actions": {
+                  "Return_Success_Summary": {
+                    "type": "Response",
+                    "kind": "Http",
+                    "inputs": {
+                      "statusCode": 200,
+                      "body": {
+                        "status": "Succeeded",
+                        "totalRecords": "@variables('TotalRecords')",
+                        "processedRecords": "@variables('ProcessedRecords')",
+                        "successfulBatches": "@variables('BatchCount')",
+                        "failedBatches": 0,
+                        "message": "All records were accepted by the DCR ingestion endpoint."
+                      }
+                    },
+                    "runAfter": {}
+                  }
+                }
+              },
+              "runAfter": {
+                "Ingest_Batches": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "dcrIngestionEndpoint": {
+            "value": "[parameters('dcrIngestionEndpoint')]"
+          },
+          "dcrImmutableId": {
+            "value": "[parameters('dcrImmutableId')]"
+          },
+          "streamName": {
+            "value": "[parameters('streamName')]"
+          },
+          "batchSize": {
+            "value": "[parameters('batchSize')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppName": {
+      "type": "string",
+      "value": "[parameters('logicAppName')]"
+    },
+    "dcrImmutableId": {
+      "type": "string",
+      "value": "[parameters('dcrImmutableId')]"
+    },
+    "batchSize": {
+      "type": "int",
+      "value": "[parameters('batchSize')]"
+    }
+  }
+}
