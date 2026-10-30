@@ -1,0 +1,19 @@
+[
+	{
+		"TimeGenerated":"2026-10-26T09:00:00Z",
+		"UseCase":"AutenticationPaths",
+		"RecoreId":"Auth-234234fdjlkf3r23sakdlf32324",
+		"AssetName":"Critical Asset",
+		"AssetType":"Server",
+		"Severity":"High",
+		"Status":"Active",
+		"Category":"Attack Path",
+		"SubCategory":"Authentication",
+		"Details":"Account can authenticate to critical asset",
+		"JsonData":{
+		"SourceNodeID":"234234fdjlkf3r23sakdlf32324",
+		"TargetNodeID":"fsdf3424fewr3443243232e332f"}
+
+		
+	}
+]
