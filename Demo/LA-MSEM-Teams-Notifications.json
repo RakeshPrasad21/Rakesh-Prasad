@@ -1,0 +1,444 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "LA-MSEM-Teams-Notifications",
+      "metadata": {
+        "description": "Name of the daily Consumption Logic App that queries MSEMLogs_CL and builds a Teams adaptive card digest."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for the Logic App."
+      }
+    },
+    "dailyNotificationHour": {
+      "type": "int",
+      "defaultValue": 9,
+      "minValue": 0,
+      "maxValue": 23,
+      "metadata": {
+        "description": "Hour of day (0-23) when the daily digest runs, in the selected time zone."
+      }
+    },
+    "dailyNotificationTimeZone": {
+      "type": "string",
+      "defaultValue": "UTC",
+      "metadata": {
+        "description": "Windows time zone used for the daily digest schedule, for example UTC or Pacific Standard Time."
+      }
+    },
+    "environmentName": {
+      "type": "string",
+      "defaultValue": "Production",
+      "metadata": {
+        "description": "Environment label shown in the daily exposure summary card."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "workspaceId": {
+              "type": "String",
+              "defaultValue": ""
+            },
+            "environmentName": {
+              "type": "String"
+            }
+          },
+          "triggers": {
+            "Once_Daily": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "timeZone": "[parameters('dailyNotificationTimeZone')]",
+                "schedule": {
+                  "hours": [
+                    "[parameters('dailyNotificationHour')]"
+                  ],
+                  "minutes": [
+                    0
+                  ]
+                }
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "runs": 1
+                }
+              }
+            }
+          },
+          "actions": {
+            "Query_Daily_MSEM_Records": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "@{concat('https://api.loganalytics.io/v1/workspaces/', parameters('workspaceId'), '/query')}",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "query": "MSEMLogs_CL\n| where TimeGenerated > ago(1d) and TimeGenerated <= now()\n| where Status in~ (\"New\", \"Active\")\n| where isnotempty(RecoreId)\n| summarize arg_max(TimeGenerated, *) by RecoreId\n| extend UseCaseLabel = case(SubCategory contains \"High-Risk Identity\" or UseCase =~ \"UC-09\", \"High-Risk Identity\", UseCase =~ \"UC-08\" and SubCategory !contains \"High-Risk Identity\", \"Attack Path Reaches User\", UseCase =~ \"UC-01\" or Category contains \"Attack Path\" or SubCategory contains \"Attack Path\", \"Attack Path\", UseCase =~ \"UC-02\" or SubCategory contains \"Excessive Privilege\", \"Excessive Privilege\", UseCase =~ \"UC-03\" or SubCategory contains \"Choke Point\", \"User Choke Point\", UseCase =~ \"UC-04\" or SubCategory contains \"Device Exposure\", \"Device Exposure\", UseCase =~ \"UC-05\" or SubCategory contains \"Critical Asset\", \"Critical Asset Association\", UseCase =~ \"UC-06\" or SubCategory contains \"Credential Exposure\", \"Credential Exposure\", UseCase =~ \"UC-07\" or SubCategory contains \"Risky Group\", \"Risky Group Membership\", \"Other\")\n| extend SeverityRank = case(Severity =~ \"Critical\", 0, Severity =~ \"High\", 1, Severity =~ \"Medium\", 2, 3)\n| sort by SeverityRank asc, TimeGenerated desc\n| serialize PriorityRank = row_number()\n| extend PriorityLine = strcat(tostring(PriorityRank), \". \", tostring(Severity), \" – \", tostring(UseCaseLabel), \"\\n   Asset: \", tostring(AssetName), \"\\n   Details: \", substring(tostring(Details), 0, 180), \"\\n   Action: \", case(UseCaseLabel == \"Attack Path\" or UseCaseLabel == \"Attack Path Reaches User\", \"Investigate the attack path and reduce exposure.\", UseCaseLabel == \"Excessive Privilege\", \"Review privileges and remove unnecessary access.\", UseCaseLabel == \"User Choke Point\", \"Review identity dependencies and reduce concentration of access.\", UseCaseLabel == \"Device Exposure\", \"Review and remediate the device security posture.\", UseCaseLabel == \"Critical Asset Association\", \"Review exposure with the critical asset owner.\", UseCaseLabel == \"Credential Exposure\", \"Investigate and rotate exposed credentials.\", UseCaseLabel == \"Risky Group Membership\", \"Review group membership and privileged access.\", \"Review this high-risk identity and its connected exposures.\"))\n| summarize TotalFindings = count(), CriticalFindings = countif(Severity =~ \"Critical\"), HighFindings = countif(Severity =~ \"High\"), MediumFindings = countif(Severity =~ \"Medium\"), LowFindings = countif(Severity =~ \"Low\"), AttackPathCount = countif(UseCaseLabel == \"Attack Path\"), ExcessivePrivilegeCount = countif(UseCaseLabel == \"Excessive Privilege\"), ChokePointCount = countif(UseCaseLabel == \"User Choke Point\"), DeviceExposureCount = countif(UseCaseLabel == \"Device Exposure\"), CriticalAssetAssociationCount = countif(UseCaseLabel == \"Critical Asset Association\"), CredentialExposureCount = countif(UseCaseLabel == \"Credential Exposure\"), RiskyGroupMembershipCount = countif(UseCaseLabel == \"Risky Group Membership\"), AttackPathReachesUserCount = countif(UseCaseLabel == \"Attack Path Reaches User\"), HighRiskIdentityCount = countif(UseCaseLabel == \"High-Risk Identity\"), IdentityCount = dcountif(AssetName, AssetType in~ (\"User\", \"Identity\", \"ServiceAccount\")), DeviceCount = dcountif(AssetName, AssetType =~ \"Device\"), CriticalAssetCount = dcountif(AssetName, SubCategory contains \"Critical Asset\"), TopPrioritySummary = strcat_array(make_list_if(PriorityLine, PriorityRank <= 3), \"\\n\\n\")\n| project TotalFindings, CriticalFindings, HighFindings, MediumFindings, LowFindings, AttackPathCount, ExcessivePrivilegeCount, ChokePointCount, DeviceExposureCount, CriticalAssetAssociationCount, CredentialExposureCount, RiskyGroupMembershipCount, AttackPathReachesUserCount, HighRiskIdentityCount, IdentityCount, DeviceCount, CriticalAssetCount, TopPrioritySummary"
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://api.loganalytics.io"
+                }
+              },
+              "runtimeConfiguration": {
+                "secureData": {
+                  "properties": [
+                    "inputs",
+                    "outputs"
+                  ]
+                }
+              },
+              "runAfter": {}
+            },
+            "If_Daily_Records_Exist": {
+              "type": "If",
+              "expression": {
+                "greater": [
+                  "@int(coalesce(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[0], 0))",
+                  0
+                ]
+              },
+              "actions": {
+                "Compose_Daily_Adaptive_Card": {
+                  "type": "Compose",
+                  "inputs": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.2",
+                    "body": [
+                      {
+                        "type": "TextBlock",
+                        "text": "🛡️ MICROSOFT EXPOSURE MANAGEMENT",
+                        "size": "Small",
+                        "weight": "Bolder",
+                        "color": "Accent",
+                        "wrap": true
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": "Security Exposure Summary",
+                        "size": "Large",
+                        "weight": "Bolder",
+                        "wrap": true
+                      },
+                      {
+                        "type": "ColumnSet",
+                        "columns": [
+                          {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": [
+                              {
+                                "type": "TextBlock",
+                                "text": "@{concat('Environment: ', parameters('environmentName'))}",
+                                "wrap": true
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Column",
+                            "width": "auto",
+                            "items": [
+                              {
+                                "type": "TextBlock",
+                                "text": "@{concat(formatDateTime(utcNow(), 'dd MMM yyyy, hh:mm tt'), ' UTC')}",
+                                "horizontalAlignment": "Right",
+                                "wrap": true
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Container",
+                        "style": "emphasis",
+                        "separator": true,
+                        "spacing": "Medium",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "⚠️ SECURITY EXPOSURE OVERVIEW",
+                            "weight": "Bolder",
+                            "color": "Attention",
+                            "wrap": true
+                          },
+                          {
+                            "type": "ColumnSet",
+                            "columns": [
+                              {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "@{string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[0])}",
+                                    "size": "ExtraLarge",
+                                    "weight": "Bolder",
+                                    "horizontalAlignment": "Center"
+                                  },
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "Total Findings",
+                                    "wrap": true,
+                                    "horizontalAlignment": "Center"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "@{string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[1])}",
+                                    "size": "ExtraLarge",
+                                    "weight": "Bolder",
+                                    "color": "Attention",
+                                    "horizontalAlignment": "Center"
+                                  },
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "Critical",
+                                    "wrap": true,
+                                    "horizontalAlignment": "Center"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "@{string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[2])}",
+                                    "size": "ExtraLarge",
+                                    "weight": "Bolder",
+                                    "color": "Warning",
+                                    "horizontalAlignment": "Center"
+                                  },
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "High",
+                                    "wrap": true,
+                                    "horizontalAlignment": "Center"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "TextBlock",
+                            "text": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[3]), ' Medium     |     ', string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[4]), ' Low')}",
+                            "weight": "Bolder",
+                            "spacing": "Small",
+                            "horizontalAlignment": "Center",
+                            "wrap": true
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Container",
+                        "separator": true,
+                        "spacing": "Medium",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "📊 FINDINGS BY USE CASE",
+                            "weight": "Bolder",
+                            "wrap": true
+                          },
+                          {
+                            "type": "FactSet",
+                            "facts": [
+                              {
+                                "title": "Attack Path",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[5]), ' findings')}"
+                              },
+                              {
+                                "title": "Excessive Privilege",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[6]), ' findings')}"
+                              },
+                              {
+                                "title": "User Choke Point",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[7]), ' findings')}"
+                              },
+                              {
+                                "title": "Device Exposure",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[8]), ' findings')}"
+                              },
+                              {
+                                "title": "Critical Asset Association",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[9]), ' findings')}"
+                              },
+                              {
+                                "title": "Credential Exposure",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[10]), ' findings')}"
+                              },
+                              {
+                                "title": "Risky Group Membership",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[11]), ' findings')}"
+                              },
+                              {
+                                "title": "Attack Path Reaches User",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[12]), ' findings')}"
+                              },
+                              {
+                                "title": "High-Risk Identity",
+                                "value": "@{concat(string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[13]), ' findings')}"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Container",
+                        "separator": true,
+                        "spacing": "Medium",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "🔴 TOP PRIORITY FINDINGS",
+                            "weight": "Bolder",
+                            "color": "Attention",
+                            "wrap": true
+                          },
+                          {
+                            "type": "TextBlock",
+                            "text": "@{if(empty(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[17]), 'No findings in the reporting period.', string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[17]))}",
+                            "wrap": true
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Container",
+                        "separator": true,
+                        "spacing": "Medium",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "👥 AFFECTED ASSETS",
+                            "weight": "Bolder",
+                            "wrap": true
+                          },
+                          {
+                            "type": "ColumnSet",
+                            "columns": [
+                              {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "@{concat('Identities: ', string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[14]))}",
+                                    "wrap": true
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "@{concat('Devices: ', string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[15]))}",
+                                    "wrap": true
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                  {
+                                    "type": "TextBlock",
+                                    "text": "@{concat('Critical Assets: ', string(first(body('Query_Daily_MSEM_Records')?['tables']?[0]?['rows'])?[16]))}",
+                                    "wrap": true
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Container",
+                        "separator": true,
+                        "spacing": "Medium",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "📌 RECOMMENDED NEXT ACTIONS",
+                            "weight": "Bolder",
+                            "wrap": true
+                          },
+                          {
+                            "type": "TextBlock",
+                            "text": "• SOC: Investigate critical attack paths and exposures.\n• IAM: Review privileged identities and group memberships.\n• Endpoint Team: Investigate exposed devices.\n• Asset Owners: Review critical asset exposure.",
+                            "wrap": true
+                          }
+                        ]
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": "Source: Microsoft Exposure Management  |  Detection: Microsoft Sentinel  |  Automation: LA-MSEM-Teams-Notifications",
+                        "isSubtle": true,
+                        "size": "Small",
+                        "separator": true,
+                        "spacing": "Medium",
+                        "wrap": true
+                      }
+                    ]
+                  },
+                  "runAfter": {}
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "runAfter": {
+                "Query_Daily_MSEM_Records": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "environmentName": {
+            "value": "[parameters('environmentName')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppName": {
+      "type": "string",
+      "value": "[parameters('logicAppName')]"
+    }
+  }
+}
