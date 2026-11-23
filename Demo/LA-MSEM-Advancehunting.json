@@ -1,0 +1,450 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "LA-MSEM-AdvancedHunting",
+      "metadata": {
+        "description": "Name of the Consumption Logic App workflow."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for the Logic App."
+      }
+    },
+    "IngestionCallbackUrl": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Signed HTTP callback URL for the ingestion Logic App."
+      }
+    },
+    "KqlUc01": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-01'",
+      "metadata": {
+        "description": "KQL query for UC-01 Attack Path."
+      }
+    },
+    "KqlUc02": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-02'",
+      "metadata": {
+        "description": "KQL query for UC-02 Excessive Privilege."
+      }
+    },
+    "KqlUc03": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-03'",
+      "metadata": {
+        "description": "KQL query for UC-03 User Choke Point."
+      }
+    },
+    "KqlUc04": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-04'",
+      "metadata": {
+        "description": "KQL query for UC-04 Device Exposure."
+      }
+    },
+    "KqlUc05": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-05'",
+      "metadata": {
+        "description": "KQL query for UC-05 Critical Asset Association."
+      }
+    },
+    "KqlUc06": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-06'",
+      "metadata": {
+        "description": "KQL query for UC-06 Credential Exposure."
+      }
+    },
+    "KqlUc07": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-07'",
+      "metadata": {
+        "description": "KQL query for UC-07 Risky Group Membership."
+      }
+    },
+    "KqlUc08": {
+      "type": "string",
+      "defaultValue": "print Placeholder='UC-08'",
+      "metadata": {
+        "description": "KQL query for UC-08 High-Risk Identity."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "timeZone": "UTC",
+                "schedule": {
+                  "hours": [
+                    1
+                  ],
+                  "minutes": [
+                    0
+                  ]
+                }
+              }
+            }
+          },
+          "actions": {
+            "For_each_HuntingQuery": {
+              "type": "Foreach",
+              "foreach": "@variables('HuntingQueries')",
+              "actions": {
+                "Execute_Hunting_Query": {
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "https://graph.microsoft.com/v1.0/security/runHuntingQuery",
+                    "method": "POST",
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": {
+                      "query": "@{items('For_each_HuntingQuery')?['KQL']}"
+                    },
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://graph.microsoft.com"
+                    }
+                  },
+                  "runtimeConfiguration": {
+                    "secureData": {
+                      "properties": [
+                        "inputs",
+                        "outputs"
+                      ]
+                    }
+                  }
+                },
+                "For_each_Result": {
+                  "type": "Foreach",
+                  "foreach": "@coalesce(body('Execute_Hunting_Query')?['results'], createArray())",
+                  "actions": {
+                    "Append_Normalized_Record": {
+                      "type": "AppendToArrayVariable",
+                      "inputs": {
+                        "name": "AllRecords",
+                        "value": {
+                          "TimeGenerated": "@{coalesce(item()?['TimeGenerated'],item()?['Timestamp'],utcNow())}",
+                          "UseCase": "@{items('For_each_HuntingQuery')?['UseCase']}",
+                          "RecoreId": "@{coalesce(item()?['Id'],item()?['RecordId'],item()?['NodeId'],item()?['EdgeId'],'')}",
+                          "AssetName": "@{coalesce(item()?['AssetName'],item()?['DeviceName'],item()?['AccountName'],'')}",
+                          "AssetType": "@{coalesce(item()?['AssetType'],item()?['EntityType'],'')}",
+                          "Severity": "@{coalesce(item()?['Severity'],'')}",
+                          "Status": "New",
+                          "Category": "@{items('For_each_HuntingQuery')?['Category']}",
+                          "SubCategory": "@{items('For_each_HuntingQuery')?['SubCategory']}",
+                          "Details": "@{coalesce(item()?['Details'],item()?['Description'],'')}",
+                          "JsonData": {
+                            "OriginalResult": "@{string(item())}"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "runAfter": {
+                    "Execute_Hunting_Query": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Append_QueryResult": {
+                  "type": "AppendToArrayVariable",
+                  "inputs": {
+                    "name": "QueryResults",
+                    "value": {
+                      "UseCase": "@{items('For_each_HuntingQuery')?['UseCase']}",
+                      "QueryName": "@{items('For_each_HuntingQuery')?['Name']}",
+                      "Status": "@{if(greater(length(coalesce(body('Execute_Hunting_Query')?['results'],createArray())),0),'SuccessWithResults','SuccessNoResults')}",
+                      "ReturnedRecords": "@{length(coalesce(body('Execute_Hunting_Query')?['results'],createArray()))}",
+                      "Timestamp": "@{utcNow()}"
+                    }
+                  },
+                  "runAfter": {
+                    "For_each_Result": [
+                      "Succeeded",
+                      "Skipped"
+                    ]
+                  }
+                },
+                "Append_QueryFailure": {
+                  "type": "AppendToArrayVariable",
+                  "inputs": {
+                    "name": "QueryFailures",
+                    "value": {
+                      "UseCase": "@{items('For_each_HuntingQuery')?['UseCase']}",
+                      "QueryName": "@{items('For_each_HuntingQuery')?['Name']}",
+                      "Status": "Failed",
+                      "ReturnedRecords": 0,
+                      "Timestamp": "@{utcNow()}",
+                      "Error": "Graph Advanced Hunting query execution failed"
+                    }
+                  },
+                  "runAfter": {
+                    "Execute_Hunting_Query": [
+                      "Failed",
+                      "TimedOut"
+                    ]
+                  }
+                }
+              },
+              "runAfter": {
+                "Initialize_QueryFailures": [
+                  "Succeeded"
+                ]
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "repetitions": 1
+                }
+              }
+            },
+            "Has_Records": {
+              "type": "If",
+              "expression": "@greater(length(variables('AllRecords')),0)",
+              "actions": {
+                "Send_To_Ingestion_LogicApp": {
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "@parameters('IngestionCallbackUrl')",
+                    "method": "POST",
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": {
+                      "records": "@variables('AllRecords')"
+                    }
+                  },
+                  "runtimeConfiguration": {
+                    "secureData": {
+                      "properties": [
+                        "inputs",
+                        "outputs"
+                      ]
+                    }
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "runAfter": {
+                "For_each_HuntingQuery": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Run_Summary": {
+              "type": "Compose",
+              "inputs": {
+                "RunId": "@{workflow()['run']['name']}",
+                "StartTime": "@{workflow()['run']['startTime']}",
+                "CompletionTime": "@{utcNow()}",
+                "TotalConfiguredQueries": 8,
+                "SuccessfulQueries": "@{length(variables('QueryResults'))}",
+                "FailedQueries": "@{length(variables('QueryFailures'))}",
+                "TotalRecordsCollected": "@{length(variables('AllRecords'))}",
+                "TotalRecordsSubmitted": "@{length(variables('AllRecords'))}",
+                "IngestionStatus": "@{if(greater(length(variables('AllRecords')),0),'Attempted','SkippedNoRecords')}",
+                "QueryResults": "@variables('QueryResults')",
+                "QueryFailures": "@variables('QueryFailures')"
+              },
+              "runAfter": {
+                "Has_Records": [
+                  "Succeeded",
+                  "Skipped"
+                ]
+              }
+            },
+            "Initialize_QueryFailures": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "HuntingQueries",
+                    "type": "array",
+                    "value": [
+                      {
+                        "UseCase": "UC-01",
+                        "Name": "Attack Path",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "Attack Path",
+                        "KQL": "@parameters('KqlUc01')"
+                      },
+                      {
+                        "UseCase": "UC-02",
+                        "Name": "Excessive Privilege",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "Excessive Privilege",
+                        "KQL": "@parameters('KqlUc02')"
+                      },
+                      {
+                        "UseCase": "UC-03",
+                        "Name": "User Choke Point",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "Choke Point",
+                        "KQL": "@parameters('KqlUc03')"
+                      },
+                      {
+                        "UseCase": "UC-04",
+                        "Name": "Device Exposure",
+                        "Category": "Device Exposure",
+                        "SubCategory": "Device Exposure",
+                        "KQL": "@parameters('KqlUc04')"
+                      },
+                      {
+                        "UseCase": "UC-05",
+                        "Name": "Critical Asset Association",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "Critical Asset",
+                        "KQL": "@parameters('KqlUc05')"
+                      },
+                      {
+                        "UseCase": "UC-06",
+                        "Name": "Credential Exposure",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "Credential Exposure",
+                        "KQL": "@parameters('KqlUc06')"
+                      },
+                      {
+                        "UseCase": "UC-07",
+                        "Name": "Risky Group Membership",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "Risky Group",
+                        "KQL": "@parameters('KqlUc07')"
+                      },
+                      {
+                        "UseCase": "UC-08",
+                        "Name": "High-Risk Identity",
+                        "Category": "Identity Exposure",
+                        "SubCategory": "High-Risk Identity",
+                        "KQL": "@parameters('KqlUc08')"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "AllRecords",
+                    "type": "array",
+                    "value": []
+                  },
+                  {
+                    "name": "QueryResults",
+                    "type": "array",
+                    "value": []
+                  },
+                  {
+                    "name": "QueryFailures",
+                    "type": "array",
+                    "value": []
+                  }
+                ]
+              },
+              "runAfter": {}
+            }
+          },
+          "outputs": {},
+          "parameters": {
+            "IngestionCallbackUrl": {
+              "type": "String"
+            },
+            "KqlUc01": {
+              "type": "String"
+            },
+            "KqlUc02": {
+              "type": "String"
+            },
+            "KqlUc03": {
+              "type": "String"
+            },
+            "KqlUc04": {
+              "type": "String"
+            },
+            "KqlUc05": {
+              "type": "String"
+            },
+            "KqlUc06": {
+              "type": "String"
+            },
+            "KqlUc07": {
+              "type": "String"
+            },
+            "KqlUc08": {
+              "type": "String"
+            },
+            "$connections": {
+              "type": "Object",
+              "defaultValue": {}
+            }
+          }
+        },
+        "parameters": {
+          "IngestionCallbackUrl": {
+            "value": "[parameters('IngestionCallbackUrl')]"
+          },
+          "KqlUc01": {
+            "value": "[parameters('KqlUc01')]"
+          },
+          "KqlUc02": {
+            "value": "[parameters('KqlUc02')]"
+          },
+          "KqlUc03": {
+            "value": "[parameters('KqlUc03')]"
+          },
+          "KqlUc04": {
+            "value": "[parameters('KqlUc04')]"
+          },
+          "KqlUc05": {
+            "value": "[parameters('KqlUc05')]"
+          },
+          "KqlUc06": {
+            "value": "[parameters('KqlUc06')]"
+          },
+          "KqlUc07": {
+            "value": "[parameters('KqlUc07')]"
+          },
+          "KqlUc08": {
+            "value": "[parameters('KqlUc08')]"
+          },
+          "$connections": {
+            "value": {}
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    },
+    "managedIdentityPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'Full').identity.principalId]"
+    }
+  }
+}
