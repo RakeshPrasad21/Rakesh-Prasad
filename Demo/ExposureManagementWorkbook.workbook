@@ -1,0 +1,251 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "name": "MSEM Logs introduction",
+      "id": "30f39365-66f7-4518-8ee8-d42f3ae26dd1",
+      "content": {
+        "json": "# Microsoft Security Exposure Management\n## Exposure and Teams Notification Analysis Workbook\n\nUnified analysis of all eight MSEM exposure use cases from **MSEMLogs_CL**, including findings that may be routed to Microsoft Teams. Use the shared time range, use case, and severity filters to investigate exposure posture and notification candidates.\n\n> **Status note:** MSEMLogs_CL stores exposure-finding status, not Teams message delivery telemetry. This workbook does not indicate whether a Teams message was sent, delivered, or read. Ingest Teams send/delivery events to Log Analytics to analyze notification outcomes."
+      }
+    },
+    {
+      "type": 9,
+      "name": "MSEM workbook parameters",
+      "id": "c1ddb940-1f30-4eb6-84d9-639274b80315",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "ws-param",
+            "version": "KqlParameterItem/1.0",
+            "name": "Workspace",
+            "type": 5,
+            "isRequired": true,
+            "value": {
+              "resourceIds": []
+            },
+            "typeSettings": {
+              "resourceTypeFilter": {
+                "microsoft.operationalinsights/workspaces": true
+              },
+              "additionalResourceOptions": []
+            },
+            "resourceTypeFilter": {
+              "microsoft.operationalinsights/workspaces": true
+            }
+          },
+          {
+            "id": "lookback-param",
+            "version": "KqlParameterItem/1.0",
+            "name": "LookbackDays",
+            "label": "Lookback period",
+            "type": 2,
+            "isRequired": true,
+            "query": "datatable(value:string, label:string)[\"1\",\"Last 1 day\",\"7\",\"Last 7 days\",\"30\",\"Last 30 days\",\"90\",\"Last 90 days\"]",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "{Workspace}"
+            ],
+            "value": "30"
+          },
+          {
+            "id": "usecase-param",
+            "version": "KqlParameterItem/1.0",
+            "name": "UseCaseFilter",
+            "label": "Use case",
+            "type": 2,
+            "isRequired": true,
+            "query": "datatable(value:string, label:string)[\"All\",\"All use cases\",\"UC-01\",\"UC-01 - Attack Path\",\"UC-02\",\"UC-02 - Excessive Privilege\",\"UC-03\",\"UC-03 - User Choke Point\",\"UC-04\",\"UC-04 - Device Exposure\",\"UC-05\",\"UC-05 - Critical Asset Association\",\"UC-06\",\"UC-06 - Credential Exposure\",\"UC-07\",\"UC-07 - Risky Group Membership\",\"UC-08\",\"UC-08 - High-Risk Identity\"]",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "{Workspace}"
+            ],
+            "value": "All"
+          },
+          {
+            "id": "teams-severity-param",
+            "version": "KqlParameterItem/1.0",
+            "name": "SeverityFilter",
+            "label": "Severity",
+            "type": 2,
+            "isRequired": true,
+            "query": "datatable(value:string, label:string)[\"All\",\"All severities\",\"Critical\",\"Critical\",\"High\",\"High\",\"Medium\",\"Medium\",\"Low\",\"Low\",\"Unspecified\",\"Unspecified\"]",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "{Workspace}"
+            ],
+            "value": "All"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      }
+    },
+    {
+      "type": 1,
+      "name": "Overview header",
+      "id": "2e0ebccd-62a8-4239-8e2a-faf8a745e8d1",
+      "content": {
+        "json": "### Unified exposure overview\nSummary, trends, and use-case breakdowns for MSEM findings. The notification analysis uses these same findings; shared metrics are shown only once."
+      }
+    },
+    {
+      "type": 3,
+      "name": "Exposure KPI tiles",
+      "id": "13957b9e-8a45-43f9-991b-8171e08a16c6",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let Logs = materialize(\n    MSEMLogs_CL\n    | where TimeGenerated >= ago({LookbackDays}d)\n    | extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n    | extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n    | extend FindingStatus = tostring(column_ifexists(\"Status\", column_ifexists(\"Status_s\", \"\")))\n    | extend AssetName = tostring(column_ifexists(\"AssetName\", column_ifexists(\"AssetName_s\", \"\")))\n    | where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n    | where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n);\n(Logs | summarize Value = count() | extend Metric = \"Findings / notification candidates\")\n| union (Logs | summarize Value = countif(Severity in~ (\"Critical\", \"High\")) | extend Metric = \"High or critical\")\n| union (Logs | summarize Value = countif(FindingStatus =~ \"New\") | extend Metric = \"New findings\")\n| union (Logs | summarize Value = dcountif(AssetName, isnotempty(AssetName)) | extend Metric = \"Affected assets\")\n| project Metric, Value",
+        "size": 3,
+        "title": "Exposure summary",
+        "noDataMessage": "No MSEMLogs_CL records match the selected time range and use case.",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "Metric",
+            "showBorder": false
+          },
+          "leftContent": {
+            "columnMatch": "Value",
+            "showBorder": false,
+            "formatter": 12,
+            "formatOptions": {
+              "palette": "blue"
+            }
+          },
+          "showBorder": true
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "Findings by use case",
+      "id": "8cf50dc5-91b5-48ed-8a9e-8b020a6ef96d",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "MSEMLogs_CL\n| where TimeGenerated >= ago({LookbackDays}d)\n| extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n| extend UseCaseName = case(UseCase == \"UC-01\", \"Attack Path\", UseCase == \"UC-02\", \"Excessive Privilege\", UseCase == \"UC-03\", \"User Choke Point\", UseCase == \"UC-04\", \"Device Exposure\", UseCase == \"UC-05\", \"Critical Asset Association\", UseCase == \"UC-06\", \"Credential Exposure\", UseCase == \"UC-07\", \"Risky Group Membership\", UseCase == \"UC-08\", \"High-Risk Identity\", UseCase)\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n| where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n| summarize Findings = count() by UseCase, UseCaseName\n| extend UseCaseLabel = strcat(UseCase, \" - \", UseCaseName)\n| project UseCaseLabel, Findings\n| order by Findings desc",
+        "size": 0,
+        "title": "Findings by use case",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "barchart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "Findings by severity",
+      "id": "0a9ce604-cf67-4436-9cc3-a26919cb13f1",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "MSEMLogs_CL\n| where TimeGenerated >= ago({LookbackDays}d)\n| extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n| where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n| extend Severity = iff(isempty(Severity), \"Unspecified\", Severity)\n| summarize Findings = count() by Severity\n| order by Findings desc",
+        "size": 0,
+        "title": "Findings by severity",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "piechart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "Findings over time",
+      "id": "67a028bf-49ed-4637-9f63-a11e999d4a9a",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "MSEMLogs_CL\n| where TimeGenerated >= ago({LookbackDays}d)\n| extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n| extend UseCaseName = case(UseCase == \"UC-01\", \"Attack Path\", UseCase == \"UC-02\", \"Excessive Privilege\", UseCase == \"UC-03\", \"User Choke Point\", UseCase == \"UC-04\", \"Device Exposure\", UseCase == \"UC-05\", \"Critical Asset Association\", UseCase == \"UC-06\", \"Credential Exposure\", UseCase == \"UC-07\", \"Risky Group Membership\", UseCase == \"UC-08\", \"High-Risk Identity\", UseCase)\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n| where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n| summarize Findings = count() by TimeGenerated = bin(TimeGenerated, 1d), UseCaseName\n| order by TimeGenerated asc",
+        "size": 0,
+        "title": "Findings over time",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "timechart"
+      }
+    },
+    {
+      "type": 1,
+      "name": "Use case breakdown header",
+      "id": "d85c2894-5c0c-4735-a26f-7c357052ae61",
+      "content": {
+        "json": "### Use case breakdown\nThe table below shows each use case's finding count, affected assets, severity mix, and latest event."
+      }
+    },
+    {
+      "type": 3,
+      "name": "Use case breakdown",
+      "id": "9e083fd0-ec4a-4db4-b6dc-e5eb9e5d2179",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "MSEMLogs_CL\n| where TimeGenerated >= ago({LookbackDays}d)\n| extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n| extend UseCaseName = case(UseCase == \"UC-01\", \"Attack Path\", UseCase == \"UC-02\", \"Excessive Privilege\", UseCase == \"UC-03\", \"User Choke Point\", UseCase == \"UC-04\", \"Device Exposure\", UseCase == \"UC-05\", \"Critical Asset Association\", UseCase == \"UC-06\", \"Credential Exposure\", UseCase == \"UC-07\", \"Risky Group Membership\", UseCase == \"UC-08\", \"High-Risk Identity\", UseCase)\n| extend Category = tostring(column_ifexists(\"Category\", column_ifexists(\"Category_s\", \"\")))\n| extend SubCategory = tostring(column_ifexists(\"SubCategory\", column_ifexists(\"SubCategory_s\", \"\")))\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| extend AssetName = tostring(column_ifexists(\"AssetName\", column_ifexists(\"AssetName_s\", \"\")))\n| where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n| summarize Findings = count(), UniqueAssets = dcountif(AssetName, isnotempty(AssetName)), HighOrCritical = countif(Severity in~ (\"Critical\", \"High\")), LatestEvent = max(TimeGenerated) by UseCase, UseCaseName, Category, SubCategory\n| order by UseCase asc, Findings desc",
+        "size": 0,
+        "title": "Use case summary",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "Finding status distribution",
+      "id": "4bd63d27-93a7-42b6-b9d6-4766ae8077ac",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "MSEMLogs_CL\n| where TimeGenerated >= ago({LookbackDays}d)\n| extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| extend FindingStatus = tostring(column_ifexists(\"Status\", column_ifexists(\"Status_s\", \"\")))\n| where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n| where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n| extend FindingStatus = iff(isempty(FindingStatus), \"Unspecified\", FindingStatus)\n| summarize Findings = count() by FindingStatus\n| order by Findings desc",
+        "size": 0,
+        "title": "Findings by source status (not Teams delivery)",
+        "noDataMessage": "No findings match these filters.",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "barchart"
+      }
+    },
+    {
+      "type": 1,
+      "name": "Findings detail header",
+      "id": "fbf60ca0-f450-4c45-87bb-35198172f823",
+      "content": {
+        "json": "### Finding details for notification triage\nReview individual exposure records before routing them to Teams. Source status is not a message delivery result."
+      }
+    },
+    {
+      "type": 3,
+      "name": "Finding details",
+      "id": "4e80aeeb-63f6-433c-a2e4-17d27c286dcf",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "MSEMLogs_CL\n| where TimeGenerated >= ago({LookbackDays}d)\n| extend UseCase = tostring(column_ifexists(\"UseCase\", column_ifexists(\"UseCase_s\", \"\")))\n| extend UseCaseName = case(UseCase == \"UC-01\", \"Attack Path\", UseCase == \"UC-02\", \"Excessive Privilege\", UseCase == \"UC-03\", \"User Choke Point\", UseCase == \"UC-04\", \"Device Exposure\", UseCase == \"UC-05\", \"Critical Asset Association\", UseCase == \"UC-06\", \"Credential Exposure\", UseCase == \"UC-07\", \"Risky Group Membership\", UseCase == \"UC-08\", \"High-Risk Identity\", UseCase)\n| extend Category = tostring(column_ifexists(\"Category\", column_ifexists(\"Category_s\", \"\")))\n| extend SubCategory = tostring(column_ifexists(\"SubCategory\", column_ifexists(\"SubCategory_s\", \"\")))\n| extend Severity = tostring(column_ifexists(\"Severity\", column_ifexists(\"Severity_s\", \"\")))\n| extend FindingStatus = tostring(column_ifexists(\"Status\", column_ifexists(\"Status_s\", \"\")))\n| extend AssetName = tostring(column_ifexists(\"AssetName\", column_ifexists(\"AssetName_s\", \"\")))\n| extend AssetType = tostring(column_ifexists(\"AssetType\", column_ifexists(\"AssetType_s\", \"\")))\n| extend RecordId = tostring(column_ifexists(\"RecoreId\", column_ifexists(\"RecoreId_s\", column_ifexists(\"RecordId\", column_ifexists(\"RecordId_s\", \"\")))))\n| extend Details = tostring(column_ifexists(\"Details\", column_ifexists(\"Details_s\", \"\")))\n| extend JsonData = tostring(column_ifexists(\"JsonData\", column_ifexists(\"JsonData_s\", column_ifexists(\"JsonData_d\", \"\"))))\n| where \"{UseCaseFilter}\" == \"All\" or UseCase == \"{UseCaseFilter}\"\n| where \"{SeverityFilter}\" == \"All\" or Severity =~ \"{SeverityFilter}\"\n| project TimeGenerated, UseCase, UseCaseName, Category, SubCategory, Severity, FindingStatus, AssetName, AssetType, RecordId, Details, JsonData\n| order by TimeGenerated desc\n| take 500",
+        "size": 0,
+        "title": "Latest 500 findings / notification candidates",
+        "noDataMessage": "No MSEMLogs_CL records match the selected time range and use case.",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "visualization": "table"
+      }
+    }
+  ]
+}
